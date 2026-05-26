@@ -36,6 +36,9 @@ class JobRead(BaseModel):
     id: UUID
     status: str
     detail: str
+    workflow_run_id: UUID | None = None
+    comfy_prompt_id: str | None = None
+    error_message: str | None = None
 
 
 class StubStore:
@@ -60,4 +63,3 @@ class StubStore:
         )
         cls.campaigns[item.id] = item
         return item
-
