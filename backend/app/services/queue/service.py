@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import CineForgeError
@@ -85,7 +85,6 @@ class QueueService:
             raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
 
         if job.status != QueueStatus.reserved or job.worker_id != worker_id:
-            db.commit()
             return None
 
         now = datetime.now(UTC)
@@ -123,21 +122,26 @@ class QueueService:
         if limit < 1:
             return []
 
-        candidates = list(
-            db.scalars(
-                select(ComfyJob)
-                .where(ComfyJob.status == QueueStatus.reserved)
-                .order_by(ComfyJob.id)
-                .limit(limit)
-            ).all()
+        candidate_query = (
+            select(ComfyJob)
+            .where(
+                ComfyJob.status == QueueStatus.reserved,
+                or_(
+                    ComfyJob.heartbeat_at < stale_before,
+                    and_(ComfyJob.heartbeat_at.is_(None), ComfyJob.reserved_at < stale_before),
+                    and_(ComfyJob.heartbeat_at.is_(None), ComfyJob.reserved_at.is_(None)),
+                ),
+            )
+            .order_by(ComfyJob.id)
+            .limit(limit)
         )
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            candidate_query = candidate_query.with_for_update(skip_locked=True)
+
+        candidates = list(db.scalars(candidate_query).all())
         recovered_jobs: list[ComfyJob] = []
         now = datetime.now(UTC)
         for job in candidates:
-            stale_at = job.heartbeat_at or job.reserved_at
-            if stale_at is not None and self._as_utc(stale_at) >= self._as_utc(stale_before):
-                continue
-
             previous_worker_id = job.worker_id
             previous_state = self._status_value(job.status)
             attempt_count = job.attempt_count or 0

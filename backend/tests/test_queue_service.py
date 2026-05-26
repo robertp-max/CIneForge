@@ -266,9 +266,30 @@ def test_heartbeat_noops_for_wrong_worker(db_session):
     assert audit_logs_for_action(db_session, "worker_heartbeat") == []
 
 
+def test_heartbeat_wrong_worker_noop_does_not_commit_unrelated_pending_changes(db_session):
+    job = create_comfy_job(db_session)
+    unrelated_job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim for heartbeat")
+    unrelated_job.error_message = "uncommitted unrelated change"
+
+    heartbeat_job = QueueService().heartbeat_job(db_session, job.id, "worker-2")
+    db_session.rollback()
+
+    persisted_unrelated_job = db_session.get(ComfyJob, unrelated_job.id)
+    assert heartbeat_job is None
+    assert persisted_unrelated_job is not None
+    assert persisted_unrelated_job.error_message is None
+
+
 @pytest.mark.parametrize(
     "status",
-    [QueueStatus.complete, QueueStatus.runtime_failed, QueueStatus.canceled],
+    [
+        QueueStatus.pending,
+        QueueStatus.validating,
+        QueueStatus.complete,
+        QueueStatus.runtime_failed,
+        QueueStatus.canceled,
+    ],
 )
 def test_heartbeat_ignores_completed_failed_and_canceled_jobs(db_session, status):
     job = create_comfy_job(db_session, status)
@@ -286,6 +307,32 @@ def test_heartbeat_ignores_completed_failed_and_canceled_jobs(db_session, status
     assert persisted_job is not None
     assert persisted_job.heartbeat_at == previous_heartbeat_at
     assert audit_logs_for_action(db_session, "worker_heartbeat") == []
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        QueueStatus.pending,
+        QueueStatus.validating,
+        QueueStatus.complete,
+        QueueStatus.runtime_failed,
+        QueueStatus.canceled,
+    ],
+)
+def test_heartbeat_non_reserved_noop_does_not_commit_unrelated_pending_changes(db_session, status):
+    job = create_comfy_job(db_session, status)
+    unrelated_job = create_comfy_job(db_session)
+    job.worker_id = "worker-1"
+    db_session.commit()
+    unrelated_job.error_message = "uncommitted unrelated change"
+
+    heartbeat_job = QueueService().heartbeat_job(db_session, job.id, "worker-1")
+    db_session.rollback()
+
+    persisted_unrelated_job = db_session.get(ComfyJob, unrelated_job.id)
+    assert heartbeat_job is None
+    assert persisted_unrelated_job is not None
+    assert persisted_unrelated_job.error_message is None
 
 
 def test_stale_reserved_job_below_max_attempts_resets_to_pending(db_session):

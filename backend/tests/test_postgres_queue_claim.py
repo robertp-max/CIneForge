@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 import os
 from uuid import uuid4
 
@@ -69,6 +70,18 @@ def _create_comfy_job(db: Session, status: QueueStatus = QueueStatus.pending) ->
 
     job = ComfyJob(workflow_run_id=workflow_run.id, status=status)
     db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _create_stale_reserved_job(db: Session, attempt_count: int = 1) -> ComfyJob:
+    job = _create_comfy_job(db)
+    QueueService().reserve_job(db, job.id, "worker-stale", "claim before stale recovery")
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    job.reserved_at = stale_time
+    job.heartbeat_at = stale_time
+    job.attempt_count = attempt_count
     db.commit()
     db.refresh(job)
     return job
@@ -148,3 +161,109 @@ def test_postgres_skip_locked_does_not_claim_locked_pending_job(postgres_session
     assert claimed_job is not None
     assert claimed_job.id == job.id
     assert claimed_job.worker_id == "worker-1"
+
+
+def test_postgres_concurrent_recovery_recovers_stale_reserved_job_once(postgres_session_factory):
+    with postgres_session_factory() as setup_session:
+        job = _create_stale_reserved_job(setup_session)
+
+    def recover(reason: str):
+        with postgres_session_factory() as db:
+            recovered_jobs = QueueService().recover_stale_reserved_jobs(
+                db,
+                stale_before=datetime.now(UTC) - timedelta(hours=1),
+                max_attempts=3,
+                reason=reason,
+            )
+            return [recovered_job.id for recovered_job in recovered_jobs]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(recover, ["concurrent recovery 1", "concurrent recovery 2"]))
+
+    recovered_results = [result for result in results if result]
+    assert recovered_results == [[job.id]]
+
+    with postgres_session_factory() as verify_session:
+        persisted_job = verify_session.get(ComfyJob, job.id)
+        recovery_logs = list(
+            verify_session.scalars(
+                select(AuditLog).where(
+                    AuditLog.entity_id == job.id,
+                    AuditLog.action == "worker_recovery",
+                )
+            ).all()
+        )
+
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.pending
+    assert persisted_job.recovery_metadata["recovery_count"] == 1
+    assert len(recovery_logs) == 1
+
+
+def test_postgres_skip_locked_does_not_recover_locked_stale_reserved_job(postgres_session_factory):
+    with postgres_session_factory() as setup_session:
+        job = _create_stale_reserved_job(setup_session)
+
+    lock_session = postgres_session_factory()
+    lock_transaction = lock_session.begin()
+    try:
+        locked_job = lock_session.scalars(
+            select(ComfyJob)
+            .where(ComfyJob.id == job.id, ComfyJob.status == QueueStatus.reserved)
+            .with_for_update()
+        ).one()
+        assert locked_job.id == job.id
+
+        with postgres_session_factory() as competing_session:
+            skipped_jobs = QueueService().recover_stale_reserved_jobs(
+                competing_session,
+                stale_before=datetime.now(UTC) - timedelta(hours=1),
+                max_attempts=3,
+                reason="skip locked stale recovery",
+            )
+
+        assert skipped_jobs == []
+
+        with postgres_session_factory() as verify_session:
+            persisted_job = verify_session.get(ComfyJob, job.id)
+            recovery_logs = list(
+                verify_session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.entity_id == job.id,
+                        AuditLog.action == "worker_recovery",
+                    )
+                ).all()
+            )
+
+        assert persisted_job is not None
+        assert persisted_job.status == QueueStatus.reserved
+        assert persisted_job.worker_id == "worker-stale"
+        assert recovery_logs == []
+    finally:
+        lock_transaction.rollback()
+        lock_session.close()
+
+    with postgres_session_factory() as recovery_session:
+        recovered_jobs = QueueService().recover_stale_reserved_jobs(
+            recovery_session,
+            stale_before=datetime.now(UTC) - timedelta(hours=1),
+            max_attempts=3,
+            reason="recover after lock release",
+        )
+
+    assert [recovered_job.id for recovered_job in recovered_jobs] == [job.id]
+
+    with postgres_session_factory() as verify_session:
+        persisted_job = verify_session.get(ComfyJob, job.id)
+        recovery_logs = list(
+            verify_session.scalars(
+                select(AuditLog).where(
+                    AuditLog.entity_id == job.id,
+                    AuditLog.action == "worker_recovery",
+                )
+            ).all()
+        )
+
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.pending
+    assert len(recovery_logs) == 1

@@ -181,7 +181,7 @@ Risk flags:
 
 Goal: define deterministic recovery for stale reserved/submitted/running jobs without duplicate generation.
 
-Status: Reserved-job policy complete. The initial 2026-05-26 Slice 4 implementation request completed PostgreSQL lock-contention hardening and the safe worker skeleton below; a follow-up 2026-05-26 slice implemented reserved-job heartbeat updates, stale reserved-job retry recovery, and max-attempt timeout handling without ComfyUI submission. Submitted and running recovery policy remains future work.
+Status: Reserved-job policy complete. The initial 2026-05-26 Slice 4 implementation request completed PostgreSQL lock-contention hardening and the safe worker skeleton below; a follow-up 2026-05-26 slice implemented reserved-job heartbeat updates, stale reserved-job retry recovery, and max-attempt timeout handling without ComfyUI submission. A hardening follow-up fixed heartbeat no-op paths so they do not commit unrelated pending session changes and added PostgreSQL `FOR UPDATE SKIP LOCKED` protection for stale reserved-job recovery contention. Submitted and running recovery policy remains future work.
 
 Implementation tasks:
 
