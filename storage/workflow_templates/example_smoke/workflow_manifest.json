@@ -1,0 +1,61 @@
+{
+  "template_id": "example-smoke",
+  "version": "0.1.0",
+  "original_workflow_sha256": "88d82d8d71f3532080b66d71feb6bf550c229eb4a12e175362a588d8646e837b",
+  "comfyui_snapshot_ref": "scaffold-only",
+  "nodes": {
+    "positive_prompt": {
+      "node_id": "6",
+      "class_type": "CLIPTextEncode",
+      "input": "text",
+      "runtime_parameter": "positive_prompt",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true
+    },
+    "negative_prompt": {
+      "node_id": "7",
+      "class_type": "CLIPTextEncode",
+      "input": "text",
+      "runtime_parameter": "negative_prompt",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": false
+    },
+    "seed": {
+      "node_id": "3",
+      "class_type": "KSampler",
+      "input": "seed",
+      "runtime_parameter": "seed",
+      "value_schema": {
+        "type": "integer",
+        "min": 0
+      },
+      "required": true
+    },
+    "steps": {
+      "node_id": "3",
+      "class_type": "KSampler",
+      "input": "steps",
+      "runtime_parameter": "steps",
+      "value_schema": {
+        "type": "integer",
+        "min": 1,
+        "max": 100
+      },
+      "required": true
+    },
+    "output_prefix": {
+      "node_id": "99",
+      "class_type": "SaveVideo",
+      "input": "filename_prefix",
+      "runtime_parameter": "output_prefix",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true
+    }
+  }
+}

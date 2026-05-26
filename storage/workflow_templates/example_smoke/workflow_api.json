@@ -1,0 +1,28 @@
+{
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 1,
+      "steps": 8
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "placeholder positive"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "placeholder negative"
+    }
+  },
+  "99": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "filename_prefix": "example"
+    }
+  }
+}
+

@@ -1,0 +1,2 @@
+"""Non-executing autonomy stubs."""
+

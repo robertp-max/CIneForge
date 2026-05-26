@@ -1,0 +1,33 @@
+[project]
+name = "cineforge"
+version = "0.1.0"
+description = "Local deterministic AI video orchestration backend."
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.13",
+  "fastapi>=0.111",
+  "httpx>=0.27",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "sqlalchemy>=2.0",
+  "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+exclude = ["API*", "Architecture*", "Benchmarks*", "ComfyUI*", "Database*", "docs*", "Elite*", "FFmpeg*", "Findings*", "LoRAs*", "Models*", "MVP*", "Orchestration*", "Quantization*", "Risk-Register*", "Runtime*", "Sources*", "storage*", "Workflows*"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
