@@ -2,6 +2,8 @@
 
 Date: 2026-05-26
 
+Status: Complete. See `docs/SPRINT_1B_CLOSEOUT.md`.
+
 ## Current State
 
 Sprint 1A is complete and pushed. The backend foundation includes FastAPI, configuration loading, health endpoints, SQLAlchemy metadata, queue state-machine primitives, workflow manifest validation, path safety, offline-safe ComfyUI client boundaries, GPU telemetry parsing, FFmpeg validation primitives, AI/autonomy non-executing stubs, public repository hygiene, and 22 passing tests.
@@ -272,4 +274,3 @@ Minimum expected new tests:
 Start with **Slice 1: Initial Alembic Migration**.
 
 Reason: every DB-backed route, durable queue transition, audit write, object-info cache, and benchmark persistence feature depends on having a migration-backed schema that can be recreated consistently in tests and local development.
-
