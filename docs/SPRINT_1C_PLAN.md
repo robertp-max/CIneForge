@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: Slice 1 complete; Slice 2 complete; Slice 3 complete.
+Status: Slice 1 complete; Slice 2 complete; Slice 3 complete; Slice 4 complete.
 
 ## Current State
 
@@ -146,7 +146,7 @@ Risk flags:
 
 Goal: make job reservation atomic for competing workers.
 
-Status: Complete. PostgreSQL-gated schema and concurrent reservation tests passed on 2026-05-26.
+Status: Complete. PostgreSQL-gated schema, concurrent reservation, and explicit lock-contention tests passed on 2026-05-26.
 
 Implementation tasks:
 
@@ -166,6 +166,7 @@ Acceptance criteria:
 Required tests:
 
 - `test_postgres_concurrent_reservation_claims_job_once`
+- `test_postgres_skip_locked_does_not_claim_locked_pending_job`
 - `test_reserve_next_job_skips_non_pending_jobs`
 - `test_reserve_next_job_writes_worker_ownership`
 - `test_reserve_next_job_writes_audit_log`
@@ -179,6 +180,8 @@ Risk flags:
 ### Slice 4: Timeout And Recovery Policy
 
 Goal: define deterministic recovery for stale reserved/submitted/running jobs without duplicate generation.
+
+Status: Pending. The 2026-05-26 Slice 4 implementation request completed PostgreSQL lock-contention hardening and the safe worker skeleton below; timeout and recovery policy remains a future slice.
 
 Implementation tasks:
 
@@ -211,6 +214,8 @@ Risk flags:
 ### Slice 5: Worker Boundary Skeleton
 
 Goal: introduce a worker interface that can reserve and transition jobs without submitting to ComfyUI.
+
+Status: Complete. Bounded `QueueWorker.run_once` and `QueueWorker.run_batch` skeleton tests passed on 2026-05-26.
 
 Implementation tasks:
 
