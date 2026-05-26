@@ -2,6 +2,8 @@
 
 Date: 2026-05-26
 
+Status: Slice 1 complete; Slice 2 complete.
+
 ## Current State
 
 Sprint 1A established the backend foundation. Sprint 1B completed the non-generating durable spine:
@@ -19,7 +21,7 @@ Known Sprint 1B limitations that Sprint 1C should address before real generation
 
 - PostgreSQL schema and migration behavior are not verified in this workspace.
 - Queue reservation is service-layer only and has no DB-level concurrent worker locking.
-- `comfy_jobs` has no worker ownership, heartbeat, reservation timestamp, timeout, or retry metadata.
+- `comfy_jobs` has no DB-level concurrent worker locking yet.
 - No queue worker loop exists.
 - No code submits prompts to ComfyUI.
 - No progress events are persisted to the database.

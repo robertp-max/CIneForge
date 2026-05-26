@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -67,6 +68,12 @@ def create_comfy_job(db: Session) -> ComfyJob:
         workflow_run_id=workflow_run.id,
         prompt_id="prompt-123",
         status=QueueStatus.running,
+        worker_id="worker-read",
+        reserved_at=datetime.now(UTC),
+        heartbeat_at=datetime.now(UTC),
+        attempt_count=1,
+        last_state_change_at=datetime.now(UTC),
+        recovery_metadata={"source": "test"},
         error_message="waiting for progress",
     )
     db.add(job)

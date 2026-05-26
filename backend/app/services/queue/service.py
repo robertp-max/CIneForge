@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -32,15 +33,24 @@ class QueueService:
             db.rollback()
             raise
 
+        now = datetime.now(UTC)
         job.status = QueueStatus(result.current.value)
+        job.last_state_change_at = now
+        if result.current == JobState.reserved and worker_id is not None:
+            job.worker_id = worker_id
+            job.reserved_at = now
+            job.heartbeat_at = now
+            job.attempt_count = (job.attempt_count or 0) + 1
+
         audit_details = {
             "previous_state": result.previous.value,
             "new_state": result.current.value,
             "reason": reason,
             "actor": actor,
         }
-        if worker_id is not None:
-            audit_details["worker_id"] = worker_id
+        audit_worker_id = worker_id or job.worker_id
+        if audit_worker_id is not None:
+            audit_details["worker_id"] = audit_worker_id
 
         db.add(
             AuditLog(

@@ -127,6 +127,37 @@ def test_reserve_job_persists_reserved_status(db_session):
     assert logs[0].details["worker_id"] == "worker-1"
 
 
+def test_reserve_job_writes_worker_ownership_fields(db_session):
+    job = create_comfy_job(db_session)
+
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim for validation")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+
+    assert persisted_job is not None
+    assert persisted_job.worker_id == "worker-1"
+    assert persisted_job.reserved_at is not None
+    assert persisted_job.heartbeat_at is not None
+    assert persisted_job.attempt_count == 1
+    assert persisted_job.last_state_change_at is not None
+    assert persisted_job.recovery_metadata == {}
+
+
+def test_queue_audit_details_include_worker_metadata_when_present(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim for validation")
+    db_session.expire_all()
+
+    QueueService().transition_job(db_session, job.id, JobState.validating, "begin validation")
+
+    logs = audit_logs(db_session)
+    assert len(logs) == 2
+    assert logs[1].details["worker_id"] == "worker-1"
+    assert logs[1].details["previous_state"] == "reserved"
+    assert logs[1].details["new_state"] == "validating"
+
+
 def test_reserve_missing_job_raises_not_found(db_session):
     with pytest.raises(QueueJobNotFound):
         QueueService().reserve_job(db_session, uuid4(), "worker-1", "missing job")
