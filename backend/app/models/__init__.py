@@ -21,6 +21,7 @@ from backend.app.db.base import (  # noqa: F401
     HardwareProfile,
     Lora,
     LoraCombination,
+    LoraCombinationItem,
     Model,
     ModelVariant,
     NegativePrompt,
@@ -37,4 +38,3 @@ from backend.app.db.base import (  # noqa: F401
     WorkflowRun,
     WorkflowTemplate,
 )
-

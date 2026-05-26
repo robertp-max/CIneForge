@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, PrimaryKeyConstraint, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -172,6 +172,20 @@ class LoraCombination(UUIDMixin, Base):
     __tablename__ = "lora_combinations"
     name: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
+
+
+class LoraCombinationItem(Base):
+    __tablename__ = "lora_combination_items"
+    combination_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("lora_combinations.id", ondelete="CASCADE"))
+    lora_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("loras.id"))
+    order_index: Mapped[int] = mapped_column(Integer)
+    strength_model: Mapped[float | None] = mapped_column(Numeric)
+    strength_clip: Mapped[float | None] = mapped_column(Numeric)
+    extra_params: Mapped[dict] = mapped_column(json_type(), default=dict)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("combination_id", "lora_id", "order_index"),
+    )
 
 
 class WorkflowTemplate(UUIDMixin, TimestampMixin, Base):
@@ -351,4 +365,3 @@ class CandidateScore(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "candidate_scores"
     clip_iteration_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clip_iterations.id"))
     score_json: Mapped[dict] = mapped_column(json_type())
-
