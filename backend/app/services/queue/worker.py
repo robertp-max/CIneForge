@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -87,3 +88,22 @@ class QueueWorker:
                 break
             results.append(result)
         return results
+
+    def heartbeat_once(self, db: Session, job_id: UUID) -> bool:
+        return self.queue_service.heartbeat_job(db, job_id, self.worker_id) is not None
+
+    def recover_stale_once(
+        self,
+        db: Session,
+        stale_before: datetime,
+        max_attempts: int,
+        limit: int = 100,
+    ) -> list[UUID]:
+        recovered_jobs = self.queue_service.recover_stale_reserved_jobs(
+            db,
+            stale_before=stale_before,
+            max_attempts=max_attempts,
+            limit=limit,
+            reason="worker stale reservation recovery",
+        )
+        return [job.id for job in recovered_jobs]

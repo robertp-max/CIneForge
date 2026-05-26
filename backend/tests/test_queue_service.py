@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -62,6 +63,10 @@ def create_comfy_job(db: Session, status: QueueStatus = QueueStatus.pending) -> 
 
 def audit_logs(db: Session) -> list[AuditLog]:
     return list(db.scalars(select(AuditLog)).all())
+
+
+def audit_logs_for_action(db: Session, action: str) -> list[AuditLog]:
+    return list(db.scalars(select(AuditLog).where(AuditLog.action == action)).all())
 
 
 def test_queue_service_valid_transition_persists_status(db_session):
@@ -219,6 +224,190 @@ def test_reserve_missing_job_raises_not_found(db_session):
         QueueService().reserve_job(db_session, uuid4(), "worker-1", "missing job")
 
     assert audit_logs(db_session) == []
+
+
+def test_heartbeat_succeeds_for_correct_worker_on_reserved_job(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim for heartbeat")
+    db_session.expire_all()
+    reserved_job = db_session.get(ComfyJob, job.id)
+    assert reserved_job is not None
+    previous_heartbeat_at = reserved_job.heartbeat_at
+
+    heartbeat_job = QueueService().heartbeat_job(db_session, job.id, "worker-1")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    heartbeat_logs = audit_logs_for_action(db_session, "worker_heartbeat")
+    assert heartbeat_job is not None
+    assert persisted_job is not None
+    assert persisted_job.heartbeat_at is not None
+    assert persisted_job.heartbeat_at != previous_heartbeat_at
+    assert persisted_job.status == QueueStatus.reserved
+    assert len(heartbeat_logs) == 1
+    assert heartbeat_logs[0].details["worker_id"] == "worker-1"
+
+
+def test_heartbeat_noops_for_wrong_worker(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim for heartbeat")
+    db_session.expire_all()
+    reserved_job = db_session.get(ComfyJob, job.id)
+    assert reserved_job is not None
+    previous_heartbeat_at = reserved_job.heartbeat_at
+
+    heartbeat_job = QueueService().heartbeat_job(db_session, job.id, "worker-2")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert heartbeat_job is None
+    assert persisted_job is not None
+    assert persisted_job.heartbeat_at == previous_heartbeat_at
+    assert audit_logs_for_action(db_session, "worker_heartbeat") == []
+
+
+@pytest.mark.parametrize(
+    "status",
+    [QueueStatus.complete, QueueStatus.runtime_failed, QueueStatus.canceled],
+)
+def test_heartbeat_ignores_completed_failed_and_canceled_jobs(db_session, status):
+    job = create_comfy_job(db_session, status)
+    job.worker_id = "worker-1"
+    job.heartbeat_at = datetime.now(UTC) - timedelta(minutes=5)
+    db_session.commit()
+    db_session.refresh(job)
+    previous_heartbeat_at = job.heartbeat_at
+
+    heartbeat_job = QueueService().heartbeat_job(db_session, job.id, "worker-1")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert heartbeat_job is None
+    assert persisted_job is not None
+    assert persisted_job.heartbeat_at == previous_heartbeat_at
+    assert audit_logs_for_action(db_session, "worker_heartbeat") == []
+
+
+def test_stale_reserved_job_below_max_attempts_resets_to_pending(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim before stale recovery")
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    job.reserved_at = stale_time
+    job.heartbeat_at = stale_time
+    db_session.commit()
+
+    recovered_jobs = QueueService().recover_stale_reserved_jobs(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    recovery_logs = audit_logs_for_action(db_session, "worker_recovery")
+    assert [recovered_job.id for recovered_job in recovered_jobs] == [job.id]
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.pending
+    assert persisted_job.worker_id is None
+    assert persisted_job.reserved_at is None
+    assert persisted_job.heartbeat_at is None
+    assert persisted_job.last_state_change_at is not None
+    assert persisted_job.recovery_metadata["previous_worker_id"] == "worker-1"
+    assert persisted_job.recovery_metadata["recovery_count"] == 1
+    assert len(recovery_logs) == 1
+    assert recovery_logs[0].details["new_state"] == "pending"
+
+
+def test_fresh_reserved_job_is_not_recovered(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "fresh claim")
+
+    recovered_jobs = QueueService().recover_stale_reserved_jobs(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert recovered_jobs == []
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.reserved
+    assert persisted_job.worker_id == "worker-1"
+    assert audit_logs_for_action(db_session, "worker_recovery") == []
+    assert audit_logs_for_action(db_session, "worker_timeout") == []
+
+
+def test_non_reserved_job_is_not_recovered(db_session):
+    job = create_comfy_job(db_session, QueueStatus.submitted)
+    job.worker_id = "worker-1"
+    job.reserved_at = datetime.now(UTC) - timedelta(hours=2)
+    job.heartbeat_at = datetime.now(UTC) - timedelta(hours=2)
+    db_session.commit()
+
+    recovered_jobs = QueueService().recover_stale_reserved_jobs(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert recovered_jobs == []
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.submitted
+    assert persisted_job.worker_id == "worker-1"
+
+
+def test_stale_reserved_job_at_max_attempts_becomes_timeout(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim before timeout")
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    job.reserved_at = stale_time
+    job.heartbeat_at = stale_time
+    job.attempt_count = 3
+    db_session.commit()
+
+    recovered_jobs = QueueService().recover_stale_reserved_jobs(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    timeout_logs = audit_logs_for_action(db_session, "worker_timeout")
+    assert [recovered_job.id for recovered_job in recovered_jobs] == [job.id]
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.timeout
+    assert persisted_job.worker_id is None
+    assert persisted_job.recovery_metadata["new_state"] == "timeout"
+    assert persisted_job.recovery_metadata["attempt_count"] == 3
+    assert len(timeout_logs) == 1
+    assert timeout_logs[0].details["new_state"] == "timeout"
+
+
+def test_recovery_metadata_count_increments(db_session):
+    job = create_comfy_job(db_session)
+    QueueService().reserve_job(db_session, job.id, "worker-1", "claim before stale recovery")
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    job.reserved_at = stale_time
+    job.heartbeat_at = stale_time
+    job.recovery_metadata = {"recovery_count": 2}
+    db_session.commit()
+
+    QueueService().recover_stale_reserved_jobs(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+        reason="test recovery metadata",
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert persisted_job is not None
+    assert persisted_job.recovery_metadata["recovery_count"] == 3
+    assert persisted_job.recovery_metadata["last_recovery_reason"] == "test recovery metadata"
 
 
 def test_ai_proposal_cannot_request_queue_mutation():

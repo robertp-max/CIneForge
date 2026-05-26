@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: Slice 1 complete; Slice 2 complete; Slice 3 complete; Slice 4 complete.
+Status: Slice 1 complete; Slice 2 complete; Slice 3 complete; worker skeleton complete; reserved-job heartbeat and timeout/recovery policy complete.
 
 ## Current State
 
@@ -181,7 +181,7 @@ Risk flags:
 
 Goal: define deterministic recovery for stale reserved/submitted/running jobs without duplicate generation.
 
-Status: Pending. The 2026-05-26 Slice 4 implementation request completed PostgreSQL lock-contention hardening and the safe worker skeleton below; timeout and recovery policy remains a future slice.
+Status: Reserved-job policy complete. The initial 2026-05-26 Slice 4 implementation request completed PostgreSQL lock-contention hardening and the safe worker skeleton below; a follow-up 2026-05-26 slice implemented reserved-job heartbeat updates, stale reserved-job retry recovery, and max-attempt timeout handling without ComfyUI submission. Submitted and running recovery policy remains future work.
 
 Implementation tasks:
 
@@ -200,16 +200,20 @@ Acceptance criteria:
 
 Required tests:
 
-- `test_reserved_job_timeout_marks_timeout`
-- `test_running_job_timeout_requires_conservative_recovery`
-- `test_recovery_writes_audit_log`
-- `test_recovery_is_idempotent`
-- `test_non_stale_job_not_recovered`
+- `test_heartbeat_succeeds_for_correct_worker_on_reserved_job`
+- `test_heartbeat_noops_for_wrong_worker`
+- `test_heartbeat_ignores_completed_failed_and_canceled_jobs`
+- `test_stale_reserved_job_below_max_attempts_resets_to_pending`
+- `test_fresh_reserved_job_is_not_recovered`
+- `test_non_reserved_job_is_not_recovered`
+- `test_stale_reserved_job_at_max_attempts_becomes_timeout`
+- `test_recovery_metadata_count_increments`
 
 Risk flags:
 
 - Recovery policy must avoid duplicate ComfyUI submissions.
 - Real runtime behavior may require adjusting thresholds after smoke tests.
+- Submitted and running job recovery still needs a conservative policy before prompt submission is enabled.
 
 ### Slice 5: Worker Boundary Skeleton
 

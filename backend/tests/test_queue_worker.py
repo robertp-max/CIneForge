@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -155,3 +156,77 @@ def test_worker_handler_failure_has_no_generation_side_effects(db_session):
     assert persisted_job.submitted_at is None
     assert persisted_job.websocket_events == []
     assert persisted_job.completed_at is None
+
+
+def test_worker_heartbeat_once_delegates_safely(db_session):
+    job = create_comfy_job(db_session)
+    worker = QueueWorker("worker-1")
+    worker.run_once(db_session)
+    db_session.expire_all()
+    claimed_job = db_session.get(ComfyJob, job.id)
+    assert claimed_job is not None
+    previous_heartbeat_at = claimed_job.heartbeat_at
+
+    heartbeat_result = worker.heartbeat_once(db_session, job.id)
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert heartbeat_result is True
+    assert persisted_job is not None
+    assert persisted_job.heartbeat_at != previous_heartbeat_at
+    assert persisted_job.prompt_id is None
+    assert persisted_job.submitted_at is None
+    assert persisted_job.websocket_events == []
+
+
+def test_worker_recover_stale_once_delegates_safely(db_session):
+    job = create_comfy_job(db_session)
+    worker = QueueWorker("worker-1")
+    worker.run_once(db_session)
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    job.reserved_at = stale_time
+    job.heartbeat_at = stale_time
+    db_session.commit()
+
+    recovered_job_ids = worker.recover_stale_once(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert recovered_job_ids == [job.id]
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.pending
+    assert persisted_job.worker_id is None
+    assert persisted_job.prompt_id is None
+    assert persisted_job.submitted_at is None
+    assert persisted_job.websocket_events == []
+
+
+def test_worker_recover_stale_once_is_bounded(db_session):
+    first_job = create_comfy_job(db_session)
+    second_job = create_comfy_job(db_session)
+    worker = QueueWorker("worker-1")
+    worker.run_batch(db_session, max_jobs=2)
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    for job in [first_job, second_job]:
+        persisted_job = db_session.get(ComfyJob, job.id)
+        assert persisted_job is not None
+        persisted_job.reserved_at = stale_time
+        persisted_job.heartbeat_at = stale_time
+    db_session.commit()
+
+    recovered_job_ids = worker.recover_stale_once(
+        db_session,
+        stale_before=datetime.now(UTC) - timedelta(hours=1),
+        max_attempts=3,
+        limit=1,
+    )
+
+    pending_count = len(db_session.scalars(select(ComfyJob).where(ComfyJob.status == QueueStatus.pending)).all())
+    reserved_count = len(db_session.scalars(select(ComfyJob).where(ComfyJob.status == QueueStatus.reserved)).all())
+    assert len(recovered_job_ids) == 1
+    assert pending_count == 1
+    assert reserved_count == 1

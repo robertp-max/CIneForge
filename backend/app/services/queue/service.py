@@ -13,6 +13,9 @@ class QueueJobNotFound(CineForgeError):
     pass
 
 
+DEFAULT_RECOVERY_LIMIT = 100
+
+
 class QueueService:
     def claim_next_pending_job(
         self,
@@ -69,6 +72,124 @@ class QueueService:
         db.commit()
         db.refresh(job)
         return job
+
+    def heartbeat_job(
+        self,
+        db: Session,
+        job_id: UUID,
+        worker_id: str,
+        reason: str = "worker heartbeat",
+    ) -> ComfyJob | None:
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
+
+        if job.status != QueueStatus.reserved or job.worker_id != worker_id:
+            db.commit()
+            return None
+
+        now = datetime.now(UTC)
+        previous_heartbeat_at = job.heartbeat_at
+        job.heartbeat_at = now
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=job.id,
+                action="worker_heartbeat",
+                details={
+                    "status": self._status_value(job.status),
+                    "reason": reason,
+                    "actor": "worker",
+                    "worker_id": worker_id,
+                    "previous_heartbeat_at": self._datetime_value(previous_heartbeat_at),
+                    "heartbeat_at": self._datetime_value(now),
+                },
+            )
+        )
+        db.commit()
+        db.refresh(job)
+        return job
+
+    def recover_stale_reserved_jobs(
+        self,
+        db: Session,
+        stale_before: datetime,
+        max_attempts: int,
+        limit: int = DEFAULT_RECOVERY_LIMIT,
+        reason: str = "stale reservation recovery",
+    ) -> list[ComfyJob]:
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        if limit < 1:
+            return []
+
+        candidates = list(
+            db.scalars(
+                select(ComfyJob)
+                .where(ComfyJob.status == QueueStatus.reserved)
+                .order_by(ComfyJob.id)
+                .limit(limit)
+            ).all()
+        )
+        recovered_jobs: list[ComfyJob] = []
+        now = datetime.now(UTC)
+        for job in candidates:
+            stale_at = job.heartbeat_at or job.reserved_at
+            if stale_at is not None and self._as_utc(stale_at) >= self._as_utc(stale_before):
+                continue
+
+            previous_worker_id = job.worker_id
+            previous_state = self._status_value(job.status)
+            attempt_count = job.attempt_count or 0
+            target_state = QueueStatus.pending if attempt_count < max_attempts else QueueStatus.timeout
+            action = "worker_recovery" if target_state == QueueStatus.pending else "worker_timeout"
+            result = transition(previous_state, target_state.value, reason)
+
+            metadata = dict(job.recovery_metadata or {})
+            recovery_count = int(metadata.get("recovery_count", 0)) + 1
+            metadata.update(
+                {
+                    "recovery_count": recovery_count,
+                    "last_recovery_reason": reason,
+                    "last_recovered_at": self._datetime_value(now),
+                    "previous_worker_id": previous_worker_id,
+                    "previous_state": result.previous.value,
+                    "new_state": result.current.value,
+                    "max_attempts": max_attempts,
+                    "attempt_count": attempt_count,
+                }
+            )
+
+            job.status = target_state
+            job.worker_id = None
+            job.reserved_at = None
+            job.heartbeat_at = None
+            job.last_state_change_at = now
+            job.recovery_metadata = metadata
+
+            db.add(
+                AuditLog(
+                    entity_type="comfy_job",
+                    entity_id=job.id,
+                    action=action,
+                    details={
+                        "previous_state": result.previous.value,
+                        "new_state": result.current.value,
+                        "reason": reason,
+                        "actor": "system",
+                        "previous_worker_id": previous_worker_id,
+                        "attempt_count": attempt_count,
+                        "max_attempts": max_attempts,
+                        "recovery_count": recovery_count,
+                    },
+                )
+            )
+            recovered_jobs.append(job)
+
+        db.commit()
+        for job in recovered_jobs:
+            db.refresh(job)
+        return recovered_jobs
 
     def transition_job(
         self,
@@ -142,3 +263,15 @@ class QueueService:
         if isinstance(status, JobState | QueueStatus):
             return status.value
         return str(status)
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @staticmethod
+    def _datetime_value(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return QueueService._as_utc(value).isoformat()

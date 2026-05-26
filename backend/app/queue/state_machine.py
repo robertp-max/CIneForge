@@ -42,7 +42,13 @@ FAILURE_STATES = {
 
 VALID_TRANSITIONS: dict[JobState, set[JobState]] = {
     JobState.pending: {JobState.reserved, JobState.canceled},
-    JobState.reserved: {JobState.validating, JobState.canceled, JobState.interrupted},
+    JobState.reserved: {
+        JobState.pending,
+        JobState.validating,
+        JobState.timeout,
+        JobState.canceled,
+        JobState.interrupted,
+    },
     JobState.validating: {JobState.submitted, JobState.validation_failed, JobState.canceled, JobState.interrupted},
     JobState.submitted: {JobState.running, JobState.comfy_rejected, JobState.timeout, JobState.interrupted},
     JobState.running: {
@@ -96,4 +102,3 @@ def transition(current: JobState | str, target: JobState | str, reason: str) -> 
             },
         },
     )
-
