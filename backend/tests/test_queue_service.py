@@ -144,6 +144,62 @@ def test_reserve_job_writes_worker_ownership_fields(db_session):
     assert persisted_job.recovery_metadata == {}
 
 
+def test_reserve_next_job_skips_non_pending_jobs(db_session):
+    create_comfy_job(db_session, QueueStatus.reserved)
+
+    claimed_job = QueueService().claim_next_pending_job(db_session, "worker-1")
+
+    assert claimed_job is None
+    assert audit_logs(db_session) == []
+
+
+def test_reserve_next_job_writes_worker_ownership(db_session):
+    job = create_comfy_job(db_session)
+
+    claimed_job = QueueService().claim_next_pending_job(db_session, "worker-1")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+
+    assert claimed_job is not None
+    assert claimed_job.id == job.id
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.reserved
+    assert persisted_job.worker_id == "worker-1"
+    assert persisted_job.reserved_at is not None
+    assert persisted_job.heartbeat_at is not None
+    assert persisted_job.attempt_count == 1
+    assert persisted_job.last_state_change_at is not None
+    assert persisted_job.recovery_metadata == {}
+
+
+def test_reserve_next_job_writes_audit_log(db_session):
+    job = create_comfy_job(db_session)
+
+    QueueService().claim_next_pending_job(db_session, "worker-1", "claim for validation")
+
+    logs = audit_logs(db_session)
+    assert len(logs) == 1
+    assert logs[0].entity_type == "comfy_job"
+    assert logs[0].entity_id == job.id
+    assert logs[0].action == "worker_claim"
+    assert logs[0].details == {
+        "previous_state": "pending",
+        "new_state": "reserved",
+        "reason": "claim for validation",
+        "actor": "system",
+        "worker_id": "worker-1",
+        "attempt_count": 1,
+    }
+
+
+def test_reserve_next_job_returns_none_when_no_pending_jobs(db_session):
+    claimed_job = QueueService().claim_next_pending_job(db_session, "worker-1")
+
+    assert claimed_job is None
+    assert audit_logs(db_session) == []
+
+
 def test_queue_audit_details_include_worker_metadata_when_present(db_session):
     job = create_comfy_job(db_session)
     QueueService().reserve_job(db_session, job.id, "worker-1", "claim for validation")

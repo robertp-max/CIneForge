@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import CineForgeError
@@ -13,6 +14,62 @@ class QueueJobNotFound(CineForgeError):
 
 
 class QueueService:
+    def claim_next_pending_job(
+        self,
+        db: Session,
+        worker_id: str,
+        reason: str = "worker claim",
+    ) -> ComfyJob | None:
+        claim_query = (
+            select(ComfyJob)
+            .where(ComfyJob.status == QueueStatus.pending)
+            .order_by(ComfyJob.id)
+            .limit(1)
+        )
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            claim_query = claim_query.with_for_update(skip_locked=True)
+
+        job = db.scalars(claim_query).first()
+        if job is None:
+            db.commit()
+            return None
+
+        now = datetime.now(UTC)
+        previous_state = self._status_value(job.status)
+        try:
+            result = transition(previous_state, JobState.reserved.value, reason)
+        except (InvalidTransition, ValueError):
+            db.rollback()
+            raise
+
+        job.status = QueueStatus(result.current.value)
+        job.worker_id = worker_id
+        job.reserved_at = now
+        job.heartbeat_at = now
+        job.attempt_count = (job.attempt_count or 0) + 1
+        job.last_state_change_at = now
+        job.recovery_metadata = job.recovery_metadata or {}
+
+        audit_details = {
+            "previous_state": result.previous.value,
+            "new_state": result.current.value,
+            "reason": reason,
+            "actor": "system",
+            "worker_id": worker_id,
+            "attempt_count": job.attempt_count,
+        }
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=job.id,
+                action="worker_claim",
+                details=audit_details,
+            )
+        )
+        db.commit()
+        db.refresh(job)
+        return job
+
     def transition_job(
         self,
         db: Session,

@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: Slice 1 complete; Slice 2 complete.
+Status: Slice 1 complete; Slice 2 complete; Slice 3 complete.
 
 ## Current State
 
@@ -145,6 +145,8 @@ Risk flags:
 ### Slice 3: PostgreSQL Atomic Reservation Service
 
 Goal: make job reservation atomic for competing workers.
+
+Status: Complete. PostgreSQL-gated schema and concurrent reservation tests passed on 2026-05-26.
 
 Implementation tasks:
 
