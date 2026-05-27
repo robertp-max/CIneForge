@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Campaign, type HealthResponse, type Job, type Project } from '../api/client'
+import { api, type Campaign, type HealthResponse, type Job, type Project, type RootStatus } from '../api/client'
 import { DebugPanel, EmptyState, ErrorNotice } from '../components/Cards'
 import { PageHeader, formatDate } from '../components/Page'
 import { StatusCard } from '../components/Cards'
@@ -29,6 +29,7 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
+  const [rootStatus, setRootStatus] = useState<RootStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,7 +40,8 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
       setLoading(true)
       setError(null)
       try {
-        const [backend, comfy, gpu, ffmpeg, projectList, campaignList, jobList] = await Promise.all([
+        const [root, backend, comfy, gpu, ffmpeg, projectList, campaignList, jobList] = await Promise.all([
+          api.rootStatus(),
           api.health(),
           api.comfyHealth(),
           api.gpuHealth(),
@@ -53,6 +55,7 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
           return
         }
 
+        setRootStatus(root)
         setHealth({ backend, comfy, gpu, ffmpeg })
         setProjects(projectList)
         setCampaigns(campaignList)
@@ -87,9 +90,9 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
       <section className="safety-banner">
         <div>
           <strong>Generation safety gate</strong>
-          <p>ComfyUI submission is intentionally disabled until Phase 2.</p>
+          <p>User-facing generation remains disabled. Public /prompt access is not available.</p>
         </div>
-        <span>Next: controlled ComfyUI submission path.</span>
+        <span>{rootStatus?.current_phase ?? 'Checking current phase...'}</span>
       </section>
 
       {error ? <ErrorNotice message={error} /> : null}
@@ -98,8 +101,8 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
         <StatusCard
           title="Backend"
           status={statusOf(health.backend)}
-          detail={loading ? 'Checking FastAPI...' : 'FastAPI health endpoint is connected.'}
-          meta="GET /health"
+          detail={loading ? 'Checking FastAPI...' : rootStatus?.message ?? 'FastAPI health endpoint is connected.'}
+          meta="GET / and GET /health"
         />
         <StatusCard
           title="PostgreSQL / Database"
@@ -128,7 +131,7 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
         <StatusCard
           title="Queue"
           status="degraded"
-          detail="Queue foundation exists; generation submission is not enabled."
+          detail="Controlled worker submission exists; public generation remains disabled."
           meta={`${jobs.length} visible jobs`}
         />
       </section>
@@ -177,10 +180,10 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
             <span>Phase 2</span>
           </div>
           <p>
-            Controlled ComfyUI submission path with explicit readiness checks, backend ownership, and no autonomous
-            production behavior.
+            Controlled ComfyUI submission now runs only through the worker/runtime service boundary after readiness
+            checks. Public UI generation, WebSockets, outputs, and autonomy remain disabled.
           </p>
-          <DebugPanel title="Health response snapshot" data={health} />
+          <DebugPanel title="Backend status snapshot" data={{ rootStatus, health }} />
         </article>
       </section>
     </div>

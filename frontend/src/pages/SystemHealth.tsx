@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { api, type HealthResponse } from '../api/client'
+import { api, type HealthResponse, type RootStatus } from '../api/client'
 import { DebugPanel, ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
 import { StatusCard } from '../components/Cards'
 
 type HealthState = {
+  root: RootStatus | null
   backend: HealthResponse | null
   comfy: HealthResponse | null
   gpu: HealthResponse | null
@@ -17,6 +18,7 @@ function statusOf(response: HealthResponse | null): string {
 
 export function SystemHealth() {
   const [health, setHealth] = useState<HealthState>({
+    root: null,
     backend: null,
     comfy: null,
     gpu: null,
@@ -32,14 +34,15 @@ export function SystemHealth() {
       setLoading(true)
       setError(null)
       try {
-        const [backend, comfy, gpu, ffmpeg] = await Promise.all([
+        const [root, backend, comfy, gpu, ffmpeg] = await Promise.all([
+          api.rootStatus(),
           api.health(),
           api.comfyHealth(),
           api.gpuHealth(),
           api.ffmpegHealth(),
         ])
         if (!cancelled) {
-          setHealth({ backend, comfy, gpu, ffmpeg })
+          setHealth({ root, backend, comfy, gpu, ffmpeg })
         }
       } catch (err) {
         if (!cancelled) {
@@ -69,6 +72,12 @@ export function SystemHealth() {
       {error ? <ErrorNotice message={error} /> : null}
 
       <section className="grid four">
+        <StatusCard
+          title="Root Status"
+          status={health.root?.status ?? 'unavailable'}
+          detail={health.root?.message ?? 'Backend root status endpoint.'}
+          meta="GET /"
+        />
         <StatusCard
           title="Backend"
           status={statusOf(health.backend)}

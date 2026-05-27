@@ -44,7 +44,7 @@ export function Queue() {
       <PageHeader
         eyebrow="Queue"
         title="Queue foundation"
-        description="A real read-only queue surface for the current backend foundation. Mutation and generation submission are intentionally unavailable."
+        description="A real read-only queue surface for the current backend foundation. Controlled worker submission exists, but public queue mutation and user-facing generation remain unavailable."
       />
 
       {error ? <ErrorNotice message={error} /> : null}
@@ -59,17 +59,17 @@ export function Queue() {
         </article>
         <article className="card">
           <div className="card-heading">
-            <span>Generation Submission</span>
-            <StatusBadge status="disabled" />
+            <span>Controlled Submission</span>
+            <StatusBadge status={runtime?.queue.controlled_submission_enabled ? 'ok' : 'disabled'} />
           </div>
-          <p>No prompt submission endpoint is exposed by this UI or backend slice.</p>
+          <p>Worker/runtime context can submit only after readiness passes. No public Generate control is exposed.</p>
         </article>
         <article className="card">
           <div className="card-heading">
             <span>Queue API</span>
             <StatusBadge status="degraded" label="read-only" />
           </div>
-          <p>Backend queue UI placeholder awaiting Phase 2/3 list and worker telemetry endpoints.</p>
+          <p>Backend queue UI remains read-only while worker telemetry and public controls stay gated.</p>
         </article>
       </section>
 

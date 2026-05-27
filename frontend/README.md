@@ -23,4 +23,4 @@ npm run build
 
 ## Scope
 
-This UI shows live backend health, DB-backed project and campaign creation, read-only job status, queue/runtime readiness, and explicit disabled-state messaging for generation. It does not submit prompts, open WebSockets, collect outputs, run FFmpeg, download models, or execute autonomous production behavior.
+This UI shows live backend health, backend root status, DB-backed project and campaign creation, read-only job status, queue/runtime readiness, and explicit disabled-state messaging for generation. Controlled prompt submission is backend worker/runtime-only; the UI does not expose public generation, open WebSockets, collect outputs, run FFmpeg, download models, or execute autonomous production behavior.

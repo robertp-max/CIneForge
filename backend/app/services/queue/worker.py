@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.base import ComfyJob
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
+from backend.app.services.comfy.submission import (
+    ControlledComfySubmissionService,
+    ControlledSubmissionResult,
+    WorkerSubmissionContext,
+)
 from backend.app.services.queue.service import QueueService, SubmissionReadinessResult
 
 
@@ -105,6 +110,22 @@ class QueueWorker:
             self.worker_id,
             object_info_cache,
         )
+
+    async def controlled_submission_once(
+        self,
+        db: Session,
+        job_id: UUID,
+        client_id: str,
+        object_info_cache: ObjectInfoCacheService,
+        submission_service: ControlledComfySubmissionService,
+    ) -> ControlledSubmissionResult:
+        context = WorkerSubmissionContext(
+            job_id=job_id,
+            worker_id=self.worker_id,
+            client_id=client_id,
+            object_info_cache=object_info_cache,
+        )
+        return await submission_service.submit_reserved_job(db, context)
 
     def recover_stale_once(
         self,

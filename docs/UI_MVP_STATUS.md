@@ -27,7 +27,7 @@ $env:VITE_CINEFORGE_API_BASE_URL="http://127.0.0.1:8000"
 
 ## UI Pages
 
-- Dashboard: system cards, recent backend-backed activity, Phase 2 safety milestone.
+- Dashboard: system cards, backend root status, recent backend-backed activity, Phase 2 safety milestone.
 - Projects: create projects, list projects, read project by ID.
 - Campaigns: create campaigns for existing projects, list campaigns, read campaign by ID.
 - Jobs: list persisted jobs and read job status by ID without creating jobs.
@@ -39,6 +39,8 @@ $env:VITE_CINEFORGE_API_BASE_URL="http://127.0.0.1:8000"
 ## Integrated Backend Endpoints
 
 - `GET /health`
+- `GET /`
+- `GET /favicon.ico`
 - `GET /health/comfy`
 - `GET /health/gpu`
 - `GET /health/ffmpeg`
@@ -54,7 +56,8 @@ $env:VITE_CINEFORGE_API_BASE_URL="http://127.0.0.1:8000"
 
 ## Intentionally Disabled
 
-- Real ComfyUI `/prompt` submission.
+- Public/user-facing ComfyUI `/prompt` submission.
+- Public Generate button.
 - WebSocket progress monitoring.
 - Prompt history and output collection.
 - FFmpeg assembly execution.
@@ -66,4 +69,4 @@ These are intentionally gated, not missing because the UI is broken. The visible
 
 ## Next Recommended Step
 
-Implement the Phase 2 controlled ComfyUI submission path behind backend-owned readiness checks, then extend the UI with a disabled-by-default submission form that only enables when the new gate reports ready.
+Phase 2 backend capability is now present as a worker/runtime-only controlled submission service behind readiness checks. The next recommended step is to add worker telemetry and operator-facing readiness visibility without exposing a public Generate button.

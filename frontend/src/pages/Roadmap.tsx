@@ -10,11 +10,11 @@ const roadmap = [
     status: 'ok',
   },
   {
-    phase: 'Phase 2 next',
+    phase: 'Phase 2 backend capability',
     title: 'Controlled /prompt submission',
     detail:
-      'Add a backend-owned submission path with strict readiness checks before any ComfyUI prompt mutation is allowed.',
-    status: 'degraded',
+      'Backend-owned worker/runtime submission is implemented behind readiness checks. It is not exposed as a public API or UI Generate button.',
+    status: 'ok',
   },
   {
     phase: 'Later',
@@ -53,7 +53,8 @@ export function Roadmap() {
           <span>Runtime safety</span>
         </div>
         <ul className="feature-list">
-          <li>Real ComfyUI /prompt submission</li>
+          <li>Public real ComfyUI /prompt submission</li>
+          <li>Public Generate button</li>
           <li>WebSocket progress monitoring</li>
           <li>History and output collection</li>
           <li>FFmpeg video assembly</li>

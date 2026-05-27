@@ -33,9 +33,21 @@ export type HealthResponse = Record<string, unknown> & {
   status?: string
 }
 
+export type RootStatus = {
+  app: string
+  status: string
+  message: string
+  docs_url: string
+  frontend_dev_url: string
+  generation_enabled: boolean
+  prompt_submission_publicly_accessible: boolean
+  current_phase: string
+}
+
 export type RuntimeStatus = {
   status: string
   environment: string
+  current_phase: string
   comfyui: HealthResponse
   object_info: {
     status: string
@@ -48,6 +60,8 @@ export type RuntimeStatus = {
   queue: {
     worker_enabled: boolean
     submission_enabled: boolean
+    controlled_submission_enabled: boolean
+    public_submission_enabled: boolean
     supported_states: string[]
   }
   disabled_actions: Record<string, string>
@@ -116,6 +130,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  rootStatus: () => request<RootStatus>('/'),
   health: () => request<HealthResponse>('/health'),
   comfyHealth: () => request<HealthResponse>('/health/comfy'),
   gpuHealth: () => request<HealthResponse>('/health/gpu'),

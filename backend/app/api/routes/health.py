@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 
 from backend.app.core.config import get_settings
 from backend.app.services.comfy.client import ComfyUIClient
@@ -7,6 +7,26 @@ from backend.app.services.telemetry.gpu import GPUTelemetryService
 
 
 router = APIRouter(tags=["health"])
+CURRENT_PHASE = "Phase 2 controlled ComfyUI submission backend capability"
+
+
+@router.get("/")
+def root_status() -> dict:
+    return {
+        "app": "CineForge",
+        "status": "ok",
+        "message": "CineForge backend is running.",
+        "docs_url": "/docs",
+        "frontend_dev_url": "http://localhost:5173",
+        "generation_enabled": False,
+        "prompt_submission_publicly_accessible": False,
+        "current_phase": CURRENT_PHASE,
+    }
+
+
+@router.get("/favicon.ico", status_code=status.HTTP_204_NO_CONTENT)
+def favicon() -> Response:
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/health")
@@ -68,6 +88,7 @@ async def runtime_status() -> dict:
     return {
         "status": "ok" if comfy_status.get("status") == "ok" else "degraded",
         "environment": settings.env,
+        "current_phase": CURRENT_PHASE,
         "comfyui": comfy_status,
         "object_info": object_info,
         "gpu": health_gpu(),
@@ -75,6 +96,8 @@ async def runtime_status() -> dict:
         "queue": {
             "worker_enabled": settings.queue_worker_enabled,
             "submission_enabled": False,
+            "controlled_submission_enabled": True,
+            "public_submission_enabled": False,
             "supported_states": [
                 "pending",
                 "reserved",
@@ -94,7 +117,7 @@ async def runtime_status() -> dict:
             ],
         },
         "disabled_actions": {
-            "submit_prompt": "disabled_until_phase_2",
+            "public_submit_prompt": "disabled",
             "websocket_monitor": "disabled_until_future_phase",
             "output_collection": "disabled_until_future_phase",
             "ffmpeg_assembly": "disabled_until_future_phase",

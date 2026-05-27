@@ -6,7 +6,7 @@ import { StatusCard } from '../components/Cards'
 import { StatusBadge } from '../components/StatusBadge'
 
 const disabledActions = [
-  ['Submit prompt', 'Controlled /prompt submission begins in Phase 2.'],
+  ['Public submit prompt', 'User-facing /prompt submission is not exposed by the API or UI.'],
   ['WebSocket monitor', 'Progress streams open after prompt submission is controlled.'],
   ['Output collection', 'History and output reads remain blocked in this slice.'],
   ['FFmpeg assembly', 'Assembly is planned after output collection and validation exist.'],
@@ -50,7 +50,7 @@ export function Runtime() {
       <PageHeader
         eyebrow="Runtime"
         title="ComfyUI readiness boundary"
-        description="Runtime status is read-only. The UI shows availability without opening prompt, WebSocket, history, output, or FFmpeg execution paths."
+        description="Runtime status shows the current backend capability while keeping public prompt, WebSocket, history, output, and FFmpeg execution paths unavailable."
       />
 
       {error ? <ErrorNotice message={error} /> : null}
@@ -74,10 +74,22 @@ export function Runtime() {
         />
         <StatusCard
           title="Runtime Boundary"
-          status="disabled"
-          detail="Mutation routes remain blocked until the controlled submission phase."
-          meta="No /prompt calls"
+          status={runtime?.queue.controlled_submission_enabled ? 'ok' : 'disabled'}
+          detail="Controlled /prompt submission is available only through the worker/runtime service after readiness checks."
+          meta="Public /prompt remains unavailable"
         />
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Current Phase</h2>
+          <span>{runtime?.current_phase ?? 'Loading...'}</span>
+        </div>
+        <p>
+          Backend capability: controlled worker submission{' '}
+          {runtime?.queue.controlled_submission_enabled ? 'enabled' : 'disabled'}. User-facing generation{' '}
+          {runtime?.queue.public_submission_enabled ? 'enabled' : 'disabled'}.
+        </p>
       </section>
 
       <section className="panel">
