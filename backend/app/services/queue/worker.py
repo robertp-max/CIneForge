@@ -6,7 +6,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.db.base import ComfyJob
-from backend.app.services.queue.service import QueueService
+from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
+from backend.app.services.queue.service import QueueService, SubmissionReadinessResult
 
 
 QueueJobHandler = Callable[[ComfyJob], None]
@@ -91,6 +92,19 @@ class QueueWorker:
 
     def heartbeat_once(self, db: Session, job_id: UUID) -> bool:
         return self.queue_service.heartbeat_job(db, job_id, self.worker_id) is not None
+
+    def preflight_submission_once(
+        self,
+        db: Session,
+        job_id: UUID,
+        object_info_cache: ObjectInfoCacheService,
+    ) -> SubmissionReadinessResult:
+        return self.queue_service.evaluate_submission_readiness(
+            db,
+            job_id,
+            self.worker_id,
+            object_info_cache,
+        )
 
     def recover_stale_once(
         self,

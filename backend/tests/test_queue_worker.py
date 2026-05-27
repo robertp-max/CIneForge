@@ -7,6 +7,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.db.base import AuditLog, Base, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
+from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
+from backend.app.services.queue.service import SubmissionReadinessResult
 from backend.app.services.queue.worker import QueueWorker
 
 
@@ -177,6 +179,34 @@ def test_worker_heartbeat_once_delegates_safely(db_session):
     assert persisted_job.prompt_id is None
     assert persisted_job.submitted_at is None
     assert persisted_job.websocket_events == []
+
+
+def test_worker_preflight_submission_once_delegates_only(db_session):
+    job_id = uuid4()
+    calls = []
+
+    class FakeQueueService:
+        def evaluate_submission_readiness(self, db, queued_job_id, worker_id, object_info_cache):
+            calls.append((db, queued_job_id, worker_id, object_info_cache))
+            return SubmissionReadinessResult(
+                ready=True,
+                job_id=queued_job_id,
+                worker_id=worker_id,
+                code="ready",
+                errors=[],
+                checked_at=datetime.now(UTC),
+            )
+
+    object_info_cache = ObjectInfoCacheService({})
+    worker = QueueWorker("worker-1", queue_service=FakeQueueService())
+
+    result = worker.preflight_submission_once(db_session, job_id, object_info_cache)
+
+    assert result.ready
+    assert result.job_id == job_id
+    assert result.worker_id == "worker-1"
+    assert calls == [(db_session, job_id, "worker-1", object_info_cache)]
+    assert audit_logs(db_session) == []
 
 
 def test_worker_recover_stale_once_delegates_safely(db_session):

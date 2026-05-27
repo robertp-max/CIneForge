@@ -7,11 +7,22 @@ class ComfyMutationBlocked(RuntimeError):
     pass
 
 
+class ComfyRuntimeRouteBlocked(RuntimeError):
+    pass
+
+
 class ComfyUIClient:
-    def __init__(self, base_url: str, *, timeout: float = 2.0, allow_mutation: bool = False) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 2.0,
+        allow_mutation: bool = False,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.allow_mutation = allow_mutation
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, transport=transport)
 
     async def __aenter__(self) -> "ComfyUIClient":
         return self
@@ -34,15 +45,16 @@ class ComfyUIClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_object_info_class(self, class_type: str) -> dict[str, Any] | None:
+        object_info = await self.get_object_info()
+        class_info = object_info.get(class_type)
+        return class_info if isinstance(class_info, dict) else None
+
     async def get_history(self, prompt_id: str) -> dict[str, Any]:
-        response = await self._client.get(f"/history/{prompt_id}")
-        response.raise_for_status()
-        return response.json()
+        raise ComfyRuntimeRouteBlocked(f"History collection for prompt {prompt_id} is not enabled in this slice")
 
     async def get_prompt_history(self) -> dict[str, Any]:
-        response = await self._client.get("/history")
-        response.raise_for_status()
-        return response.json()
+        raise ComfyRuntimeRouteBlocked("Prompt history collection is not enabled in this slice")
 
     async def get_queue(self) -> dict[str, Any]:
         response = await self._client.get("/queue")
@@ -50,18 +62,13 @@ class ComfyUIClient:
         return response.json()
 
     async def connect_progress_websocket(self, client_id: str) -> None:
-        raise NotImplementedError(
-            f"WebSocket progress for client {client_id} is a Sprint 1B queue-worker boundary"
-        )
+        raise ComfyRuntimeRouteBlocked(f"WebSocket progress for client {client_id} is not enabled in this slice")
 
     async def view_output(self, filename: str, subfolder: str = "", output_type: str = "output") -> bytes:
-        response = await self._client.get("/view", params={"filename": filename, "subfolder": subfolder, "type": output_type})
-        response.raise_for_status()
-        return response.content
+        raise ComfyRuntimeRouteBlocked(f"Output collection for {filename} is not enabled in this slice")
 
     def _require_mutation_context(self) -> None:
-        if not self.allow_mutation:
-            raise ComfyMutationBlocked("ComfyUI mutation is disabled outside the future backend queue worker context")
+        raise ComfyMutationBlocked("ComfyUI mutation routes are disabled in the Phase 1 preflight boundary")
 
     async def submit_prompt(self, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
         self._require_mutation_context()

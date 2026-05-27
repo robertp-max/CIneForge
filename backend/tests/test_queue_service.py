@@ -10,7 +10,9 @@ from backend.app.db.base import AuditLog, Base, ComfyJob, QueueStatus, WorkflowR
 from backend.app.queue.state_machine import InvalidTransition, JobState
 from backend.app.services.ai_orchestration.schemas import AIProposal
 from backend.app.services.ai_orchestration.validator import ProposalValidator
+from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
 from backend.app.services.queue.service import QueueJobNotFound, QueueService
+from backend.app.services.workflows.template_service import sha256_json
 
 
 @pytest.fixture
@@ -55,6 +57,88 @@ def create_comfy_job(db: Session, status: QueueStatus = QueueStatus.pending) -> 
     db.flush()
 
     job = ComfyJob(workflow_run_id=workflow_run.id, status=status)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _ready_workflow() -> dict:
+    return {
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "prompt"}},
+        "3": {"class_type": "KSampler", "inputs": {"seed": 1}},
+    }
+
+
+def _ready_manifest_json(workflow: dict) -> dict:
+    return {
+        "template_id": "submission-readiness-template",
+        "version": "1",
+        "original_workflow_sha256": sha256_json(workflow),
+        "comfyui_snapshot_ref": "test-object-info",
+        "nodes": {
+            "positive_prompt": {
+                "node_id": "6",
+                "class_type": "CLIPTextEncode",
+                "input": "text",
+                "runtime_parameter": "positive_prompt",
+                "value_schema": {"type": "string"},
+                "required": True,
+            },
+            "seed": {
+                "node_id": "3",
+                "class_type": "KSampler",
+                "input": "seed",
+                "runtime_parameter": "seed",
+                "value_schema": {"type": "integer"},
+                "required": True,
+            },
+        },
+    }
+
+
+def _ready_object_info() -> dict:
+    return {
+        "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {}]}}},
+        "KSampler": {"input": {"required": {"seed": ["INT", {}]}}},
+    }
+
+
+def create_ready_comfy_job(
+    db: Session,
+    *,
+    status: QueueStatus = QueueStatus.reserved,
+    worker_id: str = "worker-1",
+    prompt_id: str | None = None,
+    workflow: dict | None = None,
+    manifest_json: dict | None = None,
+) -> ComfyJob:
+    workflow = workflow or _ready_workflow()
+    template = WorkflowTemplate(
+        name=f"readiness-test-template-{uuid4()}",
+        version="1",
+        workflow_api_json=workflow,
+        manifest_json=manifest_json if manifest_json is not None else _ready_manifest_json(workflow),
+        sha256=sha256_json(workflow),
+    )
+    db.add(template)
+    db.flush()
+
+    workflow_run = WorkflowRun(
+        workflow_template_id=template.id,
+        patched_workflow_json=workflow,
+        patch_payload_json={"inputs": {}},
+        status="queued",
+    )
+    db.add(workflow_run)
+    db.flush()
+
+    job = ComfyJob(
+        workflow_run_id=workflow_run.id,
+        status=status,
+        worker_id=worker_id,
+        prompt_id=prompt_id,
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -455,6 +539,167 @@ def test_recovery_metadata_count_increments(db_session):
     assert persisted_job is not None
     assert persisted_job.recovery_metadata["recovery_count"] == 3
     assert persisted_job.recovery_metadata["last_recovery_reason"] == "test recovery metadata"
+
+
+def test_submission_readiness_rejects_missing_job(db_session):
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        uuid4(),
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert result.code == "job_not_found"
+    assert result.worker_id == "worker-1"
+    assert result.checked_at is not None
+
+
+def test_submission_readiness_rejects_non_reserved_job(db_session):
+    job = create_ready_comfy_job(db_session, status=QueueStatus.pending, worker_id=None)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert result.code == "preflight_failed"
+    assert any("status must be reserved" in error for error in result.errors)
+
+
+def test_submission_readiness_rejects_wrong_worker(db_session):
+    job = create_ready_comfy_job(db_session, worker_id="worker-1")
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-2",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("requesting worker" in error for error in result.errors)
+
+
+def test_submission_readiness_rejects_already_submitted_prompt_id(db_session):
+    job = create_ready_comfy_job(db_session, prompt_id="prompt-123")
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("prompt_id" in error for error in result.errors)
+
+
+def test_submission_readiness_rejects_missing_workflow_run(db_session):
+    job = ComfyJob(
+        workflow_run_id=uuid4(),
+        status=QueueStatus.reserved,
+        worker_id="worker-1",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("WorkflowRun not found" in error for error in result.errors)
+
+
+def test_submission_readiness_rejects_missing_workflow_snapshot(db_session):
+    job = create_ready_comfy_job(db_session)
+    workflow_run = db_session.get(WorkflowRun, job.workflow_run_id)
+    assert workflow_run is not None
+    workflow_run.patched_workflow_json = {}
+    db_session.commit()
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("patched_workflow_json" in error for error in result.errors)
+
+
+def test_submission_readiness_rejects_missing_object_info(db_session):
+    job = create_ready_comfy_job(db_session)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(),
+    )
+
+    assert not result.ready
+    assert any("Object info compatibility check failed" in error for error in result.errors)
+
+
+def test_submission_readiness_rejects_incompatible_object_info(db_session):
+    job = create_ready_comfy_job(db_session)
+    object_info = _ready_object_info()
+    object_info.pop("KSampler")
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(object_info),
+    )
+
+    assert not result.ready
+    assert any("missing class KSampler" in error for error in result.errors)
+
+
+def test_submission_readiness_accepts_reserved_worker_owned_job(db_session):
+    job = create_ready_comfy_job(db_session)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert result.ready
+    assert result.job_id == job.id
+    assert result.worker_id == "worker-1"
+    assert result.code == "ready"
+    assert result.errors == []
+
+
+def test_submission_readiness_fails_closed_on_object_info_failure(db_session):
+    class FailingObjectInfoCache(ObjectInfoCacheService):
+        def validate_workflow_manifest(self, workflow: dict, manifest) -> None:
+            raise RuntimeError("object_info unavailable")
+
+    job = create_ready_comfy_job(db_session)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        FailingObjectInfoCache(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("object_info unavailable" in error for error in result.errors)
 
 
 def test_ai_proposal_cannot_request_queue_mutation():

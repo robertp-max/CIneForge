@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -5,8 +6,10 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import CineForgeError
-from backend.app.db.base import AuditLog, ComfyJob, QueueStatus
+from backend.app.db.base import AuditLog, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
 from backend.app.queue.state_machine import InvalidTransition, JobState, transition
+from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
+from backend.app.services.workflows.template_service import WorkflowManifest
 
 
 class QueueJobNotFound(CineForgeError):
@@ -16,7 +19,67 @@ class QueueJobNotFound(CineForgeError):
 DEFAULT_RECOVERY_LIMIT = 100
 
 
+@dataclass(frozen=True)
+class SubmissionReadinessResult:
+    ready: bool
+    job_id: UUID
+    worker_id: str
+    code: str
+    errors: list[str]
+    checked_at: datetime
+
+
 class QueueService:
+    def evaluate_submission_readiness(
+        self,
+        db: Session,
+        job_id: UUID,
+        worker_id: str,
+        object_info_cache: ObjectInfoCacheService,
+    ) -> SubmissionReadinessResult:
+        checked_at = datetime.now(UTC)
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            return SubmissionReadinessResult(
+                ready=False,
+                job_id=job_id,
+                worker_id=worker_id,
+                code="job_not_found",
+                errors=[f"ComfyJob not found: {job_id}"],
+                checked_at=checked_at,
+            )
+
+        errors: list[str] = []
+        if job.status != QueueStatus.reserved:
+            errors.append(f"Job status must be reserved, got {self._status_value(job.status)}")
+        if job.worker_id != worker_id:
+            errors.append("Job is not reserved by the requesting worker")
+        if job.prompt_id:
+            errors.append("Job already has a ComfyUI prompt_id")
+
+        workflow_run = db.get(WorkflowRun, job.workflow_run_id)
+        if workflow_run is None:
+            errors.append(f"WorkflowRun not found: {job.workflow_run_id}")
+            return self._submission_readiness_result(job_id, worker_id, checked_at, errors)
+        if not workflow_run.patched_workflow_json:
+            errors.append("WorkflowRun is missing patched_workflow_json")
+
+        workflow_template = db.get(WorkflowTemplate, workflow_run.workflow_template_id)
+        if workflow_template is None:
+            errors.append(f"WorkflowTemplate not found: {workflow_run.workflow_template_id}")
+            return self._submission_readiness_result(job_id, worker_id, checked_at, errors)
+        if not workflow_template.manifest_json:
+            errors.append("WorkflowTemplate is missing manifest_json")
+
+        if workflow_run.patched_workflow_json and workflow_template.manifest_json:
+            try:
+                manifest = WorkflowManifest.model_validate(workflow_template.manifest_json)
+                object_info_cache.validate_workflow_manifest(workflow_run.patched_workflow_json, manifest)
+            except Exception as exc:
+                errors.append(f"Object info compatibility check failed: {exc}")
+
+        return self._submission_readiness_result(job_id, worker_id, checked_at, errors)
+
     def claim_next_pending_job(
         self,
         db: Session,
@@ -260,6 +323,31 @@ class QueueService:
             reason,
             actor="system",
             worker_id=worker_id,
+        )
+
+    @staticmethod
+    def _submission_readiness_result(
+        job_id: UUID,
+        worker_id: str,
+        checked_at: datetime,
+        errors: list[str],
+    ) -> SubmissionReadinessResult:
+        if errors:
+            return SubmissionReadinessResult(
+                ready=False,
+                job_id=job_id,
+                worker_id=worker_id,
+                code="preflight_failed",
+                errors=errors,
+                checked_at=checked_at,
+            )
+        return SubmissionReadinessResult(
+            ready=True,
+            job_id=job_id,
+            worker_id=worker_id,
+            code="ready",
+            errors=[],
+            checked_at=checked_at,
         )
 
     @staticmethod

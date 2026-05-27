@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: Slice 1 complete; Slice 2 complete; Slice 3 complete; worker skeleton complete; reserved-job heartbeat and timeout/recovery policy complete.
+Status: Slice 1 complete; Slice 2 complete; Slice 3 complete; worker skeleton complete; reserved-job heartbeat and timeout/recovery policy complete; Phase 1 runtime preflight/readiness boundary complete.
 
 ## Current State
 
@@ -26,6 +26,7 @@ Known Sprint 1B limitations that Sprint 1C should address before real generation
 - No code submits prompts to ComfyUI.
 - No progress events are persisted to the database.
 - Benchmark services do not run real benchmarks.
+- Phase 1 runtime preflight can check reserved-job submission readiness and object_info compatibility, but still does not submit prompts, open WebSockets, or collect outputs.
 
 ## Sprint 1C Goals
 
@@ -250,6 +251,8 @@ Risk flags:
 ### Slice 6: Submission Readiness Gate
 
 Goal: create a checklist and pure gate evaluator that must pass before future prompt submission.
+
+Status: Phase 1 MVP complete for runtime preflight/readiness only. The backend can evaluate whether a worker-owned reserved job has the required workflow snapshot, template manifest, empty prompt ID, and object_info compatibility. ComfyUI `/prompt` submission remains blocked.
 
 Implementation tasks:
 
