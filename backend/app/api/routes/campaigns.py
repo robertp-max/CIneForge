@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import not_found
@@ -41,6 +41,18 @@ def create_campaign(payload: CampaignCreate, db: Session = Depends(get_db)) -> C
     db.commit()
     db.refresh(campaign)
     return campaign_to_response(campaign)
+
+
+@router.get("", response_model=list[CampaignRead])
+def list_campaigns(
+    project_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[CampaignRead]:
+    query = db.query(Campaign)
+    if project_id is not None:
+        query = query.filter(Campaign.project_id == project_id)
+    campaigns = query.order_by(Campaign.created_at.desc()).all()
+    return [campaign_to_response(campaign) for campaign in campaigns]
 
 
 @router.get("/{campaign_id}", response_model=CampaignRead)

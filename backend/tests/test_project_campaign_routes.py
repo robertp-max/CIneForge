@@ -60,6 +60,17 @@ def test_create_and_get_project_db_backed(client):
     assert get_response.json() == created
 
 
+def test_list_projects_returns_created_projects(client):
+    first_response = client.post("/projects", json={"name": "First Project"})
+    second_response = client.post("/projects", json={"name": "Second Project"})
+
+    response = client.get("/projects")
+
+    assert response.status_code == 200
+    project_ids = {project["id"] for project in response.json()}
+    assert project_ids == {first_response.json()["id"], second_response.json()["id"]}
+
+
 def test_get_missing_project_returns_404(client):
     response = client.get(f"/projects/{uuid4()}")
 
@@ -100,6 +111,24 @@ def test_create_and_get_campaign_db_backed(client):
     get_response = client.get(f"/campaigns/{created['id']}")
     assert get_response.status_code == 200
     assert get_response.json() == created
+
+
+def test_list_campaigns_can_filter_by_project(client):
+    first_project = client.post("/projects", json={"name": "Project One"}).json()
+    second_project = client.post("/projects", json={"name": "Project Two"}).json()
+    first_campaign = client.post(
+        "/campaigns",
+        json={"project_id": first_project["id"], "name": "Project One Campaign"},
+    ).json()
+    client.post(
+        "/campaigns",
+        json={"project_id": second_project["id"], "name": "Project Two Campaign"},
+    )
+
+    response = client.get(f"/campaigns?project_id={first_project['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == [first_campaign]
 
 
 def test_get_missing_campaign_returns_404(client):

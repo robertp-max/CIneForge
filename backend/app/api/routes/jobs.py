@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import not_found
@@ -30,3 +30,12 @@ def get_job(job_id: UUID, db: Session = Depends(get_db)) -> JobRead:
     if job is None:
         raise not_found("Job not found.")
     return job_to_response(job)
+
+
+@router.get("", response_model=list[JobRead])
+def list_jobs(
+    limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> list[JobRead]:
+    jobs = db.query(ComfyJob).order_by(ComfyJob.last_state_change_at.desc()).limit(limit).all()
+    return [job_to_response(job) for job in jobs]

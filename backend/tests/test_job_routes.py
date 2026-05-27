@@ -102,6 +102,19 @@ def test_get_job_reads_comfy_job(db_client):
     }
 
 
+def test_list_jobs_reads_comfy_jobs(db_client):
+    client, SessionLocal = db_client
+    with SessionLocal() as db:
+        job = create_comfy_job(db)
+        job_id = str(job.id)
+
+    response = client.get("/jobs")
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == job_id
+    assert response.json()[0]["status"] == "running"
+
+
 def test_get_missing_job_returns_404(db_client):
     client, _SessionLocal = db_client
 
