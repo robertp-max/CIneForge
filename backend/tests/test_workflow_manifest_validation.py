@@ -84,6 +84,16 @@ def test_manifest_missing_input_fails():
         WorkflowTemplateService().validate_manifest(workflow, manifest)
 
 
+def test_template_integrity_validation_still_rejects_original_sha_mismatch():
+    workflow = _workflow()
+    manifest_data = _manifest(workflow)
+    manifest_data["original_workflow_sha256"] = "not-the-workflow-sha"
+    manifest = WorkflowManifest.model_validate(manifest_data)
+
+    with pytest.raises(ValidationError, match="Workflow SHA256 does not match manifest"):
+        WorkflowTemplateService().validate_manifest(workflow, manifest)
+
+
 def test_example_template_loads():
     template_dir = Path("storage/workflow_templates/example_smoke")
     workflow = json.loads((template_dir / "workflow_api.json").read_text())

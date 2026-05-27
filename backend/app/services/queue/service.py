@@ -74,7 +74,7 @@ class QueueService:
         if workflow_run.patched_workflow_json and workflow_template.manifest_json:
             try:
                 manifest = WorkflowManifest.model_validate(workflow_template.manifest_json)
-                object_info_cache.validate_workflow_manifest(workflow_run.patched_workflow_json, manifest)
+                object_info_cache.validate_patched_workflow_manifest(workflow_run.patched_workflow_json, manifest)
             except Exception as exc:
                 errors.append(f"Object info compatibility check failed: {exc}")
 

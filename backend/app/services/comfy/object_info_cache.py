@@ -51,6 +51,9 @@ class ObjectInfoCacheService:
     def validate_workflow_manifest(self, workflow: dict[str, Any], manifest: WorkflowManifest) -> None:
         WorkflowTemplateService().validate_manifest(workflow, manifest, self._require_object_info())
 
+    def validate_patched_workflow_manifest(self, workflow: dict[str, Any], manifest: WorkflowManifest) -> None:
+        WorkflowTemplateService().validate_runtime_workflow(workflow, manifest, self._require_object_info())
+
     def validate_class(self, class_type: str, *, semantic_key: str | None = None) -> None:
         object_info = self._require_object_info()
         if class_type not in object_info:

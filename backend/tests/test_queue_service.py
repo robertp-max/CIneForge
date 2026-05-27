@@ -1,3 +1,4 @@
+import copy
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -111,9 +112,11 @@ def create_ready_comfy_job(
     worker_id: str = "worker-1",
     prompt_id: str | None = None,
     workflow: dict | None = None,
+    patched_workflow: dict | None = None,
     manifest_json: dict | None = None,
 ) -> ComfyJob:
     workflow = workflow or _ready_workflow()
+    patched_workflow = patched_workflow or workflow
     template = WorkflowTemplate(
         name=f"readiness-test-template-{uuid4()}",
         version="1",
@@ -126,7 +129,7 @@ def create_ready_comfy_job(
 
     workflow_run = WorkflowRun(
         workflow_template_id=template.id,
-        patched_workflow_json=workflow,
+        patched_workflow_json=patched_workflow,
         patch_payload_json={"inputs": {}},
         status="queued",
     )
@@ -684,9 +687,103 @@ def test_submission_readiness_accepts_reserved_worker_owned_job(db_session):
     assert result.errors == []
 
 
+def test_readiness_accepts_patched_workflow_with_different_sha(db_session):
+    original_workflow = _ready_workflow()
+    patched_workflow = copy.deepcopy(original_workflow)
+    patched_workflow["6"]["inputs"]["text"] = "patched prompt"
+    patched_workflow["3"]["inputs"]["seed"] = 12345
+    assert sha256_json(patched_workflow) != sha256_json(original_workflow)
+    job = create_ready_comfy_job(
+        db_session,
+        workflow=original_workflow,
+        patched_workflow=patched_workflow,
+    )
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert result.ready
+    assert result.code == "ready"
+    assert result.errors == []
+
+
+def test_readiness_rejects_patched_workflow_missing_required_node(db_session):
+    patched_workflow = copy.deepcopy(_ready_workflow())
+    patched_workflow.pop("3")
+    job = create_ready_comfy_job(db_session, patched_workflow=patched_workflow)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("Missing workflow node for seed" in error for error in result.errors)
+
+
+def test_readiness_rejects_patched_workflow_class_type_mismatch(db_session):
+    patched_workflow = copy.deepcopy(_ready_workflow())
+    patched_workflow["6"]["class_type"] = "WrongNode"
+    job = create_ready_comfy_job(db_session, patched_workflow=patched_workflow)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("Class type mismatch for positive_prompt" in error for error in result.errors)
+
+
+def test_readiness_rejects_patched_workflow_missing_required_input(db_session):
+    patched_workflow = copy.deepcopy(_ready_workflow())
+    patched_workflow["6"]["inputs"].pop("text")
+    job = create_ready_comfy_job(db_session, patched_workflow=patched_workflow)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(_ready_object_info()),
+    )
+
+    assert not result.ready
+    assert any("Missing input text for positive_prompt" in error for error in result.errors)
+
+
+@pytest.mark.parametrize("missing_object_info", ["class", "input"])
+def test_readiness_rejects_when_object_info_missing_required_class_or_input(db_session, missing_object_info):
+    object_info = _ready_object_info()
+    if missing_object_info == "class":
+        object_info.pop("KSampler")
+        expected_error = "Object info missing class KSampler"
+    else:
+        object_info["CLIPTextEncode"]["input"]["required"].pop("text")
+        expected_error = "Object info class CLIPTextEncode missing input text"
+    job = create_ready_comfy_job(db_session)
+
+    result = QueueService().evaluate_submission_readiness(
+        db_session,
+        job.id,
+        "worker-1",
+        ObjectInfoCacheService(object_info),
+    )
+
+    assert not result.ready
+    assert any(expected_error in error for error in result.errors)
+
+
 def test_submission_readiness_fails_closed_on_object_info_failure(db_session):
     class FailingObjectInfoCache(ObjectInfoCacheService):
-        def validate_workflow_manifest(self, workflow: dict, manifest) -> None:
+        def validate_patched_workflow_manifest(self, workflow: dict, manifest) -> None:
             raise RuntimeError("object_info unavailable")
 
     job = create_ready_comfy_job(db_session)

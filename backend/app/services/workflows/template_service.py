@@ -99,6 +99,14 @@ class WorkflowTemplateService:
         actual_sha = sha256_json(workflow)
         if actual_sha != manifest.original_workflow_sha256:
             raise ValidationError("Workflow SHA256 does not match manifest")
+        self.validate_runtime_workflow(workflow, manifest, object_info)
+
+    def validate_runtime_workflow(
+        self,
+        workflow: dict[str, Any],
+        manifest: WorkflowManifest,
+        object_info: dict[str, Any] | None = None,
+    ) -> None:
         for semantic_key, ref in manifest.nodes.items():
             node = workflow.get(ref.node_id)
             if node is None:
