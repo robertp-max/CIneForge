@@ -1,0 +1,117 @@
+{
+  "corpus_version": "2026-07-11.1",
+  "generated_at": "2026-07-11T19:38:25.5981047Z",
+  "source_repo_path": "C:\\AI\\Git\\CIneForge",
+  "source_branch": "master",
+  "source_commit_sha": "5ae274d69545d1c2a39406ec5de8a1bdb7ebc84b",
+  "source_remote": "https://github.com/robertp-max/CIneForge.git",
+  "generated_files": [
+    "docs/chatgpt-corpus/CORPUS_README.md",
+    "docs/chatgpt-corpus/EXECUTIVE_STATUS.md",
+    "docs/chatgpt-corpus/ARCHITECTURE_MAP.md",
+    "docs/chatgpt-corpus/REPOSITORY_MAP.md",
+    "docs/chatgpt-corpus/IMPLEMENTATION_MATRIX.md",
+    "docs/chatgpt-corpus/ROADMAP_AND_PLAN_DIGEST.md",
+    "docs/chatgpt-corpus/TEST_AND_BUILD_STATUS.md",
+    "docs/chatgpt-corpus/GIT_STATE.md",
+    "docs/chatgpt-corpus/SOURCE_FILE_INDEX.csv",
+    "docs/chatgpt-corpus/SOURCE_DIGESTS.md",
+    "docs/chatgpt-corpus/CORPUS_MANIFEST.json",
+    "docs/chatgpt-corpus/CHATGPT_CONTEXT.md",
+    "docs/chatgpt-corpus/NEXT_ACTION_PROMPT.md",
+    "docs/chatgpt-corpus/CHANGELOG.md"
+  ],
+  "reviewed_source_files": [
+    "README.md",
+    "pyproject.toml",
+    "backend/app/main.py",
+    "backend/app/api/routes/health.py",
+    "backend/app/db/base.py",
+    "backend/app/queue/state_machine.py",
+    "backend/app/services/queue/service.py",
+    "backend/app/services/queue/worker.py",
+    "backend/app/services/comfy/client.py",
+    "backend/app/services/comfy/submission.py",
+    "backend/app/services/comfy/object_info_cache.py",
+    "backend/app/services/comfy/progress_monitor.py",
+    "backend/app/services/workflows/template_service.py",
+    "backend/app/services/ffmpeg/service.py",
+    "backend/app/services/telemetry/gpu.py",
+    "backend/app/services/benchmarks/logger.py",
+    "backend/app/services/benchmarks/promotion.py",
+    "backend/app/services/ai_orchestration/validator.py",
+    "backend/tests/test_controlled_submission.py",
+    "backend/tests/test_comfy_client.py",
+    "backend/tests/test_queue_service.py",
+    "backend/tests/test_queue_worker.py",
+    "backend/tests/test_postgres_queue_claim.py",
+    "frontend/package.json",
+    "frontend/src/App.tsx",
+    "frontend/src/api/client.ts",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/src/pages/Runtime.tsx",
+    "docs/SPRINT_1C_PLAN.md",
+    "docs/UI_MVP_STATUS.md",
+    "Architecture/ARCHITECTURE_BLUEPRINT.md",
+    "MVP/MVP_ARCHITECTURE.md",
+    "Runtime/RUNTIME_ISOLATION_AND_QUEUEING.md",
+    "Benchmarks/BENCHMARK_PROTOCOL.md",
+    "Risk-Register/RISK_REGISTER.md"
+  ],
+  "excluded_patterns": [
+    ".env",
+    "*.db",
+    "*.sqlite",
+    "*.safetensors",
+    "*.ckpt",
+    "node_modules/",
+    ".pytest_cache/",
+    "storage/outputs/",
+    "storage/logs/",
+    "storage/assets/",
+    "storage/benchmarks/*.jsonl",
+    "*.mp4",
+    "*.mov",
+    "*.png",
+    "*.jpg",
+    "private keys",
+    "tokens"
+  ],
+  "test_commands": [
+    {
+      "command": "python -m pytest with CINEFORGE_TEST_POSTGRES_URL set",
+      "result": "timeout after 120s"
+    },
+    {
+      "command": "python -m pytest backend/tests/test_postgres_schema.py backend/tests/test_postgres_queue_claim.py",
+      "result": "timeout; PostgreSQL port unreachable"
+    },
+    {
+      "command": "python -m pytest backend/tests/test_queue_service.py backend/tests/test_queue_worker.py backend/tests/test_queue_state_machine.py",
+      "result": "61 passed, 91 warnings"
+    },
+    {
+      "command": "python -m pytest backend/tests/test_controlled_submission.py backend/tests/test_comfy_client.py",
+      "result": "9 passed, 13 warnings"
+    },
+    {
+      "command": "python -m pytest with CINEFORGE_TEST_POSTGRES_URL cleared",
+      "result": "128 passed, 8 skipped, 116 warnings"
+    },
+    {
+      "command": "npm run build",
+      "result": "failed: tsc not recognized"
+    },
+    {
+      "command": "npm run lint",
+      "result": "failed: eslint not recognized"
+    }
+  ],
+  "known_limitations": [
+    "Corpus generated from committed source HEAD, not untracked active-worktree files.",
+    "Secrets, .env files, model binaries, generated media, caches, databases, and node_modules are excluded.",
+    "PostgreSQL-gated tests could not run in this session because 127.0.0.1:55432 was unreachable.",
+    "Frontend build/lint could not run because frontend dependencies are not installed and installation was forbidden."
+  ],
+  "recommended_next_action": "Implement progress persistence and history/output collection planning behind the worker/runtime boundary, without public generation or ComfyUI runtime mutation."
+}

@@ -1,0 +1,35 @@
+path,type,purpose,authority,status,last_modified_or_commit,staleness_notes
+backend/app/main.py,source,FastAPI app factory,source,implemented,5ae274d,current
+backend/app/api/routes/health.py,source,Root health and runtime status,source,implemented,5ae274d,current
+backend/app/api/routes/projects.py,source,DB-backed project API,source,implemented,5ae274d,current
+backend/app/api/routes/campaigns.py,source,DB-backed campaign API,source,implemented,5ae274d,current
+backend/app/api/routes/jobs.py,source,Read-only job API,source,implemented,5ae274d,current
+backend/app/db/base.py,schema,SQLAlchemy models,source,implemented,5ae274d,current
+backend/alembic/versions/5a7d666d11d1_initial_schema.py,migration,Initial DB schema,source,implemented,5ae274d,current
+backend/alembic/versions/c4f8d3f2e1a9_add_comfy_job_worker_ownership.py,migration,Queue ownership fields,source,implemented,5ae274d,current
+backend/app/queue/state_machine.py,source,Queue lifecycle rules,source,implemented,5ae274d,current
+backend/app/services/queue/service.py,source,Queue claim recovery readiness,source,implemented,5ae274d,current
+backend/app/services/queue/worker.py,source,Bounded worker skeleton and delegation,source,partially_implemented,5ae274d,no daemon
+backend/app/services/comfy/submission.py,source,Controlled worker-only submission,source,partially_implemented,5ae274d,adapter only no public route
+backend/app/services/comfy/client.py,source,Comfy read-only client and blockers,source,implemented,5ae274d,controlled adapter separate
+backend/app/services/comfy/progress_monitor.py,source,Progress parser boundary,source,scaffold_only,5ae274d,no live loop
+backend/app/services/workflows/template_service.py,source,Workflow manifest patch and snapshot,source,implemented,5ae274d,smoke template only
+backend/app/services/ffmpeg/service.py,source,FFmpeg probes and validation,source,implemented,5ae274d,no assembly runner
+backend/app/services/telemetry/gpu.py,source,GPU telemetry parser,source,implemented,5ae274d,health only
+backend/app/services/benchmarks/logger.py,source,Benchmark JSONL and metrics,source,implemented,5ae274d,no runner
+backend/app/services/benchmarks/promotion.py,source,Promotion gates,source,implemented,5ae274d,pure evaluator
+backend/app/services/ai_orchestration/validator.py,source,AI proposal forbidden fields,source,implemented,5ae274d,no execution
+frontend/src/App.tsx,frontend,UI page shell,source,partially_implemented,5ae274d,build unverified
+frontend/src/api/client.ts,frontend,Frontend API client,source,partially_implemented,5ae274d,build unverified
+frontend/package.json,config,Frontend scripts and dependencies,source,partially_implemented,5ae274d,node_modules absent
+pyproject.toml,config,Backend dependencies and pytest config,source,implemented,5ae274d,current
+docs/SPRINT_1C_PLAN.md,doc,Sprint/current plan,supporting,partially_implemented,5ae274d,best recent plan with historical drift
+docs/UI_MVP_STATUS.md,doc,UI status,supporting,implemented,5ae274d,current UI scope
+README.md,doc,Repo overview and setup,supporting,stale_or_uncertain,5ae274d,status says Sprint 1A
+docs/API_CONTRACT.md,doc,Older API contract,supporting,stale_or_uncertain,5ae274d,stubs claim stale
+docs/POSTGRES_VERIFICATION.md,doc,PostgreSQL test guide,supporting,stale_or_uncertain,5ae274d,pending list stale
+Architecture/ARCHITECTURE_BLUEPRINT.md,doc,Architecture vision,supporting,planned,5ae274d,vision not status
+MVP/MVP_ARCHITECTURE.md,doc,MVP target architecture,supporting,planned,5ae274d,vision not status
+Runtime/RUNTIME_ISOLATION_AND_QUEUEING.md,doc,Runtime policy,supporting,planned,5ae274d,vision not status
+Benchmarks/BENCHMARK_PROTOCOL.md,doc,Benchmark protocol,supporting,planned,5ae274d,target not runner
+Risk-Register/RISK_REGISTER.md,doc,Risk inventory,supporting,implemented,5ae274d,risk source
