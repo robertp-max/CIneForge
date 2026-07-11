@@ -1,31 +1,14 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
-import { Campaigns } from './pages/Campaigns'
-import { Dashboard } from './pages/Dashboard'
-import { Jobs } from './pages/Jobs'
-import { Projects } from './pages/Projects'
-import { Queue } from './pages/Queue'
-import { Roadmap } from './pages/Roadmap'
-import { Runtime } from './pages/Runtime'
-import { SystemHealth } from './pages/SystemHealth'
+import { StoryboardStudio } from './pages/StoryboardStudio'
 
 function App() {
-  const [activePage, setActivePage] = useState<PageId>('dashboard')
-  const [backendStatus, setBackendStatus] = useState('checking')
-  const handleBackendStatus = useCallback((status: string) => {
-    setBackendStatus(status)
-  }, [])
+  const [activePage, setActivePage] = useState<PageId>('overview')
+  const [backendStatus] = useState('checking')
 
   return (
     <AppShell activePage={activePage} backendStatus={backendStatus} onNavigate={setActivePage}>
-      {activePage === 'dashboard' ? <Dashboard onBackendStatus={handleBackendStatus} /> : null}
-      {activePage === 'projects' ? <Projects /> : null}
-      {activePage === 'campaigns' ? <Campaigns /> : null}
-      {activePage === 'jobs' ? <Jobs /> : null}
-      {activePage === 'queue' ? <Queue /> : null}
-      {activePage === 'runtime' ? <Runtime /> : null}
-      {activePage === 'health' ? <SystemHealth /> : null}
-      {activePage === 'roadmap' ? <Roadmap /> : null}
+      <StoryboardStudio page={activePage} />
     </AppShell>
   )
 }

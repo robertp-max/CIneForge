@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, PrimaryKeyConstraint, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -371,3 +371,234 @@ class CandidateScore(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "candidate_scores"
     clip_iteration_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("clip_iterations.id"))
     score_json: Mapped[dict] = mapped_column(json_type())
+
+
+# Storyboard Phase A is deliberately separate from timeline slots and clip iterations.
+# It describes an editable production plan only; downstream execution entities remain
+# untouched until a future, explicitly authorised production phase.
+class StoryboardTimestampMixin(TimestampMixin):
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class Story(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "stories"
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    base_story: Mapped[str] = mapped_column(Text)
+    logline: Mapped[str | None] = mapped_column(Text)
+    synopsis: Mapped[str | None] = mapped_column(Text)
+    target_duration_sec: Mapped[float] = mapped_column(Numeric)
+    audience: Mapped[str | None] = mapped_column(Text)
+    tone: Mapped[str | None] = mapped_column(Text)
+    genre: Mapped[str | None] = mapped_column(Text)
+    visual_style: Mapped[str | None] = mapped_column(Text)
+    point_of_view: Mapped[str | None] = mapped_column(Text)
+    production_notes: Mapped[str | None] = mapped_column(Text)
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    active_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    default_provider_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class PlanningMediaAsset(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "planning_media_assets"
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(48))
+    source_type: Mapped[str] = mapped_column(String(48))
+    managed_uri: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    mime_type: Mapped[str | None] = mapped_column(String(128))
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    duration_sec: Mapped[float | None] = mapped_column(Numeric)
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+
+
+class VoiceProfile(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "voice_profiles"
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True)
+    character_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("characters.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(Text)
+    source_type: Mapped[str] = mapped_column(String(48))
+    provider: Mapped[str | None] = mapped_column(String(80))
+    provider_voice_reference: Mapped[str | None] = mapped_column(Text)
+    language: Mapped[str | None] = mapped_column(String(32))
+    accent: Mapped[str | None] = mapped_column(Text)
+    presentation: Mapped[str | None] = mapped_column(Text)
+    tone: Mapped[str | None] = mapped_column(Text)
+    speaking_directions: Mapped[str | None] = mapped_column(Text)
+    pacing: Mapped[str | None] = mapped_column(Text)
+    energy: Mapped[str | None] = mapped_column(Text)
+    pronunciation_notes: Mapped[str | None] = mapped_column(Text)
+    source_asset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("planning_media_assets.id", ondelete="SET NULL"))
+    source_description: Mapped[str | None] = mapped_column(Text)
+    consent_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    consent_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    consent_notes: Mapped[str | None] = mapped_column(Text)
+    usage_notes: Mapped[str | None] = mapped_column(Text)
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+
+
+class Character(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "characters"
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    role: Mapped[str | None] = mapped_column(Text)
+    age_range: Mapped[str | None] = mapped_column(Text)
+    physical_description: Mapped[str | None] = mapped_column(Text)
+    personality: Mapped[str | None] = mapped_column(Text)
+    speaking_style: Mapped[str | None] = mapped_column(Text)
+    wardrobe: Mapped[str | None] = mapped_column(Text)
+    consistency_prompt: Mapped[str | None] = mapped_column(Text)
+    negative_identity_prompt: Mapped[str | None] = mapped_column(Text)
+    identity_method: Mapped[str | None] = mapped_column(String(64))
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    assigned_voice_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("voice_profiles.id", ondelete="SET NULL", use_alter=True, name="fk_characters_assigned_voice"))
+
+
+class CharacterReferenceAsset(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "character_reference_assets"
+    character_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("characters.id", ondelete="CASCADE"), index=True)
+    asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("planning_media_assets.id", ondelete="CASCADE"))
+    reference_role: Mapped[str] = mapped_column(String(32))
+    approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    __table_args__ = (UniqueConstraint("character_id", "order_index", name="uq_character_reference_order"),)
+
+
+class Chapter(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "chapters"
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True)
+    order_index: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("story_id", "order_index", name="uq_chapter_story_order"),)
+
+
+class Scene(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "scenes"
+    chapter_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("chapters.id", ondelete="CASCADE"), index=True)
+    order_index: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    narrative_purpose: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(Text)
+    conflict_or_beat: Mapped[str | None] = mapped_column(Text)
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("chapter_id", "order_index", name="uq_scene_chapter_order"),)
+
+
+class Shot(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "shots"
+    scene_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("scenes.id", ondelete="CASCADE"), index=True)
+    order_index: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(Text)
+    duration_sec: Mapped[float] = mapped_column(Numeric)
+    duration_override_reason: Mapped[str | None] = mapped_column(Text)
+    story_purpose: Mapped[str | None] = mapped_column(Text)
+    visual_description: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(Text)
+    continuity_source_type: Mapped[str] = mapped_column(String(48), default="none", nullable=False)
+    continuity_source_shot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("shots.id", ondelete="SET NULL"))
+    starting_image_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    starting_image_asset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("planning_media_assets.id", ondelete="SET NULL"))
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    production_status: Mapped[str] = mapped_column(String(32), default="planned", nullable=False)
+    blocked_reason: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        UniqueConstraint("scene_id", "order_index", name="uq_shot_scene_order"),
+        CheckConstraint("duration_sec > 0", name="ck_shot_positive_duration"),
+    )
+
+
+class ShotCharacter(Base):
+    __tablename__ = "shot_characters"
+    shot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("shots.id", ondelete="CASCADE"), primary_key=True)
+    character_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    role_in_shot: Mapped[str | None] = mapped_column(Text)
+    order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    continuity_notes: Mapped[str | None] = mapped_column(Text)
+
+
+class ShotNarration(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "shot_narrations"
+    shot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("shots.id", ondelete="CASCADE"), unique=True)
+    voice_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("voice_profiles.id", ondelete="SET NULL"))
+    narration_text: Mapped[str | None] = mapped_column(Text)
+    start_offset_sec: Mapped[float] = mapped_column(Numeric, default=0)
+    expected_duration_sec: Mapped[float | None] = mapped_column(Numeric)
+    narration_exception_reason: Mapped[str | None] = mapped_column(Text)
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+
+
+class ShotPromptPackage(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "shot_prompt_packages"
+    shot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("shots.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    image_prompt: Mapped[str | None] = mapped_column(Text)
+    video_prompt: Mapped[str | None] = mapped_column(Text)
+    negative_prompt: Mapped[str | None] = mapped_column(Text)
+    continuity_instructions: Mapped[str | None] = mapped_column(Text)
+    style_lock_prompt: Mapped[str | None] = mapped_column(Text)
+    provider_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    provider_model_id: Mapped[str | None] = mapped_column(Text)
+    proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ai_proposal_records.id", ondelete="SET NULL"))
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    __table_args__ = (UniqueConstraint("shot_id", "version", name="uq_shot_prompt_version"),)
+
+
+class ShotModelRecommendation(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "shot_model_recommendations"
+    shot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("shots.id", ondelete="CASCADE"), index=True)
+    recommendation_type: Mapped[str] = mapped_column(String(24))
+    generation_model_variant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("model_variants.id", ondelete="SET NULL"))
+    workflow_template_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workflow_templates.id", ondelete="SET NULL"))
+    rationale: Mapped[str | None] = mapped_column(Text)
+    availability_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    benchmark_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    risk_status: Mapped[str | None] = mapped_column(String(32))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+
+
+class StoryboardVersion(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "storyboard_versions"
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(json_type())
+    source_proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ai_proposal_records.id", ondelete="SET NULL"))
+    created_by: Mapped[str | None] = mapped_column(Text)
+    approved_by: Mapped[str | None] = mapped_column(Text)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("story_id", "version_number", name="uq_storyboard_version"),)
+
+
+class ProviderProfile(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "provider_profiles"
+    provider_identifier: Mapped[str] = mapped_column(String(32))
+    display_name: Mapped[str] = mapped_column(Text)
+    provider_model_id: Mapped[str | None] = mapped_column(Text)
+    execution_mode: Mapped[str] = mapped_column(String(32), default="disabled", nullable=False)
+    availability_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    privacy_classification: Mapped[str | None] = mapped_column(String(64))
+    capabilities_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+    configuration_reference: Mapped[str | None] = mapped_column(Text)
+
+
+class TaskProviderAssignment(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "task_provider_assignments"
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True)
+    task_type: Mapped[str] = mapped_column(String(64))
+    provider_profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("provider_profiles.id", ondelete="CASCADE"))
+    assignment_mode: Mapped[str] = mapped_column(String(24), default="manual", nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    __table_args__ = (UniqueConstraint("story_id", "task_type", name="uq_story_task_provider"),)

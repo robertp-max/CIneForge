@@ -4,7 +4,7 @@ CineForge is a local AI video-generation orchestration platform. It is designed 
 
 ## Current Status
 
-This repository is currently at **Sprint 1A backend foundation only**.
+This repository includes **Storyboard Phase A**, a planning-only foundation that ends with an approved, editable production plan.
 
 What works now:
 
@@ -20,6 +20,9 @@ What works now:
 - FFmpeg/ffprobe validation primitives.
 - Non-executing AI/autonomy schemas and validators.
 - Pytest coverage for the Sprint 1A primitives.
+- Persisted `Project -> Story -> Chapter -> Scene -> Shot` planning hierarchy.
+- Storyboard readiness checks, duration rollups, immutable approval versions, JSON and CSV planning exports.
+- Storyboard Studio frontend views for planning, assets, routing, workflows, exports, and settings.
 
 What does not work yet:
 
@@ -28,7 +31,7 @@ What does not work yet:
 - No ComfyUI installation or mutation.
 - No autonomous production execution.
 - No GPU queue worker yet.
-- No polished frontend.
+- No image/video generation is triggered by Storyboard Phase A approval.
 - Project, campaign, and job APIs are validation stubs, not fully DB-backed.
 
 ## Local Setup
@@ -65,4 +68,6 @@ Run tests:
 ## Safety Boundary
 
 CineForge is intended to remain the deterministic execution engine. AI modules are advisory only in Sprint 1A and cannot directly mutate workflow JSON, queue state, database records, model registries, ComfyUI submissions, asset paths, or FFmpeg commands.
+
+See `docs/STORYBOARD_PHASE_A_SPEC.md` for the planning boundary and `docs/PRODUCT_VISION.md` for current product direction. Older sprint documents are historical implementation records, not product direction.
 

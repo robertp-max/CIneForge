@@ -27,6 +27,8 @@ $env:VITE_CINEFORGE_API_BASE_URL="http://127.0.0.1:8000"
 
 ## UI Pages
 
+Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characters, Voices, Starting Images, Model Routing, Workflows, Exports, and Project Settings. These are planning surfaces: generation controls remain explicitly unavailable.
+
 - Dashboard: system cards, backend root status, recent backend-backed activity, Phase 2 safety milestone.
 - Projects: create projects, list projects, read project by ID.
 - Campaigns: create campaigns for existing projects, list campaigns, read campaign by ID.

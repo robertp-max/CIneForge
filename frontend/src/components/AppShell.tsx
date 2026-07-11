@@ -3,24 +3,28 @@ import { StatusBadge } from './StatusBadge'
 import type { ReactNode } from 'react'
 
 export type PageId =
-  | 'dashboard'
-  | 'projects'
-  | 'campaigns'
-  | 'jobs'
-  | 'queue'
-  | 'runtime'
-  | 'health'
-  | 'roadmap'
+  | 'overview'
+  | 'storyboard'
+  | 'story'
+  | 'characters'
+  | 'voices'
+  | 'images'
+  | 'routing'
+  | 'workflows'
+  | 'exports'
+  | 'settings'
 
 const navItems: { id: PageId; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'campaigns', label: 'Campaigns' },
-  { id: 'jobs', label: 'Jobs' },
-  { id: 'queue', label: 'Queue' },
-  { id: 'runtime', label: 'Runtime' },
-  { id: 'health', label: 'System Health' },
-  { id: 'roadmap', label: 'Roadmap / Disabled Features' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'storyboard', label: 'Storyboard' },
+  { id: 'story', label: 'Story & Chapters' },
+  { id: 'characters', label: 'Characters' },
+  { id: 'voices', label: 'Voices' },
+  { id: 'images', label: 'Starting Images' },
+  { id: 'routing', label: 'Model Routing' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'exports', label: 'Exports' },
+  { id: 'settings', label: 'Project Settings' },
 ]
 
 type AppShellProps = {
@@ -38,7 +42,7 @@ export function AppShell({ activePage, backendStatus, onNavigate, children }: Ap
           <div className="brand-mark">CF</div>
           <div>
             <strong>CineForge</strong>
-            <span>Local Control</span>
+            <span>Storyboard Studio · Phase A</span>
           </div>
         </div>
 
@@ -56,8 +60,8 @@ export function AppShell({ activePage, backendStatus, onNavigate, children }: Ap
         </nav>
 
         <div className="sidebar-footer">
-          <StatusBadge status="disabled" label="Generation disabled" />
-          <span>Phase 1 readiness boundary is enforced.</span>
+          <StatusBadge status="disabled" label="Rendering disabled" />
+          <span>Planning ends with an approved editable production plan.</span>
         </div>
       </aside>
 
@@ -65,7 +69,7 @@ export function AppShell({ activePage, backendStatus, onNavigate, children }: Ap
         <header className="topbar">
           <div>
             <span className="eyebrow">Environment</span>
-            <strong>Local MVP</strong>
+            <strong>Production planning</strong>
           </div>
           <div className="topbar-status">
             <span>{API_BASE_URL}</span>
