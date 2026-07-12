@@ -1,6 +1,14 @@
 /**
- * Structural port of prototype StoryPage (pagesCore.tsx) adapted to
- * production studio context + story save / hierarchy / orchestration APIs.
+ * Exact structural port of prototype StoryPage (pagesCore.tsx / pagesCore.source.tsx)
+ * adapted to production studio context + story save / hierarchy / orchestration APIs.
+ *
+ * DOM hierarchy matches the ZIP prototype:
+ * page-title (STORY INTAKE & STRUCTURE + Generate structure / Mark reviewed) →
+ * split-layout.story-editor → stack (Source story form + Narrative hierarchy with
+ * chapter/scene chrome + character-dots) | suggestion-panel (proposals).
+ *
+ * Production orchestration (create/start/cancel/retry runs, review/reject/apply)
+ * is preserved below the split layout and wired into the suggestion panel.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -19,7 +27,7 @@ import {
   type StoryboardProposal,
 } from '../../api/client'
 import { formatDate } from '../../components/formatDate'
-import { Button, Icon, PageTitle, Section, StatusPill } from '../../components/ui'
+import { Button, Icon, PageTitle, Section } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { countScenes, countShots, formatDuration, initials } from '../utils'
 import { EmptyState, LoadingState } from '../components/StateBlocks'
@@ -49,6 +57,14 @@ const BUILTIN_MOCK_ROUTE = 'builtin:mock'
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+/** First non-empty reason; used for factual disabled control titles. */
+function firstReason(...reasons: Array<string | false | null | undefined>): string | undefined {
+  for (const reason of reasons) {
+    if (typeof reason === 'string' && reason.trim()) return reason
+  }
+  return undefined
 }
 
 function shortId(value: string): string {
@@ -266,7 +282,10 @@ export function StoryPage() {
   const sceneCount = countScenes(chapters)
   const shotCount = countShots(chapters)
   const plannedDuration = chapters.reduce((total, chapter) => total + chapter.duration_sec, 0)
-  const hierarchySummary = `${chapters.length} chapter${chapters.length === 1 ? '' : 's'} · ${sceneCount} scene${sceneCount === 1 ? '' : 's'} · ${shotCount} shot${shotCount === 1 ? '' : 's'} · ${formatDuration(plannedDuration)}`
+  const runtimeExact =
+    story.target_duration_sec != null &&
+    Math.abs(plannedDuration - story.target_duration_sec) <= 1
+  const hierarchySummary = `${chapters.length} chapter${chapters.length === 1 ? '' : 's'} · ${sceneCount} scene${sceneCount === 1 ? '' : 's'} · ${shotCount} shot${shotCount === 1 ? '' : 's'} · ${runtimeExact ? 'exactly ' : ''}${formatDuration(plannedDuration)}`
   const openChapterIds = expandedIds ?? chapters.map((chapter) => chapter.id)
   const providerFactById = new Map(providerCatalog.map((provider) => [provider.provider_identifier, provider]))
   const routeOptions = [
@@ -306,6 +325,76 @@ export function StoryPage() {
     selectedProposal.validation_status !== 'invalid' &&
     !selectedProposal.validation_errors.length &&
     proposalDiff?.proposal_id === selectedProposal.id
+
+  const busyReason = firstReason(
+    busy && 'Studio is saving story or hierarchy changes.',
+    planningBusy && 'A planning request is in progress.',
+    planningLoading && 'Loading orchestration runs and proposals.',
+  )
+  const structureBusyReason = firstReason(
+    busy && 'Studio is saving story or hierarchy changes.',
+    structureBusy && 'A hierarchy mutation is in progress.',
+  )
+  const createRunReason = busyReason
+  const startRunReason = firstReason(
+    busyReason,
+    !selectedRun && 'Select a planning run first.',
+    selectedRun &&
+      !runCanStart &&
+      `Only pending runs can be started (current status: ${selectedRun.status}).`,
+  )
+  const cancelRunReason = firstReason(
+    busyReason,
+    !selectedRun && 'Select a planning run first.',
+    selectedRun &&
+      !runCanCancel &&
+      `Only pending or running runs can be canceled (current status: ${selectedRun.status}).`,
+  )
+  const retryRunReason = firstReason(
+    busyReason,
+    !selectedRun && 'Select a planning run first.',
+    selectedRun &&
+      !runCanRetry &&
+      `Only failed or canceled runs can be retried (current status: ${selectedRun.status}).`,
+  )
+  const reviewProposalReason = firstReason(
+    busyReason,
+    !selectedProposal && 'Select a proposal first.',
+    !actor && 'Enter an audit name to mark a proposal reviewed.',
+    proposalIsTerminal &&
+      `Proposal is terminal (${selectedProposal?.status}) and cannot be reviewed again.`,
+    selectedProposal?.validation_status === 'invalid' &&
+      'Proposal failed validation and cannot be reviewed as valid.',
+    (selectedProposal?.validation_errors.length ?? 0) > 0 &&
+      'Proposal has validation errors and cannot be marked reviewed.',
+    !proposalCanReview && 'Select a non-terminal, valid proposal first.',
+  )
+  const rejectProposalReason = firstReason(
+    busyReason,
+    !selectedProposal && 'Select a proposal first.',
+    !actor && 'Enter an audit name to reject a proposal.',
+    !rejectionReason.trim() && 'A rejection reason is required.',
+    proposalIsTerminal &&
+      `Proposal is terminal (${selectedProposal?.status}) and cannot be rejected again.`,
+  )
+  const applyProposalReason = firstReason(
+    busyReason,
+    !selectedProposal && 'Select a proposal first.',
+    !actor && 'Enter an audit name to apply a proposal.',
+    selectedProposal &&
+      selectedProposal.status !== 'validated' &&
+      `Apply requires status “validated” (current: ${selectedProposal.status}). Mark reviewed first when eligible.`,
+    selectedProposal?.validation_status === 'invalid' &&
+      'Proposal failed validation and cannot be applied.',
+    (selectedProposal?.validation_errors.length ?? 0) > 0 &&
+      'Proposal has validation errors and cannot be applied.',
+    !proposalDiff && 'A verified proposal diff is required before apply.',
+    proposalDiff &&
+      selectedProposal &&
+      proposalDiff.proposal_id !== selectedProposal.id &&
+      'Loaded diff does not match the selected proposal.',
+    !proposalCanApply && 'Proposal is not eligible to apply.',
+  )
 
   const hasProposal = Boolean(selectedProposal)
   const protoProject = view?.project
@@ -569,14 +658,15 @@ export function StoryPage() {
     }
   }
 
-  async function editChapter(chapter: Chapter) {
-    const title = window.prompt('Chapter title', chapter.title)
-    if (title === null || !title.trim()) return
-    const summary = window.prompt('Chapter summary (optional)', chapter.summary ?? '')
-    if (summary === null) return
+  async function duplicateChapter(chapter: Chapter) {
     await persistStructure(
-      () => api.updateChapter(chapter.id, { title: title.trim(), summary: summary.trim() || null }),
-      `Chapter “${title.trim()}” updated on the backend.`,
+      () =>
+        api.createChapter(story.id, {
+          title: `${chapter.title} copy`,
+          summary: chapter.summary ?? undefined,
+          order_index: chapters.length,
+        }),
+      `Chapter “${chapter.title} copy” added as draft.`,
     )
   }
 
@@ -618,20 +708,6 @@ export function StoryPage() {
     await persistStructure(
       () => api.reorderChapters(story.id, orderedIds),
       'Chapter order persisted to the backend.',
-    )
-  }
-
-  async function moveScene(chapter: Chapter, sceneIndex: number, direction: -1 | 1) {
-    const targetIndex = sceneIndex + direction
-    if (targetIndex < 0 || targetIndex >= chapter.scenes.length) return
-    const orderedIds = chapter.scenes.map((scene) => scene.id)
-    ;[orderedIds[sceneIndex], orderedIds[targetIndex]] = [
-      orderedIds[targetIndex],
-      orderedIds[sceneIndex],
-    ]
-    await persistStructure(
-      () => api.reorderScenes(chapter.id, orderedIds),
-      'Scene order persisted to the backend.',
     )
   }
 
@@ -695,22 +771,17 @@ export function StoryPage() {
             <Button
               onClick={() => void createRun()}
               disabled={disabled}
+              title={createRunReason}
               icon="spark"
             >
-              {planningBusy ? 'Generating proposal…' : 'Generate structure'}
+              {planningBusy ? 'Creating planning run…' : 'Generate structure'}
             </Button>
             <Button
               variant="primary"
               icon="check"
               onClick={() => void reviewProposal()}
               disabled={disabled || !actor || !proposalCanReview}
-              title={
-                !actor
-                  ? 'Enter an audit name in the planning panel to mark a proposal reviewed.'
-                  : !proposalCanReview
-                    ? 'Select a non-terminal, valid proposal first.'
-                    : undefined
-              }
+              title={reviewProposalReason}
             >
               Mark reviewed
             </Button>
@@ -723,12 +794,11 @@ export function StoryPage() {
           <Section
             title="Source story"
             subtitle="Production intent supplied to the selected orchestrator."
-            action={<StatusPill status={story.approval_state || 'draft'} />}
           >
             <div className="form-grid two">
               <label>
                 Title
-                <input value={story.title} readOnly aria-readonly="true" />
+                <input value={story.title} readOnly aria-readonly="true" title="Story title is set at project creation." />
               </label>
               <label>
                 Target runtime
@@ -737,6 +807,7 @@ export function StoryPage() {
                   min={1}
                   value={targetRuntime}
                   onChange={(event) => setTargetRuntime(event.target.value)}
+                  onBlur={saveStoryFields}
                   disabled={busy}
                 />
               </label>
@@ -747,9 +818,8 @@ export function StoryPage() {
                 <textarea
                   value={logline}
                   onChange={(event) => setLogline(event.target.value)}
+                  onBlur={saveStoryFields}
                   disabled={busy}
-                  placeholder="One-sentence production intent"
-                  rows={2}
                 />
               </label>
               <label>
@@ -758,8 +828,8 @@ export function StoryPage() {
                   className="story-textarea"
                   value={baseStory}
                   onChange={(event) => setBaseStory(event.target.value)}
+                  onBlur={saveStoryFields}
                   disabled={busy}
-                  rows={5}
                 />
               </label>
               <label>
@@ -767,9 +837,8 @@ export function StoryPage() {
                 <textarea
                   value={synopsis}
                   onChange={(event) => setSynopsis(event.target.value)}
+                  onBlur={saveStoryFields}
                   disabled={busy}
-                  placeholder="Short synopsis for review"
-                  rows={2}
                 />
               </label>
               <div className="form-grid three">
@@ -778,18 +847,25 @@ export function StoryPage() {
                   <input
                     value={audience}
                     onChange={(event) => setAudience(event.target.value)}
+                    onBlur={saveStoryFields}
                     disabled={busy}
                   />
                 </label>
                 <label>
                   Tone
-                  <input value={tone} onChange={(event) => setTone(event.target.value)} disabled={busy} />
+                  <input
+                    value={tone}
+                    onChange={(event) => setTone(event.target.value)}
+                    onBlur={saveStoryFields}
+                    disabled={busy}
+                  />
                 </label>
                 <label>
                   Genre
                   <input
                     value={genre}
                     onChange={(event) => setGenre(event.target.value)}
+                    onBlur={saveStoryFields}
                     disabled={busy}
                   />
                 </label>
@@ -800,6 +876,7 @@ export function StoryPage() {
                   <input
                     value={visualStyle}
                     onChange={(event) => setVisualStyle(event.target.value)}
+                    onBlur={saveStoryFields}
                     disabled={busy}
                   />
                 </label>
@@ -808,6 +885,7 @@ export function StoryPage() {
                   <input
                     value={pointOfView}
                     onChange={(event) => setPointOfView(event.target.value)}
+                    onBlur={saveStoryFields}
                     disabled={busy}
                   />
                 </label>
@@ -817,15 +895,10 @@ export function StoryPage() {
                 <textarea
                   value={productionNotes}
                   onChange={(event) => setProductionNotes(event.target.value)}
+                  onBlur={saveStoryFields}
                   disabled={busy}
-                  rows={2}
                 />
               </label>
-              <div className="inline-actions">
-                <Button variant="primary" disabled={busy} onClick={saveStoryFields}>
-                  Save story fields
-                </Button>
-              </div>
             </div>
           </Section>
 
@@ -837,6 +910,7 @@ export function StoryPage() {
                 variant="quiet"
                 icon="plus"
                 disabled={structureDisabled}
+                title={structureBusyReason}
                 onClick={() => void addHierarchy('chapter')}
               >
                 Add chapter
@@ -858,7 +932,28 @@ export function StoryPage() {
                   return (
                     <article key={chapter.id}>
                       <header>
-                        <button type="button" onClick={() => toggleChapter(chapter.id)} aria-expanded={open}>
+                        <button
+                          type="button"
+                          onClick={() => toggleChapter(chapter.id)}
+                          onDoubleClick={() => {
+                            const title = window.prompt('Chapter title', chapter.title)
+                            if (title === null || !title.trim()) return
+                            const summary = window.prompt(
+                              'Chapter summary (optional)',
+                              chapter.summary ?? '',
+                            )
+                            if (summary === null) return
+                            void persistStructure(
+                              () =>
+                                api.updateChapter(chapter.id, {
+                                  title: title.trim(),
+                                  summary: summary.trim() || null,
+                                }),
+                              `Chapter “${title.trim()}” updated on the backend.`,
+                            )
+                          }}
+                          aria-expanded={open}
+                        >
                           <Icon name="chevron" />
                           <span>
                             <small>{chapterIdLabel}</small>
@@ -875,7 +970,8 @@ export function StoryPage() {
                           <button
                             type="button"
                             disabled={structureDisabled || chapterIndex === 0}
-                            aria-label={`Move ${chapter.title} up`}
+                            title={structureBusyReason}
+                            aria-label="Move chapter up"
                             onClick={() => void moveChapter(chapterIndex, -1)}
                           >
                             ↑
@@ -883,7 +979,8 @@ export function StoryPage() {
                           <button
                             type="button"
                             disabled={structureDisabled || chapterIndex === chapters.length - 1}
-                            aria-label={`Move ${chapter.title} down`}
+                            title={structureBusyReason}
+                            aria-label="Move chapter down"
                             onClick={() => void moveChapter(chapterIndex, 1)}
                           >
                             ↓
@@ -891,16 +988,18 @@ export function StoryPage() {
                           <button
                             type="button"
                             disabled={structureDisabled}
-                            onClick={() => void editChapter(chapter)}
-                            aria-label={`Edit ${chapter.title}`}
+                            title={structureBusyReason}
+                            onClick={() => void duplicateChapter(chapter)}
+                            aria-label="Duplicate chapter"
                           >
-                            <Icon name="edit" size={14} />
+                            <Icon name="copy" size={14} />
                           </button>
                           <button
                             type="button"
                             disabled={structureDisabled}
+                            title={structureBusyReason}
                             onClick={() => void deleteChapter(chapter)}
-                            aria-label={`Archive ${chapter.title}`}
+                            aria-label="Archive chapter"
                           >
                             <Icon name="trash" size={14} />
                           </button>
@@ -931,90 +1030,33 @@ export function StoryPage() {
                                   </small>
                                 </span>
                                 <span className="character-dots" aria-label="Characters in scene">
-                                  {sceneChars.length
-                                    ? sceneChars.map((character) => (
-                                        <i key={character.id} title={character.name}>
-                                          {initials(character.name)}
-                                        </i>
-                                      ))
-                                    : (
-                                        <i title="No linked characters" style={{ opacity: 0.45 }}>
-                                          —
-                                        </i>
-                                      )}
+                                  {sceneChars.map((character) => (
+                                    <i key={character.id} title={character.name}>
+                                      {initials(character.name)}
+                                    </i>
+                                  ))}
                                 </span>
                                 <button
                                   type="button"
                                   disabled={structureDisabled}
+                                  title={structureBusyReason}
                                   onClick={() => void editScene(scene)}
-                                  aria-label={`Edit ${scene.title}`}
+                                  aria-label="Edit scene"
                                 >
                                   <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   type="button"
                                   disabled={structureDisabled}
+                                  title={structureBusyReason}
                                   onClick={() => void deleteScene(scene)}
-                                  aria-label={`Archive ${scene.title}`}
+                                  aria-label="Archive scene"
                                 >
                                   <Icon name="trash" size={14} />
                                 </button>
-                                <div
-                                  className="inline-actions"
-                                  style={{ gridColumn: '1 / -1', justifyContent: 'flex-end' }}
-                                  aria-label={`Reorder ${scene.title}`}
-                                >
-                                  <button
-                                    type="button"
-                                    className="ghost-button"
-                                    disabled={structureDisabled || sceneIndex === 0}
-                                    aria-label={`Move ${scene.title} up`}
-                                    onClick={() => void moveScene(chapter, sceneIndex, -1)}
-                                  >
-                                    ↑ Scene
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="ghost-button"
-                                    disabled={
-                                      structureDisabled || sceneIndex === chapter.scenes.length - 1
-                                    }
-                                    aria-label={`Move ${scene.title} down`}
-                                    onClick={() => void moveScene(chapter, sceneIndex, 1)}
-                                  >
-                                    ↓ Scene
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="ghost-button"
-                                    disabled={structureDisabled}
-                                    onClick={() => void addHierarchy('shot')}
-                                  >
-                                    + Shot
-                                  </button>
-                                </div>
                               </div>
                             )
                           })}
-                          {!chapter.scenes.length ? (
-                            <div>
-                              <span className="scene-index">—</span>
-                              <span>
-                                <b>No scenes</b>
-                                <p>Add a scene under this chapter.</p>
-                              </span>
-                              <span />
-                              <span />
-                              <button
-                                type="button"
-                                disabled={structureDisabled}
-                                onClick={() => void addHierarchy('scene')}
-                              >
-                                <Icon name="plus" size={14} />
-                              </button>
-                              <span />
-                            </div>
-                          ) : null}
                         </div>
                       ) : null}
                     </article>
@@ -1022,24 +1064,82 @@ export function StoryPage() {
                 })}
               </div>
             )}
-            <div className="inline-actions" style={{ marginTop: 10 }}>
-              <Button
-                variant="quiet"
-                disabled={structureDisabled}
-                onClick={() => void addHierarchy('scene')}
-              >
-                Add scene
-              </Button>
-              <Button
-                variant="quiet"
-                disabled={structureDisabled}
-                onClick={() => void addHierarchy('shot')}
-              >
-                Add shot
+          </Section>
+        </div>
+
+        <aside className="suggestion-panel">
+          <header>
+            <span className="orchestrator-mark">
+              <Icon name="spark" />
+            </span>
+            <div>
+              <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
+              <h2>
+                {hasProposal
+                  ? `${suggestionCards.length || proposals.length} recommendation${(suggestionCards.length || proposals.length) === 1 ? '' : 's'}`
+                  : 'No proposal loaded'}
+              </h2>
+            </div>
+          </header>
+
+          {hasProposal && suggestionCards.length ? (
+            <div className="suggestions">
+              {suggestionCards.map((card, i) => (
+                <article key={`${card.title}-${i}`}>
+                  <span>{i + 1}</span>
+                  <div>
+                    <b>{card.title}</b>
+                    <p>{card.body}</p>
+                    <small>{selectedProposal?.status || 'Proposal'} · not auto-applied</small>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={disabled || !actor || !proposalCanReview}
+                    title={reviewProposalReason}
+                    onClick={(e) => {
+                      ;(e.currentTarget.closest('article') as HTMLElement).dataset.accepted = 'true'
+                      void reviewProposal()
+                    }}
+                  >
+                    <Icon name="check" />
+                    Accept
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="suggestion-empty">
+              <Icon name="spark" size={28} />
+              <p>
+                Run Generate Structure to compare a new orchestrator proposal against the current
+                hierarchy.
+              </p>
+              <Button onClick={() => void createRun()} disabled={disabled} title={createRunReason}>
+                Generate proposal
               </Button>
             </div>
-          </Section>
+          )}
 
+          <div className="proposal-summary">
+            <span>Current structure</span>
+            <b>
+              {protoProject
+                ? `${protoProject.chapters.length} chapters · ${protoProject.scenes.length} scenes · ${protoProject.shots.length} shots`
+                : `${chapters.length} chapters · ${sceneCount} scenes · ${shotCount} shots`}
+            </b>
+            <small>
+              Planned duration {formatDuration(plannedDuration)}
+              {story.target_duration_sec
+                ? ` · target ${formatDuration(story.target_duration_sec)}`
+                : ''}
+              .
+            </small>
+          </div>
+        </aside>
+      </div>
+
+      {/* Production orchestration controls — kept for API completeness, outside prototype split. */}
+      <div className="stack" style={{ marginTop: 12 }}>
           <Section
             title="Planning orchestration and proposal review"
             subtitle="Create and start a real backend planning run, inspect its immutable proposal, then review, reject, or apply it explicitly. Starting a run never applies its proposal."
@@ -1047,6 +1147,7 @@ export function StoryPage() {
               <Button
                 variant="quiet"
                 disabled={disabled}
+                title={busyReason}
                 onClick={() =>
                   void loadPlanning(selectedRunId || undefined, selectedProposalId || undefined)
                 }
@@ -1238,16 +1339,30 @@ export function StoryPage() {
                 </p>
               ) : null}
               <div className="inline-actions">
-                <Button disabled={disabled} onClick={() => void createRun()}>
+                <Button disabled={disabled} title={createRunReason} onClick={() => void createRun()}>
                   Create pending run
                 </Button>
-                <Button variant="primary" disabled={disabled || !runCanStart} onClick={() => void startRun()}>
+                <Button
+                  variant="primary"
+                  disabled={disabled || !runCanStart}
+                  title={startRunReason}
+                  onClick={() => void startRun()}
+                >
                   Start selected run
                 </Button>
-                <Button variant="quiet" disabled={disabled || !runCanCancel} onClick={() => void cancelRun()}>
+                <Button
+                  variant="quiet"
+                  disabled={disabled || !runCanCancel}
+                  title={cancelRunReason}
+                  onClick={() => void cancelRun()}
+                >
                   Cancel selected run
                 </Button>
-                <Button disabled={disabled || !runCanRetry} onClick={() => void retryRun()}>
+                <Button
+                  disabled={disabled || !runCanRetry}
+                  title={retryRunReason}
+                  onClick={() => void retryRun()}
+                >
                   Create retry run
                 </Button>
               </div>
@@ -1486,6 +1601,7 @@ export function StoryPage() {
                   <div className="inline-actions">
                     <Button
                       disabled={disabled || !actor || !proposalCanReview}
+                      title={reviewProposalReason}
                       onClick={() => void reviewProposal()}
                     >
                       Mark reviewed
@@ -1495,6 +1611,7 @@ export function StoryPage() {
                       disabled={
                         disabled || !actor || !rejectionReason.trim() || proposalIsTerminal
                       }
+                      title={rejectProposalReason}
                       onClick={() => void rejectProposal()}
                     >
                       Reject proposal
@@ -1502,6 +1619,7 @@ export function StoryPage() {
                     <Button
                       variant="primary"
                       disabled={disabled || !actor || !proposalCanApply}
+                      title={applyProposalReason}
                       onClick={() => void applyProposal()}
                     >
                       Apply reviewed proposal
@@ -1520,78 +1638,6 @@ export function StoryPage() {
               )}
             </div>
           </Section>
-        </div>
-
-        <aside className="suggestion-panel">
-          <header>
-            <span className="orchestrator-mark">
-              <Icon name="spark" />
-            </span>
-            <div>
-              <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
-              <h2>
-                {hasProposal
-                  ? `${suggestionCards.length || proposals.length} recommendation${(suggestionCards.length || proposals.length) === 1 ? '' : 's'}`
-                  : 'No proposal loaded'}
-              </h2>
-            </div>
-          </header>
-
-          {hasProposal && suggestionCards.length ? (
-            <div className="suggestions">
-              {suggestionCards.map((card, i) => (
-                <article key={`${card.title}-${i}`}>
-                  <span>{i + 1}</span>
-                  <div>
-                    <b>{card.title}</b>
-                    <p>{card.body}</p>
-                    <small>
-                      {selectedProposal?.status || 'Proposal'} · not auto-applied
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={disabled || !actor || !proposalCanReview}
-                    onClick={(e) => {
-                      ;(e.currentTarget.closest('article') as HTMLElement).dataset.accepted = 'true'
-                      void reviewProposal()
-                    }}
-                  >
-                    <Icon name="check" />
-                    Accept
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="suggestion-empty">
-              <Icon name="spark" size={28} />
-              <p>
-                Run Generate Structure to compare a new orchestrator proposal against the current
-                hierarchy.
-              </p>
-              <Button onClick={() => void createRun()} disabled={disabled}>
-                Generate proposal
-              </Button>
-            </div>
-          )}
-
-          <div className="proposal-summary">
-            <span>Current structure</span>
-            <b>
-              {protoProject
-                ? `${protoProject.chapters.length} chapters · ${protoProject.scenes.length} scenes · ${protoProject.shots.length} shots`
-                : `${chapters.length} chapters · ${sceneCount} scenes · ${shotCount} shots`}
-            </b>
-            <small>
-              Planned duration {formatDuration(plannedDuration)}
-              {story.target_duration_sec
-                ? ` · target ${formatDuration(story.target_duration_sec)}`
-                : ''}
-              .
-            </small>
-          </div>
-        </aside>
       </div>
     </div>
   )
