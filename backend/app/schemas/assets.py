@@ -30,6 +30,13 @@ class AssetApprovalState(StrEnum):
     archived = "archived"
 
 
+class ActiveAssetApprovalState(StrEnum):
+    draft = "draft"
+    in_review = "in_review"
+    approved = "approved"
+    blocked = "blocked"
+
+
 class CharacterReferenceRole(StrEnum):
     primary = "primary"
     alternate = "alternate"
@@ -69,6 +76,17 @@ class AssetUploadResponse(BaseModel):
 
 class AssetArchiveRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
+
+
+class StartingImageApprovalUpdate(BaseModel):
+    """Explicit optimistic transition for one active managed starting image."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    approval_state: ActiveAssetApprovalState
+    expected_approval_state: ActiveAssetApprovalState
+    reason: str | None = Field(default=None, max_length=500)
+    changed_by: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class AssetDeleteRequest(BaseModel):

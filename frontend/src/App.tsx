@@ -27,11 +27,14 @@ function App() {
   }, [])
 
   useEffect(() => {
-    void refreshBackendStatus()
+    const initial = window.setTimeout(() => void refreshBackendStatus(), 0)
     const timer = window.setInterval(() => {
       void refreshBackendStatus()
     }, 30_000)
-    return () => window.clearInterval(timer)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(timer)
+    }
   }, [refreshBackendStatus])
 
   return (
@@ -41,7 +44,11 @@ function App() {
       onNavigate={setActivePage}
       onRefreshStatus={() => void refreshBackendStatus()}
     >
-      <StoryboardStudio page={activePage} backendStatus={backendStatus} />
+      <StoryboardStudio
+        page={activePage}
+        backendStatus={backendStatus}
+        onNavigate={setActivePage}
+      />
     </AppShell>
   )
 }

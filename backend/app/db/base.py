@@ -341,12 +341,22 @@ class AIProposalRecord(UUIDMixin, TimestampMixin, Base):
     )
     orchestration_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("orchestration_runs.id", ondelete="SET NULL", use_alter=True, name="fk_ai_proposals_orchestration_run"),
+        ForeignKey(
+            "orchestration_runs.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_ai_proposal_records_orchestration_run",
+        ),
         index=True,
     )
     base_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("storyboard_versions.id", ondelete="SET NULL", use_alter=True, name="fk_ai_proposals_base_version"),
+        ForeignKey(
+            "storyboard_versions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_ai_proposal_records_base_storyboard_version",
+        ),
     )
     schema_name: Mapped[str | None] = mapped_column(String(128))
     schema_version: Mapped[int | None] = mapped_column(Integer)
@@ -364,7 +374,13 @@ class AIProposalRecord(UUIDMixin, TimestampMixin, Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     applied_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("storyboard_versions.id", ondelete="SET NULL")
+        UUID(as_uuid=True),
+        ForeignKey(
+            "storyboard_versions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_ai_proposal_records_applied_storyboard_version",
+        ),
     )
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejection_reason: Mapped[str | None] = mapped_column(Text)
@@ -498,8 +514,9 @@ class PlanningMediaAsset(UUIDMixin, StoryboardTimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("size_bytes IS NULL OR size_bytes >= 0", name="ck_planning_media_assets_size_bytes"),
         Index(
-            "uq_planning_media_assets_project_sha256",
+            "uq_planning_media_assets_project_kind_sha256",
             "project_id",
+            "kind",
             "sha256",
             unique=True,
             postgresql_where=text("sha256 IS NOT NULL"),
@@ -549,14 +566,26 @@ class VoiceProfile(UUIDMixin, StoryboardTimestampMixin, Base):
     provider_identifier: Mapped[str | None] = mapped_column(String(80))
     provider_voice_id: Mapped[str | None] = mapped_column(Text)
     voice_recipe_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("voice_recipes.id", ondelete="SET NULL", use_alter=True)
+        UUID(as_uuid=True),
+        ForeignKey(
+            "voice_recipes.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_voice_profiles_voice_recipe",
+        ),
     )
     voice_recipe_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
     voice_recipe_hash: Mapped[str | None] = mapped_column(String(64))
     voice_description: Mapped[str | None] = mapped_column(Text)
     design_model_id: Mapped[str | None] = mapped_column(Text)
     selected_preview_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("voice_previews.id", ondelete="SET NULL", use_alter=True)
+        UUID(as_uuid=True),
+        ForeignKey(
+            "voice_previews.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_voice_profiles_selected_preview",
+        ),
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
@@ -836,6 +865,11 @@ class OrchestrationRun(UUIDMixin, StoryboardTimestampMixin, Base):
     max_steps: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     repair_budget: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     repair_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    execution_owner_id: Mapped[str | None] = mapped_column(String(128))
+    execution_claim_token: Mapped[str | None] = mapped_column(String(64))
+    execution_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    execution_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    execution_attempt: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -852,11 +886,24 @@ class OrchestrationRun(UUIDMixin, StoryboardTimestampMixin, Base):
         CheckConstraint("repair_budget >= 0", name="ck_orchestration_runs_repair_budget"),
         CheckConstraint("repair_used >= 0", name="ck_orchestration_runs_repair_used"),
         CheckConstraint("repair_used <= repair_budget", name="ck_orchestration_runs_repair_used_le_budget"),
+        CheckConstraint("execution_attempt >= 0", name="ck_orchestration_runs_execution_attempt"),
+        CheckConstraint(
+            "(execution_claim_token IS NULL AND execution_owner_id IS NULL "
+            "AND execution_lease_expires_at IS NULL AND execution_heartbeat_at IS NULL) OR "
+            "(execution_claim_token IS NOT NULL AND execution_owner_id IS NOT NULL "
+            "AND execution_lease_expires_at IS NOT NULL AND execution_heartbeat_at IS NOT NULL)",
+            name="ck_orchestration_runs_execution_lease_complete",
+        ),
         CheckConstraint(
             "target_duration_sec_snapshot IS NULL OR target_duration_sec_snapshot > 0",
             name="ck_orchestration_runs_target_duration",
         ),
         Index("ix_orchestration_runs_story_status", "story_id", "status"),
+        Index(
+            "ix_orchestration_runs_execution_lease",
+            "status",
+            "execution_lease_expires_at",
+        ),
         Index(
             "uq_orchestration_runs_one_active_per_story",
             "story_id",
@@ -1026,5 +1073,12 @@ class GpuResourceLease(UUIDMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("status = 'active'"),
             sqlite_where=text("status = 'active'"),
+        ),
+        Index(
+            "uq_gpu_resource_leases_one_active_per_group",
+            "exclusive_group",
+            unique=True,
+            postgresql_where=text("status = 'active' AND exclusive_group IS NOT NULL"),
+            sqlite_where=text("status = 'active' AND exclusive_group IS NOT NULL"),
         ),
     )

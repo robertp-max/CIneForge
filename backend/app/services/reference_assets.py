@@ -5,7 +5,7 @@ Safety guarantees:
 - Generated on-disk names only; original filename is metadata only.
 - MIME + extension allowlist per asset kind.
 - Bounded upload size.
-- SHA-256 content hashing with per-project duplicate detection (never cloning).
+- SHA-256 content hashing with per-project, per-kind duplicate detection (never cloning).
 - Optional image/audio metadata extraction from safe existing deps / stdlib.
 - Soft archive + constrained delete policy with audit trail.
 - Clients receive asset IDs and controlled streams — never filesystem paths.
@@ -30,10 +30,16 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import get_settings
 from backend.app.db.base import (
     AuditLog,
+    Chapter,
     Character,
     CharacterReferenceAsset,
     PlanningMediaAsset,
     Project,
+    Scene,
+    Shot,
+    Story,
+    VoicePreview,
+    VoiceProfile,
 )
 
 
@@ -64,6 +70,8 @@ ASSET_KINDS = frozenset(
         "story_document",
     }
 )
+
+ACTIVE_APPROVAL_STATES = frozenset({"draft", "in_review", "approved", "blocked"})
 
 # Per-kind allowlists: MIME types, extensions (lowercase with dot), max bytes.
 KIND_POLICY: dict[str, dict] = {
@@ -422,13 +430,72 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def find_duplicate(db: Session, project_id: UUID, digest: str) -> PlanningMediaAsset | None:
+def find_duplicate(
+    db: Session,
+    project_id: UUID,
+    kind: str,
+    digest: str,
+) -> PlanningMediaAsset | None:
     return db.scalar(
         select(PlanningMediaAsset).where(
             PlanningMediaAsset.project_id == project_id,
+            PlanningMediaAsset.kind == kind,
             PlanningMediaAsset.sha256 == digest,
         )
     )
+
+
+def _story_ids_referencing_asset(db: Session, asset_id: UUID) -> set[UUID]:
+    """Resolve every story whose canonical plan directly references an asset."""
+    story_ids = set(
+        db.scalars(
+            select(Chapter.story_id)
+            .join(Scene, Scene.chapter_id == Chapter.id)
+            .join(Shot, Shot.scene_id == Scene.id)
+            .where(Shot.starting_image_asset_id == asset_id)
+        )
+    )
+    story_ids.update(
+        db.scalars(
+            select(Character.story_id)
+            .join(
+                CharacterReferenceAsset,
+                CharacterReferenceAsset.character_id == Character.id,
+            )
+            .where(CharacterReferenceAsset.asset_id == asset_id)
+        )
+    )
+    story_ids.update(
+        db.scalars(
+            select(VoiceProfile.story_id).where(
+                (VoiceProfile.source_asset_id == asset_id)
+                | (VoiceProfile.selected_preview_asset_id == asset_id)
+            )
+        )
+    )
+    story_ids.update(
+        db.scalars(
+            select(VoiceProfile.story_id)
+            .join(VoicePreview, VoicePreview.voice_profile_id == VoiceProfile.id)
+            .where(VoicePreview.planning_media_asset_id == asset_id)
+        )
+    )
+    return story_ids
+
+
+def _mark_stories_draft(db: Session, story_ids: set[UUID]) -> None:
+    if not story_ids:
+        return
+    changed_at = datetime.utcnow()
+    stories = db.scalars(
+        select(Story)
+        .where(Story.id.in_(story_ids))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    for story in stories:
+        story.approval_state = "draft"
+        story.updated_at = changed_at
 
 
 def upload_asset(
@@ -446,8 +513,8 @@ def upload_asset(
 ) -> tuple[PlanningMediaAsset, bool]:
     """Store a managed asset.
 
-    Returns (asset, created) where created=False means a same-project SHA-256
-    duplicate was returned without cloning bytes or creating a second row.
+    Returns (asset, created) where created=False means a same-project, same-kind
+    SHA-256 duplicate was returned without cloning bytes or creating a second row.
     """
     _project_or_error(db, project_id)
 
@@ -467,18 +534,26 @@ def upload_asset(
     )
 
     digest = sha256_bytes(data)
-    existing = find_duplicate(db, project_id, digest)
+    existing = find_duplicate(db, project_id, kind, digest)
     if existing is not None:
         # Never clone: return the existing record. Optionally un-archive if needed.
         if existing.archived_at is not None:
+            affected_story_ids = _story_ids_referencing_asset(db, existing.id)
             existing.archived_at = None
             if existing.approval_state == "archived":
                 existing.approval_state = "draft"
+            _mark_stories_draft(db, affected_story_ids)
             _audit(
                 db,
                 entity_id=existing.id,
                 action="planning_media_asset_duplicate_reused_unarchived",
-                details={"sha256": digest, "kind": kind},
+                details={
+                    "sha256": digest,
+                    "kind": kind,
+                    "stories_marked_draft": sorted(
+                        str(story_id) for story_id in affected_story_ids
+                    ),
+                },
             )
             db.commit()
             db.refresh(existing)
@@ -628,6 +703,76 @@ def list_assets(
     return list(db.scalars(query))
 
 
+def transition_starting_image_approval(
+    db: Session,
+    asset_id: UUID,
+    *,
+    approval_state: str,
+    expected_approval_state: str,
+    reason: str | None = None,
+    changed_by: str | None = None,
+) -> PlanningMediaAsset:
+    """Persist an optimistic approval-state transition on one managed starting image.
+
+    This deliberately updates the existing asset row only. It never copies bytes,
+    creates a generation job, unarchives an asset, or invokes a media runtime.
+    """
+    asset = _asset_or_error(db, asset_id, include_archived=True)
+    if asset.kind != "starting_image":
+        raise ReferenceAssetError(
+            "Only starting_image assets may be changed through starting-image approval."
+        )
+    if asset.archived_at is not None or asset.approval_state == "archived":
+        raise ReferenceAssetConflictError(
+            "Archived starting-image assets cannot be reviewed or approved."
+        )
+    if approval_state not in ACTIVE_APPROVAL_STATES:
+        raise ReferenceAssetError(
+            f"Unsupported active approval state '{approval_state}'."
+        )
+    if expected_approval_state not in ACTIVE_APPROVAL_STATES:
+        raise ReferenceAssetError(
+            f"Unsupported expected approval state '{expected_approval_state}'."
+        )
+
+    current_state = asset.approval_state
+    if current_state != expected_approval_state:
+        raise ReferenceAssetConflictError(
+            "Starting-image approval changed since it was loaded "
+            f"(expected '{expected_approval_state}', found '{current_state}'). Refresh and retry."
+        )
+
+    if current_state == approval_state:
+        return asset
+
+    if approval_state == "approved":
+        path = resolve_managed_path(asset)
+        if not path.exists() or not path.is_file():
+            raise ReferenceAssetError(
+                "Starting-image bytes are unavailable in managed storage; approval was not changed."
+            )
+
+    affected_story_ids = _story_ids_referencing_asset(db, asset.id)
+    asset.approval_state = approval_state
+    _mark_stories_draft(db, affected_story_ids)
+    _audit(
+        db,
+        entity_id=asset.id,
+        action="planning_media_asset_approval_transitioned",
+        details={
+            "kind": asset.kind,
+            "previous_approval_state": current_state,
+            "approval_state": approval_state,
+            "reason": reason,
+            "changed_by": changed_by,
+            "stories_marked_draft": sorted(str(story_id) for story_id in affected_story_ids),
+        },
+    )
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
 def archive_asset(
     db: Session,
     asset_id: UUID,
@@ -637,13 +782,19 @@ def archive_asset(
     asset = _asset_or_error(db, asset_id, include_archived=True)
     if asset.archived_at is not None:
         return asset
+    affected_story_ids = _story_ids_referencing_asset(db, asset.id)
     asset.archived_at = datetime.utcnow()
     asset.approval_state = "archived"
+    _mark_stories_draft(db, affected_story_ids)
     _audit(
         db,
         entity_id=asset.id,
         action="planning_media_asset_archived",
-        details={"reason": reason, "kind": asset.kind},
+        details={
+            "reason": reason,
+            "kind": asset.kind,
+            "stories_marked_draft": sorted(str(story_id) for story_id in affected_story_ids),
+        },
     )
     db.commit()
     db.refresh(asset)
@@ -684,6 +835,12 @@ def delete_asset(
         "force": force,
         "file_removed": False,
     }
+
+    affected_story_ids = _story_ids_referencing_asset(db, asset.id)
+    _mark_stories_draft(db, affected_story_ids)
+    details["stories_marked_draft"] = sorted(
+        str(story_id) for story_id in affected_story_ids
+    )
 
     # Detach character reference links first (FK is CASCADE, but be explicit).
     links = list(
@@ -770,8 +927,6 @@ def link_character_reference(
         raise ReferenceAssetError("Only character_reference assets may be linked to characters.")
 
     # Asset must belong to the same project as the character's story.
-    from backend.app.db.base import Story
-
     story = db.get(Story, character.story_id)
     if story is None or story.project_id != asset.project_id:
         raise ReferenceAssetError("Asset project must match the character's story project.")
@@ -796,6 +951,7 @@ def link_character_reference(
     )
     db.add(link)
     db.flush()
+    _mark_stories_draft(db, {story.id})
     _audit(
         db,
         entity_id=asset_id,
@@ -805,6 +961,7 @@ def link_character_reference(
             "reference_role": reference_role,
             "order_index": order_index,
             "link_id": str(link.id),
+            "stories_marked_draft": [str(story.id)],
         },
     )
     db.commit()
@@ -834,11 +991,20 @@ def unlink_character_reference(db: Session, link_id: UUID) -> None:
         raise ReferenceAssetNotFoundError("Character reference link not found.")
     asset_id = link.asset_id
     character_id = link.character_id
+    character = db.get(Character, character_id)
+    affected_story_ids = {character.story_id} if character is not None else set()
     db.delete(link)
+    _mark_stories_draft(db, affected_story_ids)
     _audit(
         db,
         entity_id=asset_id,
         action="character_reference_unlinked",
-        details={"character_id": str(character_id), "link_id": str(link_id)},
+        details={
+            "character_id": str(character_id),
+            "link_id": str(link_id),
+            "stories_marked_draft": sorted(
+                str(story_id) for story_id in affected_story_ids
+            ),
+        },
     )
     db.commit()

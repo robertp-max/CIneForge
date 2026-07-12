@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import tempfile
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,7 @@ from backend.app.schemas.assets import (
     CharacterReferenceLinkCreate,
     CharacterReferenceLinkRead,
     PlanningMediaAssetRead,
+    StartingImageApprovalUpdate,
 )
 from backend.app.services import reference_assets as service
 
@@ -50,38 +52,63 @@ def _to_read(asset, *, is_duplicate: bool = False) -> PlanningMediaAssetRead:
 )
 async def upload_planning_asset(
     project_id: UUID,
-    kind: AssetKind = Form(...),
-    file: UploadFile = File(...),
-    consent_confirmed: bool = Form(False),
-    source_type: str = Form("user_upload"),
+    request: Request,
+    http_response: Response,
+    kind: AssetKind = Query(...),
+    original_filename: str | None = Query(None, max_length=240),
+    consent_confirmed: bool = Query(False),
+    source_type: str = Query("user_upload", min_length=1, max_length=48),
     db: Session = Depends(get_db),
 ) -> AssetUploadResponse:
-    """Managed upload. Returns asset ID metadata only — never filesystem paths."""
+    """Bounded raw-body upload; returns IDs only and requires no multipart runtime."""
+    max_bytes = int(service.KIND_POLICY[kind.value]["max_bytes"])
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise service.ReferenceAssetError(
+                    f"Upload exceeds the {max_bytes}-byte limit for {kind.value}."
+                )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid Content-Length header.",
+            ) from error
+
+    temporary = tempfile.SpooledTemporaryFile(max_size=min(max_bytes, 1024 * 1024), mode="w+b")
     try:
+        received = 0
+        async for chunk in request.stream():
+            received += len(chunk)
+            if received > max_bytes:
+                raise service.ReferenceAssetError(
+                    f"Upload exceeds the {max_bytes}-byte limit for {kind.value}."
+                )
+            temporary.write(chunk)
+        temporary.seek(0)
         asset, created = service.upload_asset_from_fileobj(
             db,
             project_id=project_id,
             kind=kind.value,
-            fileobj=file.file,
-            original_filename=file.filename,
-            content_type=file.content_type,
+            fileobj=temporary,
+            original_filename=original_filename,
+            content_type=request.headers.get("content-type"),
             source_type=source_type,
             consent_confirmed=consent_confirmed if kind == AssetKind.voice_source else None,
         )
     except (service.ReferenceAssetError, service.ReferenceAssetNotFoundError) as error:
         raise _http_for(error) from error
+    finally:
+        temporary.close()
 
     # Duplicate reuse is still a successful response; created=false signals no clone.
-    status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    response = AssetUploadResponse(
+    http_response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    response_payload = AssetUploadResponse(
         asset=_to_read(asset, is_duplicate=not created),
         created=created,
         duplicate_of_existing=not created,
     )
-    # FastAPI uses decorator status_code for non-Response returns; duplicates stay 201
-    # with created=false, which is acceptable and explicit in the body.
-    _ = status_code
-    return response
+    return response_payload
 
 
 @router.get(
@@ -119,6 +146,34 @@ def get_planning_asset(
     try:
         asset = service.get_asset(db, asset_id, include_archived=include_archived)
     except service.ReferenceAssetNotFoundError as error:
+        raise _http_for(error) from error
+    return _to_read(asset)
+
+
+@router.patch(
+    "/{asset_id}/starting-image-approval",
+    response_model=PlanningMediaAssetRead,
+)
+def update_starting_image_approval(
+    asset_id: UUID,
+    payload: StartingImageApprovalUpdate,
+    db: Session = Depends(get_db),
+) -> PlanningMediaAssetRead:
+    """Explicitly persist review state for one active managed starting image."""
+    try:
+        asset = service.transition_starting_image_approval(
+            db,
+            asset_id,
+            approval_state=payload.approval_state.value,
+            expected_approval_state=payload.expected_approval_state.value,
+            reason=payload.reason,
+            changed_by=payload.changed_by,
+        )
+    except (
+        service.ReferenceAssetError,
+        service.ReferenceAssetNotFoundError,
+        service.ReferenceAssetConflictError,
+    ) as error:
         raise _http_for(error) from error
     return _to_read(asset)
 

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.db.base import Project, ProjectStoryboardSettings
+from backend.app.db.base import Project, ProjectStoryboardSettings, Story
 from backend.app.schemas.storyboard_settings import (
     DEFAULT_APPROVAL_POLICY,
     DEFAULT_ASPECT_RATIO,
@@ -87,14 +88,33 @@ def get_or_create_settings(db: Session, project_id: UUID) -> ProjectStoryboardSe
 
 
 def get_settings(db: Session, project_id: UUID) -> ProjectStoryboardSettings:
-    return get_or_create_settings(db, project_id)
+    _project_or_error(db, project_id)
+    existing = get_settings_row(db, project_id)
+    if existing is not None:
+        return existing
+    # Reads use effective defaults without mutating the database.  The first
+    # PUT is the explicit creation boundary.
+    return ProjectStoryboardSettings(project_id=project_id, **default_settings_values())
 
 
 def put_settings(
     db: Session, project_id: UUID, payload: ProjectStoryboardSettingsUpdate
 ) -> ProjectStoryboardSettings:
     _project_or_error(db, project_id)
-    row = get_settings_row(db, project_id)
+    stories = list(
+        db.scalars(
+            select(Story)
+            .where(Story.project_id == project_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    row = db.scalar(
+        select(ProjectStoryboardSettings)
+        .where(ProjectStoryboardSettings.project_id == project_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     data = payload.model_dump(exclude={"expected_settings_version"})
 
     if row is None:
@@ -115,6 +135,10 @@ def put_settings(
         for field, value in data.items():
             setattr(row, field, value)
         row.settings_version = int(row.settings_version) + 1
+
+    for story in stories:
+        story.approval_state = "draft"
+        story.updated_at = datetime.utcnow()
 
     db.commit()
     db.refresh(row)

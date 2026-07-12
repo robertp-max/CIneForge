@@ -23,11 +23,19 @@ from __future__ import annotations
 
 import time
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.db.base import OrchestrationRun, OrchestrationStep
+from backend.app.db.base import (
+    OrchestrationRun,
+    OrchestrationStep,
+    ProviderProfile,
+    StoryboardVersion,
+    TaskProviderAssignment,
+)
 from backend.app.schemas.orchestration import (
     ActorType,
     CheckpointState,
@@ -36,6 +44,7 @@ from backend.app.schemas.orchestration import (
     EventType,
     FailureCategory,
     LogicalModelProfile,
+    ManualTaskRoute,
     PlanningContext,
     PlanningTaskType,
     ProviderRequestContract,
@@ -44,6 +53,12 @@ from backend.app.schemas.orchestration import (
     RunStatus,
     StepStatus,
 )
+from backend.app.schemas.proposals import ProposalCreateRequest
+from backend.app.services.ai_orchestration.schemas import (
+    STORYBOARD_PROPOSAL_SCHEMA_NAME,
+    ProposalType,
+)
+from backend.app.services.ai_orchestration.validator import content_hash_for
 from backend.app.services.planning.contracts import (
     assert_no_execution_side_effects,
     build_proposal_payload,
@@ -67,14 +82,22 @@ from backend.app.services.planning.provider import (
     TransportError,
     get_provider,
 )
+from backend.app.services.planning.provider_registry import (
+    build_provider_registry,
+    describe_providers,
+)
 from backend.app.services.planning.repository import PlanningRepository
 from backend.app.services.planning.routing import (
     build_routing_snapshot,
-    default_provider_catalog,
     escalate_route,
     select_route,
 )
 from backend.app.services.planning.state_machine import is_run_terminal, is_step_terminal, utcnow
+from backend.app.services import (
+    proposal_service,
+    storyboard_settings as storyboard_settings_service,
+    storyboard_snapshot,
+)
 
 
 DEFAULT_PIPELINE: tuple[PlanningTaskType, ...] = (
@@ -100,10 +123,73 @@ class PlanningEngine:
         auto_commit: bool = True,
     ) -> None:
         self.repo = PlanningRepository(db)
-        self.providers: dict[str, PlanningProvider] = dict(providers or {})
+        self.providers: dict[str, PlanningProvider] = dict(
+            providers if providers is not None else build_provider_registry()
+        )
         if MockPlanningProvider.identifier not in self.providers:
             self.providers[MockPlanningProvider.identifier] = MockPlanningProvider()
         self.auto_commit = auto_commit
+
+    def _persisted_task_routes(
+        self,
+        story_id: UUID,
+        task_types: list[PlanningTaskType],
+    ) -> tuple[list[ManualTaskRoute], dict[str, dict[str, str]]]:
+        """Resolve enabled per-story assignments to provider-neutral routes.
+
+        Provider-profile rows contain public configuration metadata only.  The
+        live registry remains authoritative for actual availability; these
+        records choose among those registered providers and never construct a
+        provider, read credentials, or execute a connection test.
+        """
+        allowed_tasks = set(task_types)
+        rows = self.repo.db.execute(
+            select(TaskProviderAssignment, ProviderProfile)
+            .join(
+                ProviderProfile,
+                ProviderProfile.id == TaskProviderAssignment.provider_profile_id,
+            )
+            .where(
+                TaskProviderAssignment.story_id == story_id,
+                TaskProviderAssignment.enabled.is_(True),
+            )
+            .order_by(
+                TaskProviderAssignment.priority.desc(),
+                TaskProviderAssignment.task_type,
+            )
+        ).all()
+        routes: list[ManualTaskRoute] = []
+        evidence: dict[str, dict[str, str]] = {}
+        for assignment, profile in rows:
+            try:
+                task = PlanningTaskType(assignment.task_type)
+            except ValueError as exc:
+                raise PlanningError(
+                    PlanningErrorCode.ROUTING_FAILED,
+                    f"Stored provider assignment has unsupported task_type={assignment.task_type}",
+                ) from exc
+            if task not in allowed_tasks:
+                continue
+            if profile.execution_mode == "disabled":
+                raise PlanningError(
+                    PlanningErrorCode.ROUTING_FAILED,
+                    f"Provider profile '{profile.display_name}' is disabled",
+                    details={"provider_profile_id": str(profile.id), "task_type": task.value},
+                )
+            routes.append(
+                ManualTaskRoute(
+                    task_type=task,
+                    provider_identifier=profile.provider_identifier,
+                    resolved_model=profile.provider_model_id,
+                    rationale=assignment.rationale
+                    or f"Persisted task assignment {assignment.id}",
+                )
+            )
+            evidence[task.value] = {
+                "assignment_id": str(assignment.id),
+                "provider_profile_id": str(profile.id),
+            }
+        return routes, evidence
 
     # ==================================================================
     # Public API
@@ -111,7 +197,125 @@ class PlanningEngine:
 
     def create_run(self, request: CreateOrchestrationRunRequest) -> tuple[OrchestrationRun, bool]:
         """Create a pending run. Returns (run, created). Idempotent on client key."""
-        story = self.repo.get_story(request.story_id)
+        story = self.repo.lock_story_for_run_creation(request.story_id)
+        project_settings = storyboard_settings_service.get_settings(
+            self.repo.db, story.project_id
+        )
+        if request.prefer_hosted_providers and not project_settings.prefer_hosted_providers:
+            raise PlanningError(
+                PlanningErrorCode.ROUTING_FAILED,
+                "Hosted planning providers are disabled by project policy",
+            )
+        if request.prefer_local_providers and not project_settings.prefer_local_providers:
+            raise PlanningError(
+                PlanningErrorCode.ROUTING_FAILED,
+                "Local planning providers are disabled by project policy",
+            )
+        if (
+            request.routing_mode != RoutingMode.manual
+            and not request.prefer_local_providers
+            and not request.prefer_hosted_providers
+        ):
+            raise PlanningError(
+                PlanningErrorCode.ROUTING_FAILED,
+                "Automatic planning requires at least one provider class allowed by project/run policy",
+            )
+
+        _, input_context_hash = storyboard_snapshot.build_snapshot_with_hash(
+            self.repo.db, story.id
+        )
+        base_content_hash = input_context_hash
+        if request.base_storyboard_version_id is not None:
+            base_version = self.repo.db.get(
+                StoryboardVersion, request.base_storyboard_version_id
+            )
+            if base_version is None or base_version.story_id != story.id:
+                raise PlanningError(
+                    PlanningErrorCode.VALIDATION_FAILED,
+                    "Base storyboard version does not belong to the planning story",
+                )
+            if story.active_storyboard_version_id != base_version.id:
+                raise PlanningError(
+                    PlanningErrorCode.VALIDATION_FAILED,
+                    "Base storyboard version is stale relative to the active story version",
+                )
+            base_content_hash = (
+                base_version.content_hash
+                or storyboard_snapshot.content_hash_for_snapshot(base_version.snapshot_json or {})
+            )
+            if base_content_hash != input_context_hash:
+                raise PlanningError(
+                    PlanningErrorCode.VALIDATION_FAILED,
+                    "Live story content does not match the declared base storyboard version",
+                )
+
+        task_types = list(request.task_types) if request.task_types else list(DEFAULT_PIPELINE)
+        if not task_types:
+            raise PlanningError(PlanningErrorCode.VALIDATION_FAILED, "At least one task_type is required")
+        if len(task_types) > request.max_steps:
+            raise PlanningError(
+                PlanningErrorCode.VALIDATION_FAILED,
+                "task_types length exceeds max_steps",
+                details={"task_count": len(task_types), "max_steps": request.max_steps},
+            )
+
+        stored_routes, stored_route_evidence = self._persisted_task_routes(
+            story.id,
+            task_types,
+        )
+        route_by_task = {route.task_type: route for route in stored_routes}
+        for route in request.manual_routes:
+            if route.task_type in set(task_types):
+                route_by_task[route.task_type] = route
+                stored_route_evidence.pop(route.task_type.value, None)
+        effective_routes = [
+            route_by_task[task]
+            for task in task_types
+            if task in route_by_task
+        ]
+        effective_mode = request.routing_mode
+        if effective_routes and effective_mode == RoutingMode.automatic:
+            effective_mode = RoutingMode.hybrid
+
+        descriptors = describe_providers()
+        descriptor_by_id = {
+            item.provider_identifier: item for item in descriptors
+        }
+        for manual_route in effective_routes:
+            descriptor = descriptor_by_id.get(manual_route.provider_identifier)
+            if descriptor is None:
+                raise PlanningError(
+                    PlanningErrorCode.ROUTING_FAILED,
+                    f"Provider '{manual_route.provider_identifier}' is not registered for planning",
+                )
+            if descriptor.availability_status.value != "available":
+                raise PlanningError(
+                    PlanningErrorCode.ROUTING_FAILED,
+                    f"Provider '{manual_route.provider_identifier}' is not available for planning",
+                    details={"availability_status": descriptor.availability_status.value},
+                )
+            if (
+                descriptor.privacy_classification == "hosted"
+                and (
+                    not project_settings.prefer_hosted_providers
+                    or not request.prefer_hosted_providers
+                )
+            ):
+                raise PlanningError(
+                    PlanningErrorCode.ROUTING_FAILED,
+                    f"Hosted provider '{manual_route.provider_identifier}' is disabled by project/run policy",
+                )
+            if (
+                descriptor.privacy_classification == "local"
+                and (
+                    not project_settings.prefer_local_providers
+                    or not request.prefer_local_providers
+                )
+            ):
+                raise PlanningError(
+                    PlanningErrorCode.ROUTING_FAILED,
+                    f"Local provider '{manual_route.provider_identifier}' is disabled by project/run policy",
+                )
 
         if request.idempotency_key:
             existing = self.repo.find_run_by_idempotency(request.story_id, request.idempotency_key)
@@ -126,55 +330,60 @@ class PlanningEngine:
                 details={"run_id": str(active.id), "status": active.status},
             )
 
-        task_types = list(request.task_types) if request.task_types else list(DEFAULT_PIPELINE)
-        if not task_types:
-            raise PlanningError(PlanningErrorCode.VALIDATION_FAILED, "At least one task_type is required")
-        if len(task_types) > request.max_steps:
-            raise PlanningError(
-                PlanningErrorCode.VALIDATION_FAILED,
-                "task_types length exceeds max_steps",
-                details={"task_count": len(task_types), "max_steps": request.max_steps},
-            )
-
         routing_snapshot = build_routing_snapshot(
-            mode=request.routing_mode,
-            manual_routes=request.manual_routes,
+            mode=effective_mode,
+            manual_routes=effective_routes,
             prefer_local_providers=request.prefer_local_providers,
             prefer_hosted_providers=request.prefer_hosted_providers,
             transport_retry_limit=request.transport_retry_limit,
             time_budget_sec=request.time_budget_sec,
             task_types=task_types,
         )
+        provider_catalog = [descriptor.as_dict() for descriptor in descriptors]
+        routing_snapshot["provider_catalog"] = provider_catalog
+        routing_snapshot["input_context_hash"] = input_context_hash
+        routing_snapshot["base_content_hash"] = base_content_hash
+        routing_snapshot["persisted_task_assignments"] = stored_route_evidence
+        routing_snapshot["requested_mode"] = request.routing_mode.value
         if request.idempotency_key:
             routing_snapshot["client_idempotency_key"] = request.idempotency_key
 
         default_provider_snapshot = {
             "schema_name": "planning.provider_catalog.v1",
-            "providers": default_provider_catalog(
-                prefer_local=request.prefer_local_providers,
-                prefer_hosted=request.prefer_hosted_providers,
-            ),
+            "providers": provider_catalog,
         }
 
         input_hash = run_input_hash(
             story_id=story.id,
             base_storyboard_version_id=request.base_storyboard_version_id,
+            input_context_hash=input_context_hash,
             target_duration_sec=float(story.target_duration_sec),
             routing_snapshot=routing_snapshot,
             task_types=[t.value for t in task_types],
         )
 
-        run = self.repo.create_run(
-            story_id=story.id,
-            base_storyboard_version_id=request.base_storyboard_version_id,
-            requested_by=request.requested_by,
-            routing_snapshot=routing_snapshot,
-            default_provider_snapshot=default_provider_snapshot,
-            target_duration_sec_snapshot=float(story.target_duration_sec),
-            input_hash=input_hash,
-            max_steps=request.max_steps,
-            repair_budget=request.repair_budget,
-        )
+        try:
+            run = self.repo.create_run(
+                story_id=story.id,
+                base_storyboard_version_id=request.base_storyboard_version_id,
+                requested_by=request.requested_by,
+                routing_snapshot=routing_snapshot,
+                default_provider_snapshot=default_provider_snapshot,
+                target_duration_sec_snapshot=float(story.target_duration_sec),
+                input_hash=input_hash,
+                max_steps=request.max_steps,
+                repair_budget=request.repair_budget,
+            )
+        except IntegrityError as exc:
+            self.repo.rollback()
+            active = self.repo.find_active_run(request.story_id)
+            if active is not None:
+                raise PlanningError(
+                    PlanningErrorCode.ACTIVE_RUN_EXISTS,
+                    "An active orchestration run already exists for this story",
+                    details={"run_id": str(active.id), "status": active.status},
+                ) from exc
+            raise
 
         # Seed pending steps as resume-safe plan.
         for index, task in enumerate(task_types):
@@ -198,14 +407,26 @@ class PlanningEngine:
             details={
                 "input_hash": input_hash,
                 "task_types": [t.value for t in task_types],
-                "routing_mode": request.routing_mode.value,
+                "routing_mode": effective_mode.value,
             },
         )
         self._commit()
         return run, True
 
-    def start_run(self, run_id: UUID) -> OrchestrationRun:
-        """Transition pending → running and execute until terminal or cancel."""
+    def claim_run(
+        self,
+        run_id: UUID,
+        *,
+        owner_id: str | None = None,
+        claim_token: str | None = None,
+        lease_seconds: int = 600,
+    ) -> tuple[OrchestrationRun, bool]:
+        """Durably claim a pending or recoverable run without executing provider work.
+
+        Returns ``(run, newly_started)``.  A running run is intentionally
+        claimable only when its previous lease is absent or expired.
+        """
+
         run = self.repo.get_run(run_id)
         if is_run_terminal(run.status):
             raise PlanningError(
@@ -213,8 +434,75 @@ class PlanningEngine:
                 f"Run is already terminal with status={run.status}",
                 details={"run_id": str(run.id), "status": run.status},
             )
-        if run.status == RunStatus.running.value:
-            # Resume-safe: continue from checkpoint.
+        if owner_id is None and claim_token is None:
+            if run.status == RunStatus.running.value:
+                return run, False
+            self.repo.transition_run(run, RunStatus.running)
+            self.repo.add_event(
+                run_id=run.id,
+                event_type=EventType.run_started,
+                actor_type=ActorType.system,
+                details={"started_at": utcnow().isoformat()},
+            )
+            self._commit()
+            return run, True
+
+        owner = owner_id or "sync-planning-engine"
+        token = claim_token or uuid4().hex
+        run, newly_started, acquired = self.repo.acquire_execution_lease(
+            run_id,
+            owner_id=owner,
+            claim_token=token,
+            lease_seconds=lease_seconds,
+        )
+        if not acquired:
+            return run, False
+
+        if newly_started:
+            self.repo.add_event(
+                run_id=run.id,
+                event_type=EventType.run_started,
+                actor_type=ActorType.system,
+                details={
+                    "started_at": utcnow().isoformat(),
+                    "execution_owner_id": owner[:128],
+                },
+            )
+        else:
+            self.repo.add_event(
+                run_id=run.id,
+                event_type=EventType.run_resumed,
+                actor_type=ActorType.system,
+                details={
+                    "current_step": run.current_step,
+                    "execution_owner_id": owner[:128],
+                },
+            )
+        self._commit()
+        return run, newly_started
+
+    def execute_claimed_run(
+        self,
+        run_id: UUID,
+        *,
+        resumed: bool = False,
+        owner_id: str | None = None,
+        claim_token: str | None = None,
+        lease_seconds: int = 600,
+    ) -> OrchestrationRun:
+        """Execute a claimed run from its latest durable checkpoint."""
+
+        run = self.repo.get_run(run_id)
+        if is_run_terminal(run.status):
+            return run
+        if run.status == RunStatus.pending.value:
+            run, _ = self.claim_run(
+                run_id,
+                owner_id=owner_id,
+                claim_token=claim_token,
+                lease_seconds=lease_seconds,
+            )
+        elif resumed:
             self.repo.add_event(
                 run_id=run.id,
                 event_type=EventType.run_resumed,
@@ -222,17 +510,45 @@ class PlanningEngine:
                 details={"current_step": run.current_step},
             )
             self._commit()
-            return self._execute(run)
-
-        self.repo.transition_run(run, RunStatus.running)
-        self.repo.add_event(
-            run_id=run.id,
-            event_type=EventType.run_started,
-            actor_type=ActorType.system,
-            details={"started_at": utcnow().isoformat()},
+        if owner_id and claim_token and not self.repo.owns_execution_lease(
+            run.id,
+            owner_id=owner_id,
+            claim_token=claim_token,
+        ):
+            raise PlanningError(
+                PlanningErrorCode.ACTIVE_RUN_EXISTS,
+                "Planning run is leased to another worker",
+                details={"run_id": str(run.id), "status": run.status},
+            )
+        return self._execute(
+            run,
+            owner_id=owner_id,
+            claim_token=claim_token,
+            lease_seconds=lease_seconds,
         )
-        self._commit()
-        return self._execute(run)
+
+    def start_run(self, run_id: UUID) -> OrchestrationRun:
+        """Synchronous compatibility entry point for service-level callers."""
+
+        owner_id = "sync-planning-engine"
+        claim_token = uuid4().hex
+        run, newly_started = self.claim_run(
+            run_id,
+            owner_id=owner_id,
+            claim_token=claim_token,
+        )
+        if run.execution_claim_token != claim_token:
+            raise PlanningError(
+                PlanningErrorCode.ACTIVE_RUN_EXISTS,
+                "Planning run is already leased to another worker",
+                details={"run_id": str(run.id), "status": run.status},
+            )
+        return self.execute_claimed_run(
+            run.id,
+            resumed=not newly_started,
+            owner_id=owner_id,
+            claim_token=claim_token,
+        )
 
     def cancel_run(
         self,
@@ -327,10 +643,40 @@ class PlanningEngine:
     # Execution loop
     # ==================================================================
 
-    def _execute(self, run: OrchestrationRun) -> OrchestrationRun:
+    def _execute(
+        self,
+        run: OrchestrationRun,
+        *,
+        owner_id: str | None = None,
+        claim_token: str | None = None,
+        lease_seconds: int = 600,
+    ) -> OrchestrationRun:
+        self._renew_execution_lease(
+            run,
+            owner_id=owner_id,
+            claim_token=claim_token,
+            lease_seconds=lease_seconds,
+        )
         budgets = self._budgets_from_run(run)
         budgets.started_monotonic = time.monotonic()
         context = self._build_context(run)
+        _, live_context_hash = storyboard_snapshot.build_snapshot_with_hash(
+            self.repo.db, run.story_id
+        )
+        expected_context_hash = str(
+            (run.routing_snapshot_json or {}).get("input_context_hash") or ""
+        )
+        if not expected_context_hash or live_context_hash != expected_context_hash:
+            self._fail_run(
+                run,
+                FailureCategory.validation,
+                "Story content changed after the planning run was created; create a new run",
+                details={
+                    "expected_input_context_hash": expected_context_hash or None,
+                    "actual_input_context_hash": live_context_hash,
+                },
+            )
+            return self.repo.get_run(run.id)
         context_hash = sha256_hex(context.model_dump(mode="json"))
         task_outputs: dict[str, dict[str, Any]] = self._load_completed_outputs(run)
 
@@ -342,7 +688,14 @@ class PlanningEngine:
                 by_seq.setdefault(step.sequence_index, []).append(step)
 
             for sequence_index in sorted(by_seq.keys()):
+                self.repo.db.expire_all()
                 run = self.repo.get_run(run.id)
+                self._renew_execution_lease(
+                    run,
+                    owner_id=owner_id,
+                    claim_token=claim_token,
+                    lease_seconds=lease_seconds,
+                )
                 if self._cancel_requested(run) or run.status == RunStatus.canceled.value:
                     return run
 
@@ -369,11 +722,18 @@ class PlanningEngine:
                     context_hash=context_hash,
                     budgets=budgets,
                     previous_outputs=task_outputs,
+                    owner_id=owner_id,
+                    claim_token=claim_token,
+                    lease_seconds=lease_seconds,
                 )
                 if completed_payload is None:
                     # Failed or canceled inside _run_step (run already updated).
                     return self.repo.get_run(run.id)
 
+                self.repo.db.expire_all()
+                run = self.repo.get_run(run.id)
+                if self._cancel_requested(run) or run.status == RunStatus.canceled.value:
+                    return run
                 task_outputs[head.task_type] = completed_payload
 
                 # Persist checkpoint after each completed step.
@@ -390,7 +750,14 @@ class PlanningEngine:
                 )
 
             # All steps completed — emit immutable proposal from production_proposal or merge.
+            self.repo.db.expire_all()
             run = self.repo.get_run(run.id)
+            self._renew_execution_lease(
+                run,
+                owner_id=owner_id,
+                claim_token=claim_token,
+                lease_seconds=lease_seconds,
+            )
             if run.status != RunStatus.running.value:
                 return run
 
@@ -433,6 +800,9 @@ class PlanningEngine:
         context_hash: str,
         budgets: EngineBudgets,
         previous_outputs: dict[str, dict[str, Any]],
+        owner_id: str | None = None,
+        claim_token: str | None = None,
+        lease_seconds: int = 600,
     ) -> dict[str, Any] | None:
         task_type = PlanningTaskType(step.task_type)
         routing_snapshot = dict(run.routing_snapshot_json or {})
@@ -482,7 +852,17 @@ class PlanningEngine:
         active_step = step
 
         while True:
-            if self._cancel_requested(self.repo.get_run(run.id)):
+            self.repo.db.expire_all()
+            refreshed_run = self.repo.get_run(run.id)
+            self._renew_execution_lease(
+                refreshed_run,
+                owner_id=owner_id,
+                claim_token=claim_token,
+                lease_seconds=lease_seconds,
+            )
+            if refreshed_run.status == RunStatus.canceled.value:
+                return None
+            if self._cancel_requested(refreshed_run):
                 self.cancel_run(run.id, reason="cancel requested during step")
                 return None
 
@@ -556,6 +936,32 @@ class PlanningEngine:
                 request=request,
                 budgets=budgets,
             )
+
+            # Cancellation is committed by a separate request/session while a
+            # provider may be blocked.  Refresh after the provider returns so
+            # this worker cannot overwrite the durable canceled run/step.
+            self.repo.db.expire_all()
+            refreshed_run = self.repo.get_run(run.id)
+            self._renew_execution_lease(
+                refreshed_run,
+                owner_id=owner_id,
+                claim_token=claim_token,
+                lease_seconds=lease_seconds,
+            )
+            if (
+                refreshed_run.status == RunStatus.canceled.value
+                or self._cancel_requested(refreshed_run)
+            ):
+                refreshed_inv = self.repo.find_invocation_by_key(inv_key)
+                if refreshed_inv is not None and refreshed_inv.status == "pending":
+                    self.repo.complete_invocation(
+                        refreshed_inv,
+                        status="canceled",
+                        error_category=FailureCategory.canceled.value,
+                        error_message="run canceled while provider invocation was in flight",
+                    )
+                    self._commit()
+                return None
 
             if transport_error is not None:
                 self.repo.complete_invocation(
@@ -854,30 +1260,64 @@ class PlanningEngine:
     ) -> dict[str, Any]:
         merged = merge_task_outputs(task_outputs)
         production = task_outputs.get(PlanningTaskType.production_proposal.value)
+        story = self.repo.get_story(run.story_id)
+        base_content_hash = str(
+            (run.routing_snapshot_json or {}).get("base_content_hash")
+            or (run.routing_snapshot_json or {}).get("input_context_hash")
+            or ""
+        )
         contract = build_proposal_payload(
-            story_id=run.story_id,
-            run_id=run.id,
+            project_id=story.project_id,
+            context=context,
             base_storyboard_version_id=run.base_storyboard_version_id,
+            base_content_hash=base_content_hash,
             target_duration_sec=float(run.target_duration_sec_snapshot or context.target_duration_sec),
-            title=context.title,
             merged=merged,
             production_payload=production,
         )
         payload = contract.model_dump(mode="json")
         assert_no_execution_side_effects(payload)
-        content_hash = proposal_content_hash(payload)
+        summary = str(
+            (production or {}).get("summary")
+            or f"Planning proposal for {context.title}"
+        ).strip()[:2000]
+        validation = proposal_service.validate_create_request(
+            self.repo.db,
+            ProposalCreateRequest(
+                proposal_type=ProposalType.storyboard_full_plan.value,
+                summary=summary,
+                payload=payload,
+                story_id=run.story_id,
+                orchestration_run_id=run.id,
+                base_storyboard_version_id=run.base_storyboard_version_id,
+                schema_name=STORYBOARD_PROPOSAL_SCHEMA_NAME,
+            ),
+        )
+        if not validation.accepted or validation.errors:
+            raise PlanningError(
+                PlanningErrorCode.VALIDATION_FAILED,
+                "Final storyboard proposal failed Phase-1 validation",
+                details={"errors": list(validation.errors)[:20]},
+            )
+        content_hash = validation.content_hash or proposal_content_hash(payload)
 
         record = self.repo.create_proposal(
-            proposal_type=contract.proposal_type,
+            proposal_type=ProposalType.storyboard_full_plan.value,
             payload=payload,
             story_id=run.story_id,
             orchestration_run_id=run.id,
             base_storyboard_version_id=run.base_storyboard_version_id,
-            schema_name=contract.schema_name,
+            schema_name=STORYBOARD_PROPOSAL_SCHEMA_NAME,
+            schema_version=1,
             content_hash=content_hash,
-            validation_status="passed",
-            validation_report_json={"accepted": True, "errors": []},
-            warnings_json=list(contract.warnings),
+            payload_hash=content_hash_for(payload),
+            input_context_hash=str(
+                (run.routing_snapshot_json or {}).get("input_context_hash") or ""
+            ),
+            base_content_hash=base_content_hash,
+            validation_status=str(validation.validation_status),
+            validation_report_json=validation.report,
+            warnings_json=list(validation.warnings),
         )
 
         # Attach proposal id to the production_proposal step when present.
@@ -906,6 +1346,7 @@ class PlanningEngine:
     def _build_context(self, run: OrchestrationRun) -> PlanningContext:
         story = self.repo.get_story(run.story_id)
         characters = self.repo.list_characters(story.id)
+        snapshot = storyboard_snapshot.build_canonical_snapshot(self.repo.db, story.id)
         return PlanningContext(
             story_id=story.id,
             title=story.title,
@@ -930,7 +1371,35 @@ class PlanningEngine:
                 }
                 for c in characters
             ],
-            existing_structure={},
+            existing_structure={
+                "chapters": list(snapshot.get("chapters") or []),
+                "characters": list(snapshot.get("characters") or []),
+                "voices": list(snapshot.get("voice_profiles") or []),
+            },
+        )
+
+    def _renew_execution_lease(
+        self,
+        run: OrchestrationRun,
+        *,
+        owner_id: str | None,
+        claim_token: str | None,
+        lease_seconds: int,
+    ) -> None:
+        if not owner_id or not claim_token:
+            return
+        if self.repo.renew_execution_lease(
+            run.id,
+            owner_id=owner_id,
+            claim_token=claim_token,
+            lease_seconds=lease_seconds,
+        ):
+            self._commit()
+            return
+        raise PlanningError(
+            PlanningErrorCode.ACTIVE_RUN_EXISTS,
+            "Planning execution lease is no longer owned by this worker",
+            details={"run_id": str(run.id), "status": run.status},
         )
 
     def _budgets_from_run(self, run: OrchestrationRun) -> EngineBudgets:

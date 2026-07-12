@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.base import (
     Base,
     Chapter,
+    PlanningMediaAsset,
     Project,
     Scene,
     Shot,
+    ShotModelRecommendation,
     ShotNarration,
+    ShotPromptPackage,
     Story,
     StoryboardVersion,
     VoiceProfile,
@@ -81,10 +87,37 @@ def _ready_story(db, *, target: float = 10.0, shot_duration: float = 10.0, with_
                 start_offset_sec=0,
             )
         )
+    db.add(
+        ShotPromptPackage(
+            shot_id=shot.id,
+            version=1,
+            image_prompt="Cinematic planning frame",
+            approval_state="draft",
+        )
+    )
+    db.add(
+        ShotModelRecommendation(
+            shot_id=shot.id,
+            recommendation_type="other",
+            rationale="Manual workflow review required",
+            availability_status="unknown",
+            benchmark_status="unknown",
+            approval_state="draft",
+        )
+    )
     db.commit()
     db.refresh(story)
     db.refresh(shot)
     return story, shot, project
+
+
+def _approve_current(db, story, approved_by: str = "reviewer@example.com"):
+    return storyboard_service.approve(
+        db,
+        story.id,
+        approved_by,
+        snapshot_service.current_revision(db, story.id),
+    )
 
 
 def test_readiness_requires_exact_duration(db_session):
@@ -102,6 +135,31 @@ def test_readiness_requires_narration_or_exception(db_session):
     assert any(reason["code"] == "narration_missing" for reason in status["reasons"])
 
 
+def test_readiness_requires_prompt_and_recommendation_or_explicit_policy_exception(db_session):
+    story, shot, project = _ready_story(db_session)
+    db_session.query(ShotPromptPackage).filter_by(shot_id=shot.id).delete()
+    db_session.query(ShotModelRecommendation).filter_by(shot_id=shot.id).delete()
+    db_session.commit()
+
+    status = storyboard_service.readiness(db_session, story.id)
+    assert status["ready"] is False
+    codes = {reason["code"] for reason in status["reasons"]}
+    assert "prompt_package_missing" in codes
+    assert "model_recommendation_missing" in codes
+
+    settings = settings_service.get_settings_row(db_session, project.id)
+    policy = dict(settings.approval_policy_json or {})
+    policy["prompt_package_exceptions"] = {str(shot.id): "Intentional prompt-free manual shot"}
+    policy["model_recommendation_exceptions"] = {
+        str(shot.id): "No generation workflow is required"
+    }
+    settings.approval_policy_json = policy
+    db_session.commit()
+
+    status = storyboard_service.readiness(db_session, story.id)
+    assert status["ready"] is True, status["reasons"]
+
+
 def test_readiness_accepts_narration_exception(db_session):
     story, shot, _ = _ready_story(db_session, with_narration=False)
     db_session.add(
@@ -115,6 +173,53 @@ def test_readiness_accepts_narration_exception(db_session):
     db_session.commit()
     status = storyboard_service.readiness(db_session, story.id)
     assert status["ready"] is True
+
+
+def test_readiness_requires_active_approved_same_project_starting_image(db_session):
+    story, shot, project = _ready_story(db_session)
+    shot.starting_image_required = True
+    asset = PlanningMediaAsset(
+        project_id=project.id,
+        kind="starting_image",
+        source_type="uploaded",
+        managed_uri="managed://starting-image",
+        approval_state="approved",
+    )
+    db_session.add(asset)
+    db_session.flush()
+    shot.starting_image_asset_id = asset.id
+    db_session.commit()
+
+    assert storyboard_service.readiness(db_session, story.id)["ready"] is True
+
+    asset.approval_state = "draft"
+    db_session.commit()
+    status = storyboard_service.readiness(db_session, story.id)
+    assert status["ready"] is False
+    assert any(reason["code"] == "starting_image_not_approved" for reason in status["reasons"])
+
+    asset.approval_state = "approved"
+    asset.kind = "character_reference"
+    db_session.commit()
+    status = storyboard_service.readiness(db_session, story.id)
+    assert any(reason["code"] == "starting_image_kind_invalid" for reason in status["reasons"])
+
+    asset.kind = "starting_image"
+    asset.archived_at = datetime.utcnow()
+    db_session.commit()
+    status = storyboard_service.readiness(db_session, story.id)
+    assert any(reason["code"] == "starting_image_archived" for reason in status["reasons"])
+
+    other_project = Project(name="Other Project", description=None)
+    db_session.add(other_project)
+    db_session.flush()
+    asset.archived_at = None
+    asset.project_id = other_project.id
+    db_session.commit()
+    status = storyboard_service.readiness(db_session, story.id)
+    assert any(
+        reason["code"] == "starting_image_project_mismatch" for reason in status["reasons"]
+    )
 
 
 def test_readiness_duration_override_required_outside_policy(db_session):
@@ -197,25 +302,120 @@ def test_voice_consent_blocks_when_required(db_session):
 def test_approve_blocked_when_not_ready(db_session):
     story, _, _ = _ready_story(db_session, target=12.0, shot_duration=10.0)
     with pytest.raises(storyboard_service.StoryboardDomainError):
-        storyboard_service.approve(db_session, story.id, "reviewer@example.com")
+        _approve_current(db_session, story)
+
+
+def test_approve_rejects_stale_revision_before_versioning(db_session):
+    story, shot, _ = _ready_story(db_session)
+    stale_revision = snapshot_service.current_revision(db_session, story.id)
+    shot.title = "Changed before approval"
+    db_session.commit()
+
+    with pytest.raises(
+        storyboard_service.StoryboardConflictError,
+        match="expected_revision does not match",
+    ):
+        storyboard_service.approve(
+            db_session,
+            story.id,
+            "reviewer@example.com",
+            stale_revision,
+        )
+    assert db_session.query(StoryboardVersion).filter_by(story_id=story.id).count() == 0
 
 
 def test_approve_is_idempotent_for_same_content_hash(db_session):
     story, _, _ = _ready_story(db_session)
-    first = storyboard_service.approve(db_session, story.id, "reviewer@example.com")
-    second = storyboard_service.approve(db_session, story.id, "reviewer@example.com")
+    revision = snapshot_service.current_revision(db_session, story.id)
+    first = storyboard_service.approve(
+        db_session, story.id, "reviewer@example.com", revision
+    )
+    second = storyboard_service.approve(
+        db_session, story.id, "reviewer@example.com", revision
+    )
     assert first.id == second.id
     assert first.content_hash == second.content_hash
     assert first.content_hash is not None
+    assert first.snapshot_json["story"]["approval_state"] == "approved"
+    assert first.snapshot_json["story"]["active_storyboard_version_id"] == str(first.id)
+    assert snapshot_service.content_hash_for_snapshot(first.snapshot_json) == first.content_hash
     versions = list(
         db_session.query(StoryboardVersion).filter(StoryboardVersion.story_id == story.id).all()
     )
     assert len(versions) == 1
 
 
+def test_concurrent_identical_approvals_allocate_one_version(tmp_path, monkeypatch):
+    engine = create_engine(
+        f"sqlite:///{(tmp_path / 'approval-race.db').as_posix()}",
+        future=True,
+        connect_args={"check_same_thread": False, "timeout": 5},
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    seed_session = factory()
+    try:
+        story, _, _ = _ready_story(seed_session)
+        story_id = story.id
+        revision = snapshot_service.current_revision(seed_session, story_id)
+    finally:
+        seed_session.close()
+
+    original_builder = snapshot_service.build_snapshot_with_hash
+    first_snapshot_barrier = threading.Barrier(2)
+    thread_state = threading.local()
+
+    def synchronized_builder(db, candidate_story_id):
+        result = original_builder(db, candidate_story_id)
+        if not getattr(thread_state, "synchronized", False):
+            thread_state.synchronized = True
+            first_snapshot_barrier.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(
+        snapshot_service,
+        "build_snapshot_with_hash",
+        synchronized_builder,
+    )
+
+    def approve_in_own_session():
+        session = factory()
+        try:
+            version = storyboard_service.approve(
+                session,
+                story_id,
+                "concurrent-reviewer@example.com",
+                revision,
+            )
+            return version.id
+        finally:
+            session.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            version_ids = list(executor.map(lambda _: approve_in_own_session(), range(2)))
+
+        verify = factory()
+        try:
+            versions = list(
+                verify.scalars(
+                    select(StoryboardVersion).where(
+                        StoryboardVersion.story_id == story_id
+                    )
+                )
+            )
+            assert len(versions) == 1
+            assert version_ids == [versions[0].id, versions[0].id]
+        finally:
+            verify.close()
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_approved_snapshot_never_mutates_when_live_plan_changes(db_session):
     story, shot, _ = _ready_story(db_session)
-    version = storyboard_service.approve(db_session, story.id, "reviewer@example.com")
+    version = _approve_current(db_session, story)
     frozen = copy.deepcopy(version.snapshot_json)
     frozen_hash = version.content_hash
 
@@ -232,7 +432,7 @@ def test_approved_snapshot_never_mutates_when_live_plan_changes(db_session):
 
 def test_reapprove_after_change_creates_new_version(db_session):
     story, shot, _ = _ready_story(db_session, target=10.0, shot_duration=10.0)
-    first = storyboard_service.approve(db_session, story.id, "reviewer@example.com")
+    first = _approve_current(db_session, story)
 
     # Keep readiness valid while changing content.
     shot.title = "Revised Shot"
@@ -240,7 +440,7 @@ def test_reapprove_after_change_creates_new_version(db_session):
     story.target_duration_sec = 8.0
     db_session.commit()
 
-    second = storyboard_service.approve(db_session, story.id, "reviewer@example.com")
+    second = _approve_current(db_session, story)
     assert second.id != first.id
     assert second.version_number == first.version_number + 1
     assert second.content_hash != first.content_hash

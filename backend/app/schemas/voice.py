@@ -85,6 +85,8 @@ class VoiceDesignAttributes(BaseModel):
 class VoiceProfileSetupCreate(BaseModel):
     """Create a voice profile with an explicit Phase 1 setup mode."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=200)
     setup_mode: VoiceSetupMode
     character_id: UUID | None = None
@@ -114,7 +116,6 @@ class VoiceProfileSetupCreate(BaseModel):
 
     # Managed asset references only (never audio bytes).
     source_asset_id: UUID | None = None
-    selected_preview_asset_id: UUID | None = None
 
     source_description: str | None = None
     usage_notes: str | None = None
@@ -185,6 +186,8 @@ class VoiceProfileSetupCreate(BaseModel):
 class VoiceProfileSetupUpdate(BaseModel):
     """Partial update for a draft/in_review voice profile setup."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(default=None, min_length=1, max_length=200)
     setup_mode: VoiceSetupMode | None = None
     character_id: UUID | None = None
@@ -211,7 +214,6 @@ class VoiceProfileSetupUpdate(BaseModel):
     pronunciation_notes: str | None = None
 
     source_asset_id: UUID | None = None
-    selected_preview_asset_id: UUID | None = None
     source_description: str | None = None
     usage_notes: str | None = None
 
@@ -221,7 +223,6 @@ class VoiceProfileSetupUpdate(BaseModel):
 
     custom_voice_speaker: str | None = None
     design_metadata: dict | None = None
-    approval_state: VoiceApprovalState | None = None
 
 
 class VoiceProfileSetupRead(BaseModel):

@@ -6,11 +6,22 @@ import uuid
 from datetime import datetime
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.db.base import Base, Project, Story
+from backend.app.db.base import (
+    Base,
+    ComfyJob,
+    FFmpegJob,
+    Project,
+    ProjectStoryboardSettings,
+    ProviderProfile,
+    Story,
+    StoryboardVersion,
+    TaskProviderAssignment,
+    WorkflowRun,
+)
 from backend.app.schemas.orchestration import (
     CreateOrchestrationRunRequest,
     LogicalModelProfile,
@@ -18,10 +29,18 @@ from backend.app.schemas.orchestration import (
     PlanningTaskType,
     RoutingMode,
     RunStatus,
+    StepStatus,
 )
+from backend.app.schemas.proposals import (
+    ProposalApplyRequest,
+    ProposalReviewRequest,
+    StoryboardProposalPayload,
+)
+from backend.app.services import proposal_apply, proposal_service, storyboard_snapshot
 from backend.app.services.planning.engine import PlanningEngine
 from backend.app.services.planning.errors import PlanningError, PlanningErrorCode
 from backend.app.services.planning.provider import MockPlanningProvider
+from backend.app.services.storyboard_settings import default_settings_values
 
 
 @pytest.fixture()
@@ -40,17 +59,9 @@ def db_session() -> Session:
         cursor.close()
 
     # Create only the tables needed for planning engine tests.
-    tables = [
-        Base.metadata.tables["projects"],
-        Base.metadata.tables["stories"],
-        Base.metadata.tables["characters"],
-        Base.metadata.tables["orchestration_runs"],
-        Base.metadata.tables["orchestration_steps"],
-        Base.metadata.tables["orchestration_events"],
-        Base.metadata.tables["provider_invocations"],
-        Base.metadata.tables["ai_proposal_records"],
-    ]
-    Base.metadata.create_all(bind=engine, tables=tables)
+    # Story now has factual provider/version foreign keys; create the complete
+    # metadata graph so SQLite exercises the same contract as the application.
+    Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     session = SessionLocal()
     try:
@@ -116,8 +127,11 @@ def test_create_and_complete_run_produces_pending_review_proposal(db_session: Se
     assert proposal.status == "pending_review"
     assert proposal.orchestration_run_id == run.id
     assert proposal.content_hash
-    assert proposal.payload.get("metadata", {}).get("auto_applied") is False
-    assert proposal.payload.get("metadata", {}).get("awaiting_review") is True
+    parsed = StoryboardProposalPayload.model_validate(proposal.payload)
+    assert parsed.schema_name == "storyboard_proposal_v1"
+    assert parsed.story.existing_id == story.id
+    assert proposal.proposal_type == "storyboard_full_plan"
+    assert proposal.schema_name == "storyboard_proposal_v1"
 
     # No apply markers / execution hooks in payload.
     blob = str(proposal.payload).lower()
@@ -237,6 +251,61 @@ def test_manual_routing_and_events(db_session: Session):
     assert completed[0].provider_identifier == "mock"
 
 
+def test_persisted_task_assignment_controls_run_provider_and_model(db_session: Session):
+    story = _seed_story(db_session)
+    profile = ProviderProfile(
+        provider_identifier="mock",
+        display_name="Deterministic planning profile",
+        provider_model_id="mock/stored-sol",
+        execution_mode="automatic",
+        availability_status="unknown",
+        privacy_classification="local",
+        capabilities_json={"declared_capabilities": ["planning"]},
+        capability_source="user_declared",
+    )
+    db_session.add(profile)
+    db_session.flush()
+    assignment = TaskProviderAssignment(
+        story_id=story.id,
+        task_type=PlanningTaskType.production_proposal.value,
+        provider_profile_id=profile.id,
+        assignment_mode="manual",
+        rationale="Use the persisted final-planning route",
+        priority=10,
+        enabled=True,
+    )
+    db_session.add(assignment)
+    db_session.commit()
+
+    engine = PlanningEngine(
+        db_session,
+        providers={"mock": MockPlanningProvider(fixed_latency_ms=0)},
+    )
+    run, _ = engine.create_run(
+        CreateOrchestrationRunRequest(
+            story_id=story.id,
+            routing_mode=RoutingMode.automatic,
+            task_types=[PlanningTaskType.production_proposal],
+            max_steps=2,
+        )
+    )
+
+    assert run.routing_snapshot_json["mode"] == RoutingMode.hybrid.value
+    persisted = run.routing_snapshot_json["persisted_task_assignments"]
+    assert persisted[PlanningTaskType.production_proposal.value]["assignment_id"] == str(
+        assignment.id
+    )
+    assert engine.start_run(run.id).status == RunStatus.completed.value
+    completed = [
+        step
+        for step in engine.get_run_detail(run.id)["steps"]
+        if step.status == StepStatus.completed.value
+    ]
+    assert len(completed) == 1
+    assert completed[0].provider_identifier == "mock"
+    assert completed[0].resolved_model == "mock/stored-sol"
+
+
 def test_transport_retries_then_success(db_session: Session):
     story = _seed_story(db_session)
     provider = MockPlanningProvider(fixed_latency_ms=0)
@@ -326,8 +395,249 @@ def test_proposal_never_auto_applied_and_hashes_present(db_session: Session):
     proposal = detail["proposals"][0]
     assert proposal.status == "pending_review"
     assert proposal.applied_at is None
-    assert proposal.validation_status == "passed"
+    assert proposal.validation_status in {"valid", "needs_review"}
     # Step/output hashes recorded
     completed_steps = [s for s in detail["steps"] if s.status == "completed"]
     assert completed_steps
     assert completed_steps[0].output_hash
+
+
+def test_unversioned_proposal_diff_uses_and_guards_live_base_snapshot(
+    db_session: Session,
+):
+    story = _seed_story(db_session)
+    engine = PlanningEngine(
+        db_session,
+        providers={"mock": MockPlanningProvider(fixed_latency_ms=0)},
+    )
+    run, _ = engine.create_run(
+        CreateOrchestrationRunRequest(
+            story_id=story.id,
+            task_types=[PlanningTaskType.production_proposal],
+            max_steps=2,
+        )
+    )
+    assert engine.start_run(run.id).status == RunStatus.completed.value
+    proposal = engine.get_run_detail(run.id)["proposals"][0]
+
+    diff = proposal_service.build_diff(db_session, proposal.id)
+    assert diff.base_storyboard_version_id is None
+    assert diff.base_content_hash == proposal.base_content_hash
+    assert diff.ops
+
+    story.production_notes = "The live draft changed after proposal generation."
+    db_session.commit()
+    with pytest.raises(proposal_service.ProposalStateError, match="Stale proposal"):
+        proposal_service.build_diff(db_session, proposal.id)
+
+
+def test_project_policy_cannot_be_overridden_by_run_request(db_session: Session):
+    story = _seed_story(db_session)
+    engine = PlanningEngine(db_session, providers={"mock": MockPlanningProvider(fixed_latency_ms=0)})
+    with pytest.raises(PlanningError) as exc_info:
+        engine.create_run(
+            CreateOrchestrationRunRequest(
+                story_id=story.id,
+                prefer_local_providers=False,
+                prefer_hosted_providers=True,
+                task_types=[PlanningTaskType.production_proposal],
+                max_steps=2,
+            )
+        )
+    assert exc_info.value.code == PlanningErrorCode.ROUTING_FAILED
+    assert "project policy" in exc_info.value.message.lower()
+
+
+def test_disabled_local_policy_cannot_be_bypassed_with_both_preferences_false(
+    db_session: Session,
+):
+    story = _seed_story(db_session)
+    values = default_settings_values()
+    values.update(prefer_local_providers=False, prefer_hosted_providers=True)
+    db_session.add(ProjectStoryboardSettings(project_id=story.project_id, **values))
+    db_session.commit()
+    engine = PlanningEngine(
+        db_session, providers={"mock": MockPlanningProvider(fixed_latency_ms=0)}
+    )
+
+    with pytest.raises(PlanningError) as exc_info:
+        engine.create_run(
+            CreateOrchestrationRunRequest(
+                story_id=story.id,
+                prefer_local_providers=False,
+                prefer_hosted_providers=False,
+                task_types=[PlanningTaskType.production_proposal],
+                max_steps=2,
+            )
+        )
+    assert exc_info.value.code == PlanningErrorCode.ROUTING_FAILED
+
+
+def test_resume_refuses_to_mix_completed_outputs_after_story_edit(db_session: Session):
+    story = _seed_story(db_session)
+    engine = PlanningEngine(
+        db_session, providers={"mock": MockPlanningProvider(fixed_latency_ms=0)}
+    )
+    run, _ = engine.create_run(
+        CreateOrchestrationRunRequest(
+            story_id=story.id,
+            task_types=[PlanningTaskType.shot_list, PlanningTaskType.production_proposal],
+            max_steps=4,
+        )
+    )
+    first_step = engine.get_run_detail(run.id)["steps"][0]
+    engine.repo.transition_run(run, RunStatus.running)
+    engine.repo.transition_step(first_step, StepStatus.running)
+    engine.repo.transition_step(
+        first_step,
+        StepStatus.completed,
+        output_hash="a" * 64,
+        metadata_patch={
+            "result_payload": {
+                "summary": "Old shot output",
+                "shots": [{"order_index": 0, "title": "Old", "duration_sec": 8}],
+            }
+        },
+    )
+    story.base_story = "The story changed after the first checkpoint."
+    db_session.commit()
+
+    finished = engine.start_run(run.id)
+    assert finished.status == RunStatus.failed.value
+    assert finished.failure_category == "validation"
+    detail = engine.get_run_detail(run.id)
+    assert detail["proposals"] == []
+    assert detail["invocations"] == []
+
+
+def test_real_planning_proposal_reviews_applies_idempotently_and_enqueues_nothing(
+    db_session: Session,
+):
+    story = _seed_story(db_session)
+    engine = PlanningEngine(
+        db_session, providers={"mock": MockPlanningProvider(fixed_latency_ms=0)}
+    )
+    run, _ = engine.create_run(
+        CreateOrchestrationRunRequest(
+            story_id=story.id,
+            requested_by="planner",
+            task_types=[
+                PlanningTaskType.character_bible,
+                PlanningTaskType.chapter_outline,
+                PlanningTaskType.scene_breakdown,
+                PlanningTaskType.shot_list,
+                PlanningTaskType.narration_plan,
+                PlanningTaskType.prompt_package,
+                PlanningTaskType.model_recommendation,
+                PlanningTaskType.production_proposal,
+            ],
+            max_steps=10,
+        )
+    )
+    assert engine.start_run(run.id).status == RunStatus.completed.value
+    proposal = engine.get_run_detail(run.id)["proposals"][0]
+    payload = StoryboardProposalPayload.model_validate(proposal.payload)
+    shots = [
+        shot
+        for chapter in payload.story.chapters
+        for scene in chapter.scenes
+        for shot in scene.shots
+    ]
+    assert sum(shot.duration_sec for shot in shots) == float(story.target_duration_sec)
+    assert all(shot.narration and shot.prompt_package for shot in shots)
+    assert all(shot.model_recommendations for shot in shots)
+    assert proposal.payload_hash == proposal.content_hash
+    assert proposal.input_context_hash == proposal.base_content_hash
+
+    with pytest.raises(proposal_service.ProposalStateError, match="reviewed"):
+        proposal_apply.apply_proposal(
+            db_session,
+            proposal.id,
+            ProposalApplyRequest(applied_by="planner"),
+        )
+    proposal_service.review_proposal(
+        db_session,
+        proposal.id,
+        ProposalReviewRequest(reviewed_by="planner", notes="Reviewed nested plan."),
+    )
+    applied = proposal_apply.apply_proposal(
+        db_session,
+        proposal.id,
+        ProposalApplyRequest(applied_by="planner"),
+    )
+    replay = proposal_apply.apply_proposal(
+        db_session,
+        proposal.id,
+        ProposalApplyRequest(applied_by="planner"),
+    )
+    assert replay.new_storyboard_version_id == applied.new_storyboard_version_id
+    assert db_session.scalar(select(func.count()).select_from(StoryboardVersion)) == 1
+    assert db_session.scalar(select(func.count()).select_from(ComfyJob)) == 0
+    assert db_session.scalar(select(func.count()).select_from(WorkflowRun)) == 0
+    assert db_session.scalar(select(func.count()).select_from(FFmpegJob)) == 0
+
+
+def test_proposal_apply_creates_truthful_draft_without_superseding_last_approval(
+    db_session: Session,
+):
+    story = _seed_story(db_session)
+    approved_snapshot, approved_hash = storyboard_snapshot.build_snapshot_with_hash(
+        db_session,
+        story.id,
+    )
+    approved_snapshot["story"]["approval_state"] = "approved"
+    previous = StoryboardVersion(
+        story_id=story.id,
+        version_number=1,
+        status="approved",
+        snapshot_json=approved_snapshot,
+        content_hash=approved_hash,
+        created_by="producer",
+        approved_by="producer",
+        approved_at=datetime.utcnow(),
+    )
+    db_session.add(previous)
+    db_session.flush()
+    story.active_storyboard_version_id = previous.id
+    story.approval_state = "approved"
+    db_session.commit()
+
+    engine = PlanningEngine(
+        db_session,
+        providers={"mock": MockPlanningProvider(fixed_latency_ms=0)},
+    )
+    run, _ = engine.create_run(
+        CreateOrchestrationRunRequest(
+            story_id=story.id,
+            base_storyboard_version_id=previous.id,
+            task_types=[PlanningTaskType.production_proposal],
+            max_steps=2,
+        )
+    )
+    assert engine.start_run(run.id).status == RunStatus.completed.value
+    proposal = engine.get_run_detail(run.id)["proposals"][0]
+    proposal_service.review_proposal(
+        db_session,
+        proposal.id,
+        ProposalReviewRequest(reviewed_by="producer"),
+    )
+    result = proposal_apply.apply_proposal(
+        db_session,
+        proposal.id,
+        ProposalApplyRequest(
+            applied_by="producer",
+            expected_base_version_id=previous.id,
+            expected_base_content_hash=approved_hash,
+        ),
+    )
+
+    db_session.refresh(story)
+    db_session.refresh(previous)
+    draft = db_session.get(StoryboardVersion, result.new_storyboard_version_id)
+    assert draft is not None
+    assert draft.status == "draft"
+    assert draft.snapshot_json["story"]["approval_state"] == "draft"
+    assert story.approval_state == "draft"
+    assert story.active_storyboard_version_id == draft.id
+    assert previous.status == "approved"
+    assert previous.superseded_at is None

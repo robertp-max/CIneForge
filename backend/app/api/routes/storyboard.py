@@ -1,34 +1,38 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.db.base import Chapter, Character, Scene, Shot, Story, VoiceProfile
+from backend.app.db.base import Chapter, Character, Scene, Shot, Story
 from backend.app.db.session import get_db
 from backend.app.schemas.storyboard import (
     ApprovalRequest,
     ChapterCreate,
     ChapterRead,
+    ChapterUpdate,
     CharacterCreate,
     CharacterRead,
+    CharacterUpdate,
     PhaseASnapshot,
-    ProposalCreate,
-    ProposalRead,
     ReorderRequest,
     SceneCreate,
     SceneRead,
+    SceneUpdate,
     ShotCreate,
+    ShotCharacterLinkCreate,
+    ShotCharacterLinkRead,
+    ShotCharacterReplaceRequest,
     ShotRead,
+    ShotUpdate,
     StoryCreate,
     StoryRead,
     StoryUpdate,
     StoryboardReadiness,
     StoryboardVersionRead,
-    VoiceProfileCreate,
-    VoiceProfileRead,
 )
 from backend.app.services import storyboard as service
+from backend.app.services import storyboard_snapshot
 
 
 router = APIRouter(prefix="/storyboard", tags=["storyboard"])
@@ -89,20 +93,38 @@ def create_character(story_id: UUID, payload: CharacterCreate, db: Session = Dep
 
 @router.get("/stories/{story_id}/characters", response_model=list[CharacterRead])
 def list_characters(story_id: UUID, db: Session = Depends(get_db)) -> list[Character]:
-    return list(db.scalars(select(Character).where(Character.story_id == story_id)))
+    return list(
+        db.scalars(
+            select(Character).where(
+                Character.story_id == story_id, Character.archived_at.is_(None)
+            )
+        )
+    )
 
 
-@router.post("/stories/{story_id}/voices", response_model=VoiceProfileRead, status_code=201)
-def create_voice(story_id: UUID, payload: VoiceProfileCreate, db: Session = Depends(get_db)) -> VoiceProfile:
+@router.patch("/characters/{character_id}", response_model=CharacterRead)
+def patch_character(
+    character_id: UUID, payload: CharacterUpdate, db: Session = Depends(get_db)
+) -> Character:
     try:
-        return service.create_voice_profile(db, story_id, payload)
+        return service.update_character(db, character_id, payload)
     except service.StoryboardDomainError as error:
-        raise _domain_error(error) from error
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
-@router.get("/stories/{story_id}/voices", response_model=list[VoiceProfileRead])
-def list_voices(story_id: UUID, db: Session = Depends(get_db)) -> list[VoiceProfile]:
-    return list(db.scalars(select(VoiceProfile).where(VoiceProfile.story_id == story_id)))
+@router.delete("/characters/{character_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_character(
+    character_id: UUID,
+    reason: str | None = Query(default=None, max_length=500),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        service.archive_character(db, character_id, reason=reason)
+    except service.StoryboardConflictError as error:
+        raise _conflict_error(error) from error
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/stories/{story_id}/chapters", response_model=ChapterRead, status_code=201)
@@ -113,12 +135,62 @@ def create_chapter(story_id: UUID, payload: ChapterCreate, db: Session = Depends
         raise _domain_error(error) from error
 
 
+@router.patch("/chapters/{chapter_id}", response_model=ChapterRead)
+def patch_chapter(
+    chapter_id: UUID, payload: ChapterUpdate, db: Session = Depends(get_db)
+) -> Chapter:
+    try:
+        return service.update_chapter(db, chapter_id, payload)
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.delete("/chapters/{chapter_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_chapter(
+    chapter_id: UUID,
+    reason: str | None = Query(default=None, max_length=500),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        service.archive_chapter(db, chapter_id, reason=reason)
+    except service.StoryboardConflictError as error:
+        raise _conflict_error(error) from error
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/chapters/{chapter_id}/scenes", response_model=SceneRead, status_code=201)
 def create_scene(chapter_id: UUID, payload: SceneCreate, db: Session = Depends(get_db)) -> Scene:
     try:
         return service.create_scene(db, chapter_id, payload)
     except service.StoryboardDomainError as error:
         raise _domain_error(error) from error
+
+
+@router.patch("/scenes/{scene_id}", response_model=SceneRead)
+def patch_scene(
+    scene_id: UUID, payload: SceneUpdate, db: Session = Depends(get_db)
+) -> Scene:
+    try:
+        return service.update_scene(db, scene_id, payload)
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.delete("/scenes/{scene_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_scene(
+    scene_id: UUID,
+    reason: str | None = Query(default=None, max_length=500),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        service.archive_scene(db, scene_id, reason=reason)
+    except service.StoryboardConflictError as error:
+        raise _conflict_error(error) from error
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/scenes/{scene_id}/shots", response_model=ShotRead, status_code=201)
@@ -135,6 +207,76 @@ def update_shot(shot_id: UUID, payload: ShotCreate, db: Session = Depends(get_db
         return service.update_shot(db, shot_id, payload)
     except service.StoryboardDomainError as error:
         raise _domain_error(error) from error
+
+
+@router.patch("/shots/{shot_id}", response_model=ShotRead)
+def patch_shot(shot_id: UUID, payload: ShotUpdate, db: Session = Depends(get_db)) -> Shot:
+    try:
+        return service.patch_shot(db, shot_id, payload)
+    except service.StoryboardDomainError as error:
+        raise _domain_error(error) from error
+
+
+@router.delete("/shots/{shot_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_shot(
+    shot_id: UUID,
+    reason: str | None = Query(default=None, max_length=500),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        service.archive_shot(db, shot_id, reason=reason)
+    except service.StoryboardConflictError as error:
+        raise _conflict_error(error) from error
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/shots/{shot_id}/characters", response_model=list[ShotCharacterLinkRead])
+def list_shot_characters(shot_id: UUID, db: Session = Depends(get_db)):
+    try:
+        return service.list_shot_characters(db, shot_id)
+    except service.StoryboardDomainError as error:
+        raise _domain_error(error) from error
+
+
+@router.put("/shots/{shot_id}/characters", response_model=list[ShotCharacterLinkRead])
+def replace_shot_characters(
+    shot_id: UUID,
+    payload: ShotCharacterReplaceRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return service.replace_shot_characters(db, shot_id, payload.characters)
+    except service.StoryboardDomainError as error:
+        raise _domain_error(error) from error
+
+
+@router.post(
+    "/shots/{shot_id}/characters",
+    response_model=ShotCharacterLinkRead,
+    status_code=201,
+)
+def create_shot_character_link(
+    shot_id: UUID,
+    payload: ShotCharacterLinkCreate,
+    db: Session = Depends(get_db),
+):
+    try:
+        return service.create_shot_character_link(db, shot_id, payload)
+    except service.StoryboardDomainError as error:
+        raise _domain_error(error) from error
+
+
+@router.delete("/shots/{shot_id}/characters/{character_id}", status_code=204)
+def delete_shot_character_link(
+    shot_id: UUID, character_id: UUID, db: Session = Depends(get_db)
+) -> Response:
+    try:
+        service.delete_shot_character_link(db, shot_id, character_id)
+    except service.StoryboardDomainError as error:
+        raise _domain_error(error) from error
+    return Response(status_code=204)
 
 
 @router.post("/stories/{story_id}/chapters/reorder", status_code=204)
@@ -191,21 +333,24 @@ def get_readiness(story_id: UUID, db: Session = Depends(get_db)) -> dict:
 @router.post("/stories/{story_id}/approve", response_model=StoryboardVersionRead)
 def approve(story_id: UUID, payload: ApprovalRequest, db: Session = Depends(get_db)):
     try:
-        return service.approve(db, story_id, payload.approved_by)
+        return service.approve(
+            db,
+            story_id,
+            payload.approved_by,
+            payload.expected_revision,
+        )
     except service.StoryboardConflictError as error:
         raise _conflict_error(error) from error
     except service.StoryboardDomainError as error:
         raise _domain_error(error, conflict=True) from error
 
 
-@router.post("/proposals", response_model=ProposalRead, status_code=201)
-def store_proposal(payload: ProposalCreate, db: Session = Depends(get_db)):
-    return service.create_proposal(db, payload)
-
-
 @router.get("/stories/{story_id}/export.json")
 def export_json(story_id: UUID, db: Session = Depends(get_db)) -> dict:
-    return service.aggregate(db, story_id)
+    try:
+        return storyboard_snapshot.build_canonical_snapshot(db, story_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/stories/{story_id}/shot-list.csv")

@@ -30,7 +30,12 @@ from backend.app.services.planning.hashes import (
     run_input_hash,
     sha256_hex,
 )
-from backend.app.services.planning.profiles import ESCALATION_ORDER, next_escalation, resolve_model_name
+from backend.app.services.planning.profiles import (
+    DEFAULT_TASK_PROFILE,
+    ESCALATION_ORDER,
+    next_escalation,
+    resolve_model_name,
+)
 from backend.app.services.planning.provider import MockPlanningProvider, TransportError
 from backend.app.services.planning.routing import build_routing_snapshot, escalate_route, select_route
 from backend.app.services.planning.state_machine import (
@@ -52,6 +57,7 @@ def test_run_input_hash_stable():
     h1 = run_input_hash(
         story_id=story_id,
         base_storyboard_version_id=None,
+        input_context_hash="a" * 64,
         target_duration_sec=60.0,
         routing_snapshot={"mode": "automatic"},
         task_types=["shot_list"],
@@ -59,6 +65,7 @@ def test_run_input_hash_stable():
     h2 = run_input_hash(
         story_id=story_id,
         base_storyboard_version_id=None,
+        input_context_hash="a" * 64,
         target_duration_sec=60.0,
         routing_snapshot={"mode": "automatic"},
         task_types=["shot_list"],
@@ -75,6 +82,21 @@ def test_escalation_order_luna_terra_sol():
     assert next_escalation(LogicalModelProfile.luna) == LogicalModelProfile.terra
     assert next_escalation(LogicalModelProfile.terra) == LogicalModelProfile.sol
     assert next_escalation(LogicalModelProfile.sol) is None
+
+
+def test_explicit_default_task_profiles():
+    assert DEFAULT_TASK_PROFILE == {
+        PlanningTaskType.story_structure: LogicalModelProfile.sol,
+        PlanningTaskType.character_bible: LogicalModelProfile.terra,
+        PlanningTaskType.chapter_outline: LogicalModelProfile.terra,
+        PlanningTaskType.scene_breakdown: LogicalModelProfile.terra,
+        PlanningTaskType.shot_list: LogicalModelProfile.luna,
+        PlanningTaskType.narration_plan: LogicalModelProfile.terra,
+        PlanningTaskType.prompt_package: LogicalModelProfile.luna,
+        PlanningTaskType.continuity_plan: LogicalModelProfile.terra,
+        PlanningTaskType.model_recommendation: LogicalModelProfile.terra,
+        PlanningTaskType.production_proposal: LogicalModelProfile.sol,
+    }
 
 
 def test_resolve_model_name_provider_neutral():
@@ -259,15 +281,20 @@ def test_validate_and_repair_instructions():
     assert any("missing" in i.lower() for i in instructions)
 
 
-def test_build_proposal_payload_immutable_metadata():
+def test_build_proposal_payload_is_strict_nested_phase1_contract():
     story_id = uuid4()
-    run_id = uuid4()
+    project_id = uuid4()
     proposal = build_proposal_payload(
-        story_id=story_id,
-        run_id=run_id,
+        project_id=project_id,
+        context=PlanningContext(
+            story_id=story_id,
+            title="Demo",
+            base_story="A deterministic planning story.",
+            target_duration_sec=30.0,
+        ),
         base_storyboard_version_id=None,
+        base_content_hash="b" * 64,
         target_duration_sec=30.0,
-        title="Demo",
         merged={"shots": [{"order_index": 0, "title": "S1", "duration_sec": 8}]},
         production_payload={
             "summary": "Ready for review",
@@ -275,9 +302,43 @@ def test_build_proposal_payload_immutable_metadata():
             "target_duration_sec": 30.0,
         },
     )
-    assert proposal.metadata["awaiting_review"] is True
-    assert proposal.metadata["auto_applied"] is False
-    assert proposal.orchestration_run_id == run_id
+    assert proposal.schema_name == "storyboard_proposal_v1"
+    assert proposal.project_id == project_id
+    assert proposal.story.existing_id == story_id
+    scenes = [scene for chapter in proposal.story.chapters for scene in chapter.scenes]
+    shots = [shot for scene in scenes for shot in scene.shots]
+    assert sum(shot.duration_sec for shot in shots) == 30.0
+    assert all(shot.narration and shot.prompt_package for shot in shots)
+    assert all(shot.model_recommendations for shot in shots)
+
+
+def test_run_input_hash_changes_with_story_context():
+    story_id = uuid4()
+    common = {
+        "story_id": story_id,
+        "base_storyboard_version_id": None,
+        "target_duration_sec": 60.0,
+        "routing_snapshot": {"mode": "automatic"},
+        "task_types": ["shot_list"],
+    }
+    assert run_input_hash(input_context_hash="a" * 64, **common) != run_input_hash(
+        input_context_hash="b" * 64, **common
+    )
+
+
+def test_automatic_routing_refuses_policyless_mock_fallback():
+    snapshot = build_routing_snapshot(
+        mode=RoutingMode.automatic,
+        manual_routes=[],
+        prefer_local_providers=False,
+        prefer_hosted_providers=False,
+        transport_retry_limit=0,
+        time_budget_sec=60,
+        task_types=[PlanningTaskType.shot_list],
+    )
+    with pytest.raises(PlanningError) as exc_info:
+        select_route(task_type=PlanningTaskType.shot_list, routing_snapshot=snapshot)
+    assert exc_info.value.code == PlanningErrorCode.ROUTING_FAILED
 
 
 def test_invocation_idempotency_key_format():

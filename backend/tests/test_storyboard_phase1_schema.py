@@ -1,6 +1,9 @@
 """Metadata and invariant tests for Storyboard Phase 1 persistence."""
 
+import warnings
+
 from sqlalchemy import CheckConstraint, ForeignKey, Index, UniqueConstraint, inspect as sa_inspect
+from sqlalchemy.exc import SAWarning
 
 from backend.app.db.base import (
     NATIVE_VOICE_CAPABILITIES,
@@ -108,6 +111,20 @@ def _fk_target_columns(table_name: str, column_name: str) -> set[str]:
 
 def test_phase1_tables_registered_in_metadata():
     assert PHASE1_TABLES.issubset(set(Base.metadata.tables))
+
+
+def test_metadata_dependency_graph_has_no_unresolved_cycles():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", SAWarning)
+        sorted_tables = list(Base.metadata.sorted_tables)
+
+    assert len(sorted_tables) == len(Base.metadata.tables)
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, SAWarning)
+        and "unresolvable cycles" in str(warning.message)
+    ]
 
 
 def test_exact_voice_setup_modes():
@@ -284,6 +301,7 @@ def test_gpu_resource_lease_is_lease_boundary_not_queue():
         "metadata_json",
     }.issubset(cols)
     assert "uq_gpu_resource_leases_one_active_per_resource" in _index_names("gpu_resource_leases")
+    assert "uq_gpu_resource_leases_one_active_per_group" in _index_names("gpu_resource_leases")
     assert "ck_gpu_resource_leases_status" in _check_names("gpu_resource_leases")
     lowered = {c.lower() for c in cols}
     for fragment in ("comfy", "ffmpeg", "render_queue", "media_queue", "model_download"):
@@ -348,7 +366,19 @@ def test_extended_existing_tables_phase1_columns():
         "size_bytes",
         "archived_at",
     }.issubset(_column_names("planning_media_assets"))
-    assert "uq_planning_media_assets_project_sha256" in _index_names("planning_media_assets")
+    assert "uq_planning_media_assets_project_kind_sha256" in _index_names(
+        "planning_media_assets"
+    )
+    hash_index = next(
+        index
+        for index in _table("planning_media_assets").indexes
+        if index.name == "uq_planning_media_assets_project_kind_sha256"
+    )
+    assert [column.name for column in hash_index.columns] == [
+        "project_id",
+        "kind",
+        "sha256",
+    ]
 
 
 def test_story_and_shot_prompt_fk_targets_in_metadata():
@@ -369,6 +399,7 @@ def test_ai_proposal_set_null_relationships():
         ("orchestration_run_id", "orchestration_runs.id"),
         ("base_storyboard_version_id", "storyboard_versions.id"),
         ("superseded_by_id", "ai_proposal_records.id"),
+        ("applied_storyboard_version_id", "storyboard_versions.id"),
     ):
         fks = list(AIProposalRecord.__table__.c[column_name].foreign_keys)
         assert fks, column_name
@@ -413,7 +444,8 @@ def test_partial_unique_indexes_marked_unique():
         ("orchestration_runs", "uq_orchestration_runs_one_active_per_story"),
         ("voice_previews", "uq_voice_previews_one_selected_per_profile"),
         ("gpu_resource_leases", "uq_gpu_resource_leases_one_active_per_resource"),
-        ("planning_media_assets", "uq_planning_media_assets_project_sha256"),
+        ("gpu_resource_leases", "uq_gpu_resource_leases_one_active_per_group"),
+        ("planning_media_assets", "uq_planning_media_assets_project_kind_sha256"),
     ):
         matches = [idx for idx in _table(table_name).indexes if idx.name == index_name]
         assert len(matches) == 1, index_name

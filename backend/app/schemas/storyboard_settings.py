@@ -41,6 +41,10 @@ DEFAULT_APPROVAL_POLICY: dict = {
     "require_at_least_one_scene": True,
     "require_at_least_one_shot": True,
     "require_narration_or_exception": True,
+    "require_prompt_package_or_exception": True,
+    "require_model_recommendation_or_exception": True,
+    "prompt_package_exceptions": {},
+    "model_recommendation_exceptions": {},
     "block_on_shot_blocked": True,
 }
 
@@ -88,8 +92,8 @@ class ProjectStoryboardSettingsUpdate(ProjectStoryboardSettingsBase):
 class ProjectStoryboardSettingsRead(ProjectStoryboardSettingsBase):
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
+    id: UUID | None = None
     project_id: UUID
     settings_version: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

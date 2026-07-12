@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -194,22 +195,28 @@ class ProviderProfileCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=200)
     provider_model_id: str | None = None
     execution_mode: ProviderExecutionMode = ProviderExecutionMode.disabled
-    availability_status: str = Field(default="unknown", max_length=32)
+    availability_status: Literal["unknown"] = "unknown"
     privacy_classification: str | None = Field(default=None, max_length=64)
-    capabilities_json: dict = Field(default_factory=dict)
+    capabilities_json: dict = Field(
+        default_factory=dict,
+        description="User-declared capability labels only; runtime facts are read-only.",
+    )
     configuration_reference: str | None = None
-    capability_source: str | None = None
+    capability_source: Literal["user_declared"] | None = None
 
 
 class ProviderProfileUpdate(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=200)
     provider_model_id: str | None = None
     execution_mode: ProviderExecutionMode | None = None
-    availability_status: str | None = Field(default=None, max_length=32)
+    availability_status: Literal["unknown"] | None = None
     privacy_classification: str | None = Field(default=None, max_length=64)
-    capabilities_json: dict | None = None
+    capabilities_json: dict | None = Field(
+        default=None,
+        description="User-declared capability labels only; runtime facts are read-only.",
+    )
     configuration_reference: str | None = None
-    capability_source: str | None = None
+    capability_source: Literal["user_declared"] | None = None
 
 
 class ProviderProfileRead(BaseModel):

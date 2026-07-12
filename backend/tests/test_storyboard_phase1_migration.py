@@ -5,8 +5,11 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
+import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
+from backend.app.db.session import enable_sqlite_foreign_keys
 from backend.tests.test_db_schema import PHASE1_EXTENDED_COLUMNS, STORYBOARD_PHASE1_TABLES
 
 
@@ -457,7 +460,8 @@ def test_head_upgrade_creates_phase1_indexes(tmp_path):
             "uq_provider_invocations_idempotency_key",
             "uq_voice_previews_one_selected_per_profile",
             "uq_gpu_resource_leases_one_active_per_resource",
-            "uq_planning_media_assets_project_sha256",
+            "uq_gpu_resource_leases_one_active_per_group",
+            "uq_planning_media_assets_project_kind_sha256",
             "ix_orchestration_events_run_created",
             "ix_orchestration_events_step_created",
         }
@@ -471,5 +475,275 @@ def test_head_upgrade_creates_phase1_indexes(tmp_path):
         present = index_names | unique_names
         missing = expected - present
         assert not missing, f"missing indexes/uniques: {missing}"
+        planning_hash_index = next(
+            index
+            for index in inspector.get_indexes("planning_media_assets")
+            if index.get("name") == "uq_planning_media_assets_project_kind_sha256"
+        )
+        assert bool(planning_hash_index["unique"]) is True
+        assert planning_hash_index["column_names"] == ["project_id", "kind", "sha256"]
+    finally:
+        engine.dispose()
+
+
+def test_migrated_asset_hash_uniqueness_is_scoped_by_kind(tmp_path):
+    db_path = tmp_path / "phase1_asset_hash_scope.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    config = _alembic_config(db_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url)
+    project_id = str(uuid4())
+    digest = "a" * 64
+    now = _now().isoformat()
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO projects (id, name, description, created_at) "
+                    "VALUES (:id, 'Hash scope', NULL, :created_at)"
+                ),
+                {"id": project_id, "created_at": now},
+            )
+            for kind in ("starting_image", "character_reference"):
+                connection.execute(
+                    text(
+                        "INSERT INTO planning_media_assets ("
+                        "id, project_id, kind, source_type, managed_uri, sha256, "
+                        "approval_state, metadata_json, created_at, updated_at"
+                        ") VALUES ("
+                        ":id, :project_id, :kind, 'user_upload', :managed_uri, :sha256, "
+                        "'draft', '{}', :created_at, :updated_at"
+                        ")"
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "project_id": project_id,
+                        "kind": kind,
+                        "managed_uri": f"cineforge-planning://{project_id}/{kind}/asset.png",
+                        "sha256": digest,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO planning_media_assets ("
+                        "id, project_id, kind, source_type, managed_uri, sha256, "
+                        "approval_state, metadata_json, created_at, updated_at"
+                        ") VALUES ("
+                        ":id, :project_id, 'starting_image', 'user_upload', :managed_uri, "
+                        ":sha256, 'draft', '{}', :created_at, :updated_at"
+                        ")"
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "project_id": project_id,
+                        "managed_uri": (
+                            f"cineforge-planning://{project_id}/starting_image/duplicate.png"
+                        ),
+                        "sha256": digest,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+
+        with engine.connect() as connection:
+            count = connection.execute(
+                text(
+                    "SELECT COUNT(*) FROM planning_media_assets "
+                    "WHERE project_id = :project_id AND sha256 = :sha256"
+                ),
+                {"project_id": project_id, "sha256": digest},
+            ).scalar_one()
+        assert count == 2
+    finally:
+        engine.dispose()
+
+
+def _reflected_fk_pairs(inspector, table_name: str) -> set[tuple[str, str]]:
+    return {
+        (local_column, f"{foreign_key['referred_table']}.{remote_column}")
+        for foreign_key in inspector.get_foreign_keys(table_name)
+        for local_column, remote_column in zip(
+            foreign_key["constrained_columns"],
+            foreign_key["referred_columns"],
+            strict=True,
+        )
+    }
+
+
+def test_sqlite_head_matches_phase1_fk_and_check_metadata(tmp_path):
+    db_path = tmp_path / "phase1_fk_check_parity.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    config = _alembic_config(db_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url)
+    try:
+        inspector = inspect(engine)
+        expected_fks = {
+            "characters": {
+                ("assigned_voice_profile_id", "voice_profiles.id"),
+            },
+            "stories": {
+                ("project_id", "projects.id"),
+                ("active_storyboard_version_id", "storyboard_versions.id"),
+                ("default_provider_profile_id", "provider_profiles.id"),
+            },
+            "voice_profiles": {
+                ("story_id", "stories.id"),
+                ("character_id", "characters.id"),
+                ("source_asset_id", "planning_media_assets.id"),
+                ("selected_preview_asset_id", "planning_media_assets.id"),
+                ("voice_recipe_id", "voice_recipes.id"),
+                ("selected_preview_id", "voice_previews.id"),
+            },
+            "storyboard_versions": {
+                ("story_id", "stories.id"),
+                ("source_proposal_id", "ai_proposal_records.id"),
+                ("base_version_id", "storyboard_versions.id"),
+            },
+            "shot_prompt_packages": {
+                ("shot_id", "shots.id"),
+                ("provider_profile_id", "provider_profiles.id"),
+                ("proposal_id", "ai_proposal_records.id"),
+            },
+            "ai_proposal_records": {
+                ("story_id", "stories.id"),
+                ("orchestration_run_id", "orchestration_runs.id"),
+                ("base_storyboard_version_id", "storyboard_versions.id"),
+                ("superseded_by_id", "ai_proposal_records.id"),
+                ("applied_storyboard_version_id", "storyboard_versions.id"),
+            },
+        }
+        for table_name, expected in expected_fks.items():
+            assert expected.issubset(_reflected_fk_pairs(inspector, table_name)), table_name
+
+        expected_checks = {
+            "model_variants": "ck_model_variants_native_voice_capability",
+            "planning_media_assets": "ck_planning_media_assets_size_bytes",
+            "voice_profiles": "ck_voice_profiles_setup_mode",
+        }
+        for table_name, check_name in expected_checks.items():
+            reflected = {item["name"] for item in inspector.get_check_constraints(table_name)}
+            assert check_name in reflected, table_name
+    finally:
+        engine.dispose()
+
+
+def test_sqlite_migrated_fk_and_checks_are_enforced(tmp_path):
+    db_path = tmp_path / "phase1_enforcement.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    config = _alembic_config(db_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url, future=True)
+    enable_sqlite_foreign_keys(engine)
+    now = _now().isoformat()
+    try:
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+        model_id = str(uuid4())
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO models (id, family, name, evidence_level) "
+                    "VALUES (:id, 'test', 'check-test', 'unknown')"
+                ),
+                {"id": model_id},
+            )
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO ai_proposal_records ("
+                        "id, proposal_type, payload, status, validation_errors, created_at, story_id"
+                        ") VALUES ("
+                        ":id, 'storyboard_outline', '{}', 'pending_review', '[]', :created_at, :story_id"
+                        ")"
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "created_at": now,
+                        "story_id": str(uuid4()),
+                    },
+                )
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO model_variants ("
+                        "id, model_id, variant_name, compatible_24gb_status, native_voice_capability"
+                        ") VALUES (:id, :model_id, 'bad', 'unknown', 'invented')"
+                    ),
+                    {"id": str(uuid4()), "model_id": model_id},
+                )
+    finally:
+        engine.dispose()
+
+
+def test_active_gpu_exclusive_group_is_unique_across_resource_keys(tmp_path):
+    db_path = tmp_path / "phase1_gpu_group.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    config = _alembic_config(db_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url, future=True)
+    now = _now().isoformat()
+    first_id = str(uuid4())
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO gpu_resource_leases ("
+                    "id, resource_key, exclusive_group, workload_type, owner, status, "
+                    "acquired_at, metadata_json, created_at"
+                    ") VALUES ("
+                    ":id, 'gpu0', 'gpu-shared', 'video_render', 'video', 'active', "
+                    ":now, '{}', :now"
+                    ")"
+                ),
+                {"id": first_id, "now": now},
+            )
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO gpu_resource_leases ("
+                        "id, resource_key, exclusive_group, workload_type, owner, status, "
+                        "acquired_at, metadata_json, created_at"
+                        ") VALUES ("
+                        ":id, 'gpu1', 'gpu-shared', 'voice_preview', 'voice', 'active', "
+                        ":now, '{}', :now"
+                        ")"
+                    ),
+                    {"id": str(uuid4()), "now": now},
+                )
+
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE gpu_resource_leases SET status = 'released' WHERE id = :id"),
+                {"id": first_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO gpu_resource_leases ("
+                    "id, resource_key, exclusive_group, workload_type, owner, status, "
+                    "acquired_at, metadata_json, created_at"
+                    ") VALUES ("
+                    ":id, 'gpu1', 'gpu-shared', 'voice_preview', 'voice', 'active', "
+                    ":now, '{}', :now"
+                    ")"
+                ),
+                {"id": str(uuid4()), "now": now},
+            )
     finally:
         engine.dispose()

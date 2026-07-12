@@ -1,105 +1,487 @@
-import { useState, type FormEvent } from 'react'
-import { useStudio } from '../StudioContext'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import {
+  api,
+  planningAssetContentUrl,
+  type CharacterReferenceLink,
+  type PlanningMediaAsset,
+} from '../../api/client'
+import { useStudio } from '../StudioState'
+import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 import { initials } from '../utils'
-import { EmptyState } from '../components/StateBlocks'
+
+const REFERENCE_ROLES = ['primary', 'alternate', 'expression', 'costume', 'detail'] as const
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
 
 export function CharactersPage() {
-  const { data, addCharacter, busy } = useStudio()
-  const [name, setName] = useState('')
-  const [role, setRole] = useState('')
-  const [description, setDescription] = useState('')
+  const { data, readiness, reload, setMessage, addCharacter, busy } = useStudio()
+  const [selectedId, setSelectedId] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newRole, setNewRole] = useState('')
+  const [newDescription, setNewDescription] = useState('')
+  const [assets, setAssets] = useState<PlanningMediaAsset[]>([])
+  const [references, setReferences] = useState<CharacterReferenceLink[]>([])
+  const [referenceApiAvailable, setReferenceApiAvailable] = useState(true)
+  const [selectedAssetId, setSelectedAssetId] = useState('')
+  const [referenceRole, setReferenceRole] = useState<(typeof REFERENCE_ROLES)[number]>('primary')
+  const [approveHero, setApproveHero] = useState(false)
+  const [referenceFile, setReferenceFile] = useState<File | null>(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
+  const [selectedVoiceId, setSelectedVoiceId] = useState('')
+  const [loadingReferences, setLoadingReferences] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const selectedCharacter =
+    data?.characters.find((character) => character.id === selectedId) ?? data?.characters[0] ?? null
+
+  const loadReferences = useCallback(async () => {
+    if (!data || !selectedCharacter) {
+      setAssets([])
+      setReferences([])
+      return
+    }
+    setLoadingReferences(true)
+    setError(null)
+    try {
+      const [assetResult, linkResult] = await Promise.all([
+        api.listCharacterReferenceAssets(data.story.project_id),
+        api.listCharacterReferences(selectedCharacter.id),
+      ])
+      if (assetResult == null || linkResult == null) {
+        setReferenceApiAvailable(false)
+        setAssets([])
+        setReferences([])
+        return
+      }
+      setReferenceApiAvailable(true)
+      setAssets(assetResult.items)
+      setReferences(linkResult)
+      setSelectedAssetId((current) =>
+        assetResult.items.some((asset) => asset.id === current)
+          ? current
+          : (assetResult.items[0]?.id ?? ''),
+      )
+    } catch (err) {
+      setError(errorText(err, 'Could not load managed character references.'))
+    } finally {
+      setLoadingReferences(false)
+    }
+  }, [data, selectedCharacter])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadReferences(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadReferences])
 
   if (!data) return null
 
-  const onSubmit = async (event: FormEvent) => {
+  const linkedScenes = selectedCharacter
+    ? data.chapters.flatMap((chapter) =>
+        chapter.scenes.filter((scene) =>
+          scene.shots.some((shot) =>
+            shot.characters?.some((link) => link.character_id === selectedCharacter.id),
+          ),
+        ),
+      )
+    : []
+  const linkedShots = selectedCharacter
+    ? linkedScenes.flatMap((scene) =>
+        scene.shots.filter((shot) =>
+          shot.characters?.some((link) => link.character_id === selectedCharacter.id),
+        ),
+      )
+    : []
+  const characterReadiness = selectedCharacter
+    ? (readiness?.reasons.filter((reason) => reason.entity_id === selectedCharacter.id) ?? [])
+    : []
+  const associatedVoices = selectedCharacter
+    ? data.voices.filter((voice) => voice.character_id === selectedCharacter.id)
+    : []
+  const canonicalVoice = selectedCharacter?.assigned_voice_profile_id
+    ? data.voices.find((voice) => voice.id === selectedCharacter.assigned_voice_profile_id)
+    : null
+  const selectedVoice = data.voices.find((voice) => voice.id === selectedVoiceId)
+  const heroReference = references.find(
+    (reference) => reference.reference_role === 'primary' && reference.approved,
+  )
+
+  const onAddCharacter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!name.trim()) return
+    if (!newName.trim()) return
     await addCharacter({
-      name: name.trim(),
-      role: role.trim() || undefined,
-      description: description.trim() || undefined,
+      name: newName.trim(),
+      role: newRole.trim() || undefined,
+      physical_description: newDescription.trim() || undefined,
     })
-    setName('')
-    setRole('')
-    setDescription('')
+    setNewName('')
+    setNewRole('')
+    setNewDescription('')
+  }
+
+  const onSaveCharacter = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedCharacter) return
+    const form = new FormData(event.currentTarget)
+    const nextName = String(form.get('name') ?? '').trim()
+    if (!nextName) return
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.updateCharacter(selectedCharacter.id, {
+        name: nextName,
+        role: String(form.get('role') ?? '').trim() || null,
+        age_range: String(form.get('age_range') ?? '').trim() || null,
+        physical_description: String(form.get('physical_description') ?? '').trim() || null,
+        personality: String(form.get('personality') ?? '').trim() || null,
+        speaking_style: String(form.get('speaking_style') ?? '').trim() || null,
+        wardrobe: String(form.get('wardrobe') ?? '').trim() || null,
+        consistency_prompt: String(form.get('consistency_prompt') ?? '').trim() || null,
+        negative_identity_prompt: String(form.get('negative_identity_prompt') ?? '').trim() || null,
+        identity_method: String(form.get('identity_method') ?? '').trim() || null,
+      })
+      if (result == null) {
+        setMessage('Character edit API is unavailable; no changes were persisted.')
+        return
+      }
+      await reload()
+      setMessage(`Character “${result.name}” updated on the server.`)
+    } catch (err) {
+      const text = errorText(err, 'Could not update the character.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onArchiveCharacter = async () => {
+    if (!selectedCharacter) return
+    if (!window.confirm(`Archive character “${selectedCharacter.name}”?`)) return
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.deleteCharacter(
+        selectedCharacter.id,
+        'Archived from Character bible.',
+      )
+      if (result === null) {
+        setMessage('Character archive API is unavailable; no changes were persisted.')
+        return
+      }
+      await reload()
+      setSelectedId('')
+      setMessage(`Character “${selectedCharacter.name}” archived on the server.`)
+    } catch (err) {
+      const text = errorText(err, 'Could not archive the character.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onUploadReference = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!referenceFile) return
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.uploadCharacterReferenceAsset(data.story.project_id, referenceFile)
+      if (result == null) {
+        setReferenceApiAvailable(false)
+        setMessage('Managed character-reference upload API is unavailable; no file was stored.')
+        return
+      }
+      setSelectedAssetId(result.asset.id)
+      setReferenceFile(null)
+      setFileInputKey((value) => value + 1)
+      await loadReferences()
+      setMessage(
+        result.duplicate_of_existing
+          ? `Reused managed reference asset ${result.asset.id}; no duplicate file was stored.`
+          : `Uploaded managed reference asset ${result.asset.id}. No image generation was started.`,
+      )
+    } catch (err) {
+      const text = errorText(err, 'Could not upload the character reference.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onLinkReference = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedCharacter || !selectedAssetId) return
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.linkCharacterReference(selectedCharacter.id, {
+        asset_id: selectedAssetId,
+        reference_role: approveHero ? 'primary' : referenceRole,
+        approved: approveHero,
+        order_index: references.length,
+      })
+      if (result == null) {
+        setReferenceApiAvailable(false)
+        setMessage('Character-reference link API is unavailable; no link was created.')
+        return
+      }
+      setApproveHero(false)
+      await Promise.all([loadReferences(), reload()])
+      setMessage(
+        approveHero
+          ? `Approved ${result.asset?.original_filename ?? result.asset_id} as the character’s primary hero reference.`
+          : `Linked ${result.asset?.original_filename ?? result.asset_id} as ${result.reference_role}.`,
+      )
+    } catch (err) {
+      const text = errorText(err, 'Could not link the character reference.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onUnlinkReference = async (reference: CharacterReferenceLink) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.unlinkCharacterReference(reference.id)
+      if (result === null) {
+        setReferenceApiAvailable(false)
+        setMessage('Character-reference unlink API is unavailable; the link was not changed.')
+        return
+      }
+      await Promise.all([loadReferences(), reload()])
+      setMessage(`Unlinked reference ${reference.asset?.original_filename ?? reference.asset_id}.`)
+    } catch (err) {
+      const text = errorText(err, 'Could not unlink the character reference.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onAssignVoice = async () => {
+    if (!selectedCharacter || !selectedVoice) return
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.updateVoice(selectedVoice.id, { character_id: selectedCharacter.id })
+      if (result == null) {
+        setMessage('Voice profile assignment API is unavailable; no assignment was changed.')
+        return
+      }
+      await reload()
+      setSelectedVoiceId('')
+      setMessage(`Associated voice profile “${result.name}” with ${selectedCharacter.name}.`)
+    } catch (err) {
+      const text = errorText(err, 'Could not assign the voice profile.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onUnassignVoice = async (voiceId: string) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.updateVoice(voiceId, { character_id: null })
+      if (result == null) {
+        setMessage('Voice profile assignment API is unavailable; no assignment was changed.')
+        return
+      }
+      await reload()
+      setMessage(`Removed voice profile “${result.name}” from this character.`)
+    } catch (err) {
+      const text = errorText(err, 'Could not remove the voice profile assignment.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <div className="split-2">
-      <div className="panel">
+      <section className="panel">
         <div className="panel-title">
           <div>
-            <h2>Characters</h2>
-            <p>
-              Identity references and character bibles are planning records. Image generation is
-              unavailable in Phase 1 planning.
-            </p>
+            <h2>Character bible</h2>
+            <p>Persist identity, managed references, voice associations, and linked-shot readiness.</p>
           </div>
         </div>
 
         {!data.characters.length ? (
-          <EmptyState
-            title="No characters yet"
-            detail="Add cast members as planning records. No assets are generated automatically."
-          />
+          <EmptyState title="No characters yet" detail="Add a character to begin the production bible." />
         ) : (
           <div className="people-grid">
-            {data.characters.map((item) => (
-              <article key={item.id}>
-                <span className="avatar" aria-hidden="true">
-                  {initials(item.name)}
-                </span>
-                <b>{item.name}</b>
-                <small>
-                  {item.role ?? 'Role not specified'} · {item.approval_state}
-                </small>
-                <p>
-                  {item.description?.trim() ||
-                    'Reference assets are planned and reviewed here; nothing is generated automatically.'}
-                </p>
+            {data.characters.map((character) => (
+              <article key={character.id}>
+                <span className="avatar" aria-hidden="true">{initials(character.name)}</span>
+                <b>{character.name}</b>
+                <small>{character.role ?? 'Role not specified'} · {character.approval_state}</small>
+                <p>{character.physical_description || 'Physical description not recorded.'}</p>
+                <button
+                  type="button"
+                  className={character.id === selectedCharacter?.id ? 'primary-button touch-target' : 'secondary-button touch-target'}
+                  onClick={() => {
+                    setSelectedId(character.id)
+                    setSelectedVoiceId('')
+                  }}
+                >
+                  {character.id === selectedCharacter?.id ? 'Selected' : 'Open bible'}
+                </button>
               </article>
             ))}
           </div>
         )}
-      </div>
 
-      <form className="panel stack-form" onSubmit={(event) => void onSubmit(event)}>
-        <div className="panel-title">
-          <div>
-            <h2>Add character</h2>
-            <p>Creates a server-side planning record only.</p>
-          </div>
+        <form className="stack-form" onSubmit={(event) => void onAddCharacter(event)}>
+          <h3>Add character</h3>
+          <label>Name<input required value={newName} onChange={(event) => setNewName(event.target.value)} disabled={busy || saving} /></label>
+          <label>Role<input value={newRole} onChange={(event) => setNewRole(event.target.value)} disabled={busy || saving} /></label>
+          <label>Description<textarea value={newDescription} onChange={(event) => setNewDescription(event.target.value)} disabled={busy || saving} /></label>
+          <button type="submit" className="primary-button touch-target" disabled={busy || saving || !newName.trim()}>Add character</button>
+        </form>
+      </section>
+
+      {selectedCharacter ? (
+        <div className="stack-form">
+          <form key={selectedCharacter.id} className="panel stack-form" onSubmit={(event) => void onSaveCharacter(event)}>
+            <div className="panel-title">
+              <div><h2>{selectedCharacter.name}</h2><p>Persisted identity fields · {selectedCharacter.approval_state}</p></div>
+            </div>
+            {error ? <ErrorState detail={error} /> : null}
+            <label>Name<input name="name" required defaultValue={selectedCharacter.name} disabled={busy || saving} /></label>
+            <label>Role<input name="role" defaultValue={selectedCharacter.role ?? ''} disabled={busy || saving} /></label>
+            <label>Age range<input name="age_range" defaultValue={selectedCharacter.age_range ?? ''} disabled={busy || saving} /></label>
+            <label>Physical description<textarea name="physical_description" defaultValue={selectedCharacter.physical_description ?? ''} disabled={busy || saving} /></label>
+            <label>Personality<textarea name="personality" defaultValue={selectedCharacter.personality ?? ''} disabled={busy || saving} /></label>
+            <label>Speaking style<input name="speaking_style" defaultValue={selectedCharacter.speaking_style ?? ''} disabled={busy || saving} /></label>
+            <label>Wardrobe<textarea name="wardrobe" defaultValue={selectedCharacter.wardrobe ?? ''} disabled={busy || saving} /></label>
+            <label>Identity method<input name="identity_method" defaultValue={selectedCharacter.identity_method ?? ''} disabled={busy || saving} /></label>
+            <label>Consistency prompt<textarea name="consistency_prompt" defaultValue={selectedCharacter.consistency_prompt ?? ''} disabled={busy || saving} /></label>
+            <label>Negative identity prompt<textarea name="negative_identity_prompt" defaultValue={selectedCharacter.negative_identity_prompt ?? ''} disabled={busy || saving} /></label>
+            <div className="inline-actions">
+              <button type="submit" className="primary-button touch-target" disabled={busy || saving}>{saving ? 'Saving…' : 'Save character bible'}</button>
+              <button
+                type="button"
+                className="ghost-button touch-target"
+                disabled={busy || saving || selectedCharacter.approval_state === 'approved'}
+                title={selectedCharacter.approval_state === 'approved' ? 'Approved characters cannot be archived while locked into production identity.' : undefined}
+                onClick={() => void onArchiveCharacter()}
+              >
+                Archive character
+              </button>
+            </div>
+          </form>
+
+          <section className="panel">
+            <div className="panel-title"><div><h2>Coverage and readiness</h2><p>Live links from the storyboard snapshot.</p></div></div>
+            <ul className="kv-list">
+              <li><span>Scenes</span><strong>{linkedScenes.length}</strong></li>
+              <li><span>Shots</span><strong>{linkedShots.length}</strong></li>
+              <li><span>Approved hero</span><strong>{heroReference ? 'Ready' : 'Missing'}</strong></li>
+              <li><span>Canonical voice</span><strong>{canonicalVoice?.name ?? 'Not assigned by an applied proposal'}</strong></li>
+            </ul>
+            {linkedScenes.length ? <p className="form-hint">Scenes: {linkedScenes.map((scene) => scene.title).join(', ')}</p> : null}
+            {linkedShots.length ? <p className="form-hint">Shots: {linkedShots.map((shot) => shot.title).join(', ')}</p> : null}
+            {characterReadiness.length ? characterReadiness.map((reason) => <p className="notice warning" key={`${reason.code}-${reason.entity_id}`}>{reason.message}</p>) : <p className="notice success">No character-specific blocking reason is currently reported.</p>}
+          </section>
+
+          <section className="panel stack-form">
+            <div className="panel-title"><div><h2>Voice assignment</h2><p>Associates a mutable voice profile through its persisted character_id.</p></div></div>
+            {associatedVoices.length ? (
+              <ul className="kv-list">
+                {associatedVoices.map((voice) => (
+                  <li key={voice.id}>
+                    <span>{voice.name} · {voice.setup_mode}</span>
+                    <button
+                      type="button"
+                      className="ghost-button touch-target"
+                      onClick={() => void onUnassignVoice(voice.id)}
+                      disabled={busy || saving || voice.approval_state === 'approved'}
+                      title={voice.approval_state === 'approved' ? 'Approved voice profiles are immutable; create a replacement profile to change this association.' : undefined}
+                    >
+                      {voice.approval_state === 'approved' ? 'Approved assignment' : 'Unassign'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="form-hint">No voice profile is associated through the voice-profile API.</p>}
+            <label>
+              Voice profile
+              <select value={selectedVoiceId} onChange={(event) => setSelectedVoiceId(event.target.value)} disabled={busy || saving}>
+                <option value="">Choose a mutable profile</option>
+                {data.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name} · {voice.approval_state}</option>)}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="secondary-button touch-target"
+              onClick={() => void onAssignVoice()}
+              disabled={busy || saving || !selectedVoice || selectedVoice.approval_state === 'approved'}
+              title={selectedVoice?.approval_state === 'approved' ? 'Approved voice profiles are immutable and cannot be reassigned.' : undefined}
+            >
+              Assign voice profile
+            </button>
+            <p className="form-hint">Direct mutation of character.assigned_voice_profile_id is not exposed; that canonical field is applied through reviewed proposals.</p>
+          </section>
+
+          <section className="panel stack-form">
+            <div className="panel-title">
+              <div><h2>Managed reference assets</h2><p>Upload, link, list, unlink, and approve a hero reference when the link is created.</p></div>
+              <button type="button" className="ghost-button touch-target" onClick={() => void loadReferences()} disabled={loadingReferences || saving}>Refresh</button>
+            </div>
+            {loadingReferences ? <LoadingState title="Loading character references…" /> : null}
+            {!referenceApiAvailable && !loadingReferences ? <UnavailableState title="Character-reference API unavailable" detail="No file or link operation was substituted." /> : null}
+            {references.length ? (
+              <div className="card-grid">
+                {references.map((reference) => (
+                  <article key={reference.id}>
+                    {reference.asset?.mime_type?.startsWith('image/') ? <img src={planningAssetContentUrl(reference.asset_id)} alt={`${selectedCharacter.name} ${reference.reference_role} reference`} width="200" height="140" loading="lazy" /> : null}
+                    <b>{reference.asset?.original_filename ?? reference.asset_id}</b>
+                    <small>{reference.reference_role} · {reference.approved ? 'approved' : 'not approved'}</small>
+                    <p>{reference.asset?.approval_state ?? 'Asset record unavailable'} · {reference.asset?.mime_type ?? 'Unknown type'}</p>
+                    <button type="button" className="secondary-button touch-target" onClick={() => void onUnlinkReference(reference)} disabled={saving || busy}>Unlink</button>
+                    {!reference.approved ? (
+                      <button type="button" className="ghost-button touch-target" disabled title="The backend exposes approval only while creating a reference link; unlink and relink it as an approved hero reference.">Approve existing link — unavailable</button>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            ) : !loadingReferences && referenceApiAvailable ? <EmptyState title="No linked references" detail="Upload or select a managed asset, then create a character link." /> : null}
+
+            <form className="stack-form" onSubmit={(event) => void onUploadReference(event)}>
+              <label>Reference image<input key={fileInputKey} type="file" accept="image/*" onChange={(event) => setReferenceFile(event.target.files?.[0] ?? null)} disabled={saving || busy} /></label>
+              <button type="submit" className="secondary-button touch-target" disabled={!referenceFile || saving || busy}>{saving ? 'Working…' : 'Upload managed reference'}</button>
+            </form>
+
+            <form className="stack-form" onSubmit={(event) => void onLinkReference(event)}>
+              <label>
+                Managed asset
+                <select value={selectedAssetId} onChange={(event) => setSelectedAssetId(event.target.value)} disabled={saving || busy || !assets.length}>
+                  {!assets.length ? <option value="">No managed reference assets</option> : null}
+                  {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.original_filename ?? asset.id} · {asset.approval_state}</option>)}
+                </select>
+              </label>
+              <label>Reference role<select value={referenceRole} onChange={(event) => setReferenceRole(event.target.value as (typeof REFERENCE_ROLES)[number])} disabled={saving || busy || approveHero}>{REFERENCE_ROLES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              <label className="checkbox-row"><input type="checkbox" checked={approveHero} onChange={(event) => setApproveHero(event.target.checked)} disabled={saving || busy} />Approve as primary hero reference</label>
+              <button type="submit" className="primary-button touch-target" disabled={!selectedAssetId || saving || busy}>Link reference</button>
+            </form>
+            <button type="button" className="secondary-button touch-target" disabled title="Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets.">Generate reference image — disabled</button>
+            <p className="form-hint">Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets.</p>
+          </section>
         </div>
-        <label>
-          Name
-          <input
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            disabled={busy}
-            autoComplete="off"
-          />
-        </label>
-        <label>
-          Role
-          <input value={role} onChange={(event) => setRole(event.target.value)} disabled={busy} />
-        </label>
-        <label>
-          Description / bible notes
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button type="submit" className="primary-button touch-target" disabled={busy || !name.trim()}>
-          Add character
-        </button>
-        <button type="button" className="secondary-button touch-target" disabled title="Image generation is disabled in planning">
-          Generate reference image — disabled
-        </button>
-        <p className="form-hint">Generate remains disabled: planning never submits ComfyUI work.</p>
-      </form>
+      ) : null}
     </div>
   )
 }

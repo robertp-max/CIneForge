@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from backend.app.schemas.voice import (
     PARLER_UNAVAILABLE_MESSAGE,
@@ -13,6 +13,7 @@ from backend.app.schemas.voice import (
     PreviewJobStatus,
     VoicePreviewRequest,
 )
+from backend.app.db.base import Base, GpuResourceLease
 from backend.app.services.runtime.gpu_leases import (
     DEFAULT_EXCLUSIVE_GROUP,
     GpuLeaseError,
@@ -23,66 +24,16 @@ from backend.app.services.runtime.gpu_leases import (
 )
 
 
-class _MemDB:
-    """Minimal stand-in for Session used by lease helpers in unit tests."""
-
-    def __init__(self):
-        self._rows: dict[uuid.UUID, object] = {}
-        self._pending: list[object] = []
-
-    def add(self, obj):
-        self._pending.append(obj)
-
-    def commit(self):
-        for obj in self._pending:
-            if getattr(obj, "id", None) is None:
-                obj.id = uuid.uuid4()
-            self._rows[obj.id] = obj
-        self._pending.clear()
-
-    def rollback(self):
-        self._pending.clear()
-
-    def refresh(self, obj):
-        return obj
-
-    def get(self, model, ident):  # noqa: ANN001
-        return self._rows.get(ident)
-
-    def scalars(self, stmt):  # noqa: ANN001
-        # Extremely small fake: filter active leases from memory.
-        rows = list(self._rows.values())
-
-        class _Result:
-            def __init__(self, items):
-                self._items = items
-
-            def first(self):
-                return self._items[0] if self._items else None
-
-            def __iter__(self):
-                return iter(self._items)
-
-        active = [
-            r
-            for r in rows
-            if getattr(r, "status", None) == "active"
-        ]
-        return _Result(active)
-
-
-# Patch GpuResourceLease construction used by gpu_leases by injecting a simple namespace factory.
 @pytest.fixture
-def lease_db(monkeypatch):
-    from backend.app.services.runtime import gpu_leases as gl
-
-    def factory(**kwargs):
-        obj = SimpleNamespace(**kwargs)
-        obj.id = None
-        return obj
-
-    monkeypatch.setattr(gl, "GpuResourceLease", factory)
-    return _MemDB()
+def lease_db():
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(bind=engine, tables=[GpuResourceLease.__table__])
+    session = sessionmaker(bind=engine, future=True)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def test_voice_preview_lease_uses_shared_exclusive_group(lease_db):

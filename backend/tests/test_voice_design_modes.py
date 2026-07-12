@@ -21,7 +21,10 @@ from backend.app.services.voice_design.modes import (
     requires_preview_for_approval,
 )
 from backend.app.services.voice_design.providers.base import get_provider
-from backend.app.services.voice_design.providers.parler import ParlerLocalVoiceDesignProvider
+from backend.app.services.voice_design.providers.parler import (
+    ParlerLocalVoiceDesignProvider,
+    discover_parler,
+)
 from backend.app.services.voice_design.providers.qwen import QwenCustomVoiceProvider
 from backend.app.services.voice_design.recipes import sanitize_design_metadata
 
@@ -106,14 +109,12 @@ def test_qwen_custom_voice_requires_preset_speaker_and_forbids_cloning_fields():
 
 def test_qwen_custom_provider_rejects_clone_metadata_at_runtime(tmp_path):
     provider = QwenCustomVoiceProvider()
-    result = provider.generate_preview(
-        preview_text="Hello",
-        design_metadata={"custom_voice_speaker": "s1", "clone_audio": "x"},
-        output_dir=str(tmp_path),
-    )
-    # ValueError is raised by _reject_cloning_metadata before result in current impl;
-    # accept either hard raise or failed result.
-    assert True  # structure imported
+    with pytest.raises(ValueError):
+        provider.generate_preview(
+            preview_text="Hello",
+            design_metadata={"custom_voice_speaker": "s1", "clone_audio": "x"},
+            output_dir=str(tmp_path),
+        )
     with pytest.raises(ValueError):
         provider.generate_preview(
             preview_text="Hello",
@@ -151,6 +152,40 @@ def test_parler_preview_unavailable_exact_message(tmp_path, monkeypatch):
     )
     assert result.success is False
     assert result.error_message == PARLER_UNAVAILABLE_MESSAGE
+
+
+def test_parler_requires_approved_runtime_and_model_and_never_fakes_audio(
+    tmp_path,
+    monkeypatch,
+):
+    runtime = tmp_path / "approved-runtime"
+    model = tmp_path / "approved-model"
+    runtime.mkdir()
+    model.mkdir()
+    monkeypatch.setattr(
+        "backend.app.services.voice_design.providers.parler._parler_installed",
+        lambda: True,
+    )
+    monkeypatch.setenv("CINEFORGE_PARLER_APPROVED", "1")
+    monkeypatch.setenv("CINEFORGE_PARLER_RUNTIME_REF", str(runtime))
+    monkeypatch.setenv("CINEFORGE_PARLER_RUNTIME_APPROVED", "1")
+    monkeypatch.setenv("CINEFORGE_PARLER_MODEL_REF", str(model))
+    monkeypatch.setenv("CINEFORGE_PARLER_MODEL_APPROVED", "0")
+
+    assert discover_parler().available is False
+    assert discover_parler().message == PARLER_UNAVAILABLE_MESSAGE
+
+    monkeypatch.setenv("CINEFORGE_PARLER_MODEL_APPROVED", "1")
+    assert discover_parler().available is True
+
+    result = ParlerLocalVoiceDesignProvider().generate_preview(
+        preview_text="Do not fake this preview.",
+        design_metadata={"design_description": "calm narrator"},
+        output_dir=str(tmp_path / "output"),
+    )
+    assert result.success is False
+    assert result.managed_uri is None
+    assert not (tmp_path / "output").exists()
 
 
 def test_providers_registered_for_all_modes():

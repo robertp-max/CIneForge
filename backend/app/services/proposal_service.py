@@ -16,6 +16,7 @@ from backend.app.db.base import (
     AIProposalRecord,
     AuditLog,
     ModelVariant,
+    OrchestrationRun,
     PlanningMediaAsset,
     ProviderProfile,
     Story,
@@ -39,6 +40,7 @@ from backend.app.services.ai_orchestration.schemas import (
 )
 from backend.app.services.ai_orchestration.validator import ProposalValidator, content_hash_for
 from backend.app.services.proposal_diff import diff_snapshot_to_proposal, diff_storyboard_payloads
+from backend.app.services import storyboard_snapshot
 
 
 class ProposalServiceError(ValueError):
@@ -58,19 +60,19 @@ def _now() -> datetime:
 
 
 def _load_reference_catalogs(db: Session, project_id: UUID | None) -> dict[str, set[str]]:
-    model_ids = {str(row.id) for row in db.scalars(select(ModelVariant.id))}
-    workflow_ids = {str(row.id) for row in db.scalars(select(WorkflowTemplate.id))}
-    provider_ids = {str(row.id) for row in db.scalars(select(ProviderProfile.id))}
+    model_ids = {str(row) for row in db.scalars(select(ModelVariant.id))}
+    workflow_ids = {str(row) for row in db.scalars(select(WorkflowTemplate.id))}
+    provider_ids = {str(row) for row in db.scalars(select(ProviderProfile.id))}
     asset_ids: set[str] = set()
     if project_id is not None:
         asset_ids = {
-            str(row.id)
+            str(row)
             for row in db.scalars(
                 select(PlanningMediaAsset.id).where(PlanningMediaAsset.project_id == project_id)
             )
         }
     else:
-        asset_ids = {str(row.id) for row in db.scalars(select(PlanningMediaAsset.id))}
+        asset_ids = {str(row) for row in db.scalars(select(PlanningMediaAsset.id))}
     return {
         "model_variant_ids": model_ids,
         "workflow_template_ids": workflow_ids,
@@ -86,6 +88,78 @@ def _base_snapshot(db: Session, version_id: UUID | None) -> dict[str, Any] | Non
     if version is None:
         return None
     return version.snapshot_json
+
+
+def validate_storyboard_proposal_ownership(
+    db: Session,
+    *,
+    payload: dict[str, Any],
+    story_id: UUID | None,
+    base_storyboard_version_id: UUID | None,
+    orchestration_run_id: UUID | None,
+) -> tuple[Story, StoryboardProposalPayload]:
+    """Bind a storyboard proposal to exactly one persisted story graph.
+
+    This is intentionally stricter than foreign-key existence checks.  The
+    public request/record, payload identity, project, optional base version,
+    and optional orchestration run must all describe the same Story.  The
+    check is repeated before diff/apply so a legacy or corrupted row cannot
+    cross project boundaries.
+    """
+
+    try:
+        parsed = StoryboardProposalPayload.model_validate(payload)
+    except Exception as exc:
+        raise ProposalServiceError(f"Storyboard proposal schema is invalid: {exc}") from exc
+
+    payload_story_id = parsed.story.existing_id
+    if story_id is None:
+        story_id = payload_story_id
+    if story_id is None or payload_story_id is None:
+        raise ProposalServiceError(
+            "Storyboard proposals must identify an existing story in both the record and payload."
+        )
+    if payload_story_id != story_id:
+        raise ProposalServiceError(
+            "Proposal payload story does not match the proposal story."
+        )
+
+    story = db.get(Story, story_id)
+    if story is None:
+        raise ProposalServiceError("Story not found.")
+    if parsed.project_id != story.project_id:
+        raise ProposalServiceError(
+            "Proposal payload project does not own the proposal story."
+        )
+
+    payload_base_id = parsed.base_storyboard_version_id
+    if payload_base_id != base_storyboard_version_id:
+        raise ProposalServiceError(
+            "Proposal payload base version does not match the proposal record."
+        )
+    if base_storyboard_version_id is not None:
+        version = db.get(StoryboardVersion, base_storyboard_version_id)
+        if version is None:
+            raise ProposalServiceError("Base storyboard version not found.")
+        if version.story_id != story.id:
+            raise ProposalServiceError(
+                "Base storyboard version does not belong to the proposal story."
+            )
+
+    if orchestration_run_id is not None:
+        run = db.get(OrchestrationRun, orchestration_run_id)
+        if run is None:
+            raise ProposalServiceError("Orchestration run not found.")
+        if run.story_id != story.id:
+            raise ProposalServiceError(
+                "Orchestration run does not belong to the proposal story."
+            )
+        if run.base_storyboard_version_id != base_storyboard_version_id:
+            raise ProposalServiceError(
+                "Orchestration run base version does not match the proposal base version."
+            )
+
+    return story, parsed
 
 
 def validate_create_request(
@@ -121,10 +195,31 @@ def validate_create_request(
                 report={},
             )
 
-        base_version_id = request.base_storyboard_version_id or parsed.base_storyboard_version_id
-        base_snapshot = _base_snapshot(db, base_version_id)
-        project_id = parsed.project_id
-        catalogs = _load_reference_catalogs(db, project_id)
+        resolved_story_id = request.story_id or parsed.story.existing_id
+        resolved_base_id = (
+            request.base_storyboard_version_id
+            if request.base_storyboard_version_id is not None
+            else parsed.base_storyboard_version_id
+        )
+        try:
+            story, _ = validate_storyboard_proposal_ownership(
+                db,
+                payload=payload,
+                story_id=resolved_story_id,
+                base_storyboard_version_id=resolved_base_id,
+                orchestration_run_id=request.orchestration_run_id,
+            )
+        except ProposalServiceError as exc:
+            return ProposalValidationResponse(
+                accepted=False,
+                validation_status=ValidationStatus.invalid,
+                errors=[f"ownership: {exc}"],
+                warnings=[],
+                content_hash=content_hash_for(payload),
+                report={},
+            )
+        base_snapshot = _base_snapshot(db, resolved_base_id)
+        catalogs = _load_reference_catalogs(db, story.project_id)
 
     ai_proposal = AIProposal(
         proposal_type=proposal_type,
@@ -163,22 +258,42 @@ def create_proposal(db: Session, request: ProposalCreateRequest) -> AIProposalRe
         raise ProposalServiceError(f"Unknown proposal_type: {request.proposal_type}") from exc
 
     payload = request.payload
-    if proposal_type in STORYBOARD_PROPOSAL_TYPES and validation.accepted:
-        payload = StoryboardProposalPayload.model_validate(request.payload).model_dump(mode="json")
-
     story_id = request.story_id
-    if story_id is None and isinstance(payload.get("story"), dict):
-        existing = payload["story"].get("existing_id")
-        if existing:
-            story_id = UUID(str(existing))
-
-    if story_id is not None and db.get(Story, story_id) is None:
-        raise ProposalServiceError("Story not found.")
-
-    base_version_id = request.base_storyboard_version_id or payload.get("base_storyboard_version_id")
-    if base_version_id is not None:
-        base_version_id = UUID(str(base_version_id))
-        if db.get(StoryboardVersion, base_version_id) is None:
+    base_version_id = request.base_storyboard_version_id
+    if proposal_type in STORYBOARD_PROPOSAL_TYPES:
+        try:
+            parsed = StoryboardProposalPayload.model_validate(request.payload)
+        except Exception:
+            parsed = None
+        if parsed is not None:
+            story_id = story_id or parsed.story.existing_id
+            base_version_id = (
+                base_version_id
+                if base_version_id is not None
+                else parsed.base_storyboard_version_id
+            )
+            story, parsed = validate_storyboard_proposal_ownership(
+                db,
+                payload=request.payload,
+                story_id=story_id,
+                base_storyboard_version_id=base_version_id,
+                orchestration_run_id=request.orchestration_run_id,
+            )
+            story_id = story.id
+            if validation.accepted:
+                payload = parsed.model_dump(mode="json")
+        else:
+            if story_id is not None and db.get(Story, story_id) is None:
+                raise ProposalServiceError("Story not found.")
+            if (
+                base_version_id is not None
+                and db.get(StoryboardVersion, base_version_id) is None
+            ):
+                raise ProposalServiceError("Base storyboard version not found.")
+    else:
+        if story_id is not None and db.get(Story, story_id) is None:
+            raise ProposalServiceError("Story not found.")
+        if base_version_id is not None and db.get(StoryboardVersion, base_version_id) is None:
             raise ProposalServiceError("Base storyboard version not found.")
 
     status = "pending_review"
@@ -198,7 +313,11 @@ def create_proposal(db: Session, request: ProposalCreateRequest) -> AIProposalRe
         orchestration_run_id=request.orchestration_run_id,
         base_storyboard_version_id=base_version_id,
         schema_name=request.schema_name or payload.get("schema_name") or STORYBOARD_PROPOSAL_SCHEMA_NAME,
+        schema_version=int(payload.get("schema_version") or 1),
         content_hash=validation.content_hash,
+        payload_hash=content_hash_for(payload),
+        input_context_hash=payload.get("input_context_hash"),
+        base_content_hash=payload.get("base_content_hash"),
         validation_status=str(validation.validation_status),
         validation_report_json=validation.report or {},
         warnings_json=list(validation.warnings),
@@ -291,17 +410,46 @@ def reject_proposal(db: Session, proposal_id: UUID, request: ProposalRejectReque
 
 def build_diff(db: Session, proposal_id: UUID) -> ProposalDiffResponse:
     record = get_proposal(db, proposal_id)
+    try:
+        proposal_type = ProposalType(record.proposal_type)
+    except ValueError as exc:
+        raise ProposalServiceError(f"Unknown proposal_type: {record.proposal_type}") from exc
+    if proposal_type in STORYBOARD_PROPOSAL_TYPES:
+        validate_storyboard_proposal_ownership(
+            db,
+            payload=record.payload if isinstance(record.payload, dict) else {},
+            story_id=record.story_id,
+            base_storyboard_version_id=record.base_storyboard_version_id,
+            orchestration_run_id=record.orchestration_run_id,
+        )
     base_snapshot = _base_snapshot(db, record.base_storyboard_version_id)
-    if base_snapshot is not None:
-        ops = diff_snapshot_to_proposal(base_snapshot, record.payload)
-    else:
-        ops = diff_storyboard_payloads({}, record.payload)
-
     base_hash = None
     if record.base_storyboard_version_id:
         version = db.get(StoryboardVersion, record.base_storyboard_version_id)
         if version is not None:
             base_hash = version.content_hash
+    elif record.story_id is not None:
+        expected_live_hash = record.base_content_hash or (
+            record.payload.get("base_content_hash")
+            if isinstance(record.payload, dict)
+            else None
+        )
+        if expected_live_hash:
+            live_snapshot, live_hash = storyboard_snapshot.build_snapshot_with_hash(
+                db,
+                record.story_id,
+            )
+            if live_hash != expected_live_hash:
+                raise ProposalStateError(
+                    "Stale proposal: live storyboard content changed before diff review."
+                )
+            base_snapshot = live_snapshot
+            base_hash = live_hash
+
+    if base_snapshot is not None:
+        ops = diff_snapshot_to_proposal(base_snapshot, record.payload)
+    else:
+        ops = diff_storyboard_payloads({}, record.payload)
 
     return ProposalDiffResponse(
         proposal_id=record.id,

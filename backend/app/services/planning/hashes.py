@@ -36,6 +36,7 @@ def run_input_hash(
     *,
     story_id: UUID,
     base_storyboard_version_id: UUID | None,
+    input_context_hash: str,
     target_duration_sec: float | None,
     routing_snapshot: dict[str, Any],
     task_types: list[str],
@@ -44,6 +45,7 @@ def run_input_hash(
         {
             "story_id": str(story_id),
             "base_storyboard_version_id": str(base_storyboard_version_id) if base_storyboard_version_id else None,
+            "input_context_hash": input_context_hash,
             "target_duration_sec": target_duration_sec,
             "routing_snapshot": routing_snapshot,
             "task_types": list(task_types),

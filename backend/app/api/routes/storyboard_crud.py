@@ -9,9 +9,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
 from backend.app.schemas.storyboard_crud import (
-    ProposalCreateExtended,
-    ProposalReadExtended,
-    ProposalUpdate,
     ProviderProfileCreate,
     ProviderProfileRead,
     ProviderProfileUpdate,
@@ -437,63 +434,6 @@ def delete_task_assignment(
     except service.StoryboardCrudNotFoundError as error:
         raise _http_for(error) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-# ---------------------------------------------------------------------------
-# Proposals
-# ---------------------------------------------------------------------------
-
-
-@router.post(
-    "/proposals",
-    response_model=ProposalReadExtended,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_proposal(
-    payload: ProposalCreateExtended, db: Session = Depends(get_db)
-) -> ProposalReadExtended:
-    try:
-        row = service.create_proposal(db, payload)
-    except (
-        service.StoryboardCrudError,
-        service.StoryboardCrudNotFoundError,
-    ) as error:
-        raise _http_for(error) from error
-    return ProposalReadExtended.model_validate(row)
-
-
-@router.get("/proposals", response_model=list[ProposalReadExtended])
-def list_proposals(
-    story_id: UUID | None = None,
-    status_filter: str | None = Query(default=None, alias="status"),
-    db: Session = Depends(get_db),
-) -> list[ProposalReadExtended]:
-    rows = service.list_proposals(db, story_id=story_id, status_filter=status_filter)
-    return [ProposalReadExtended.model_validate(row) for row in rows]
-
-
-@router.get("/proposals/{proposal_id}", response_model=ProposalReadExtended)
-def get_proposal(
-    proposal_id: UUID, db: Session = Depends(get_db)
-) -> ProposalReadExtended:
-    try:
-        row = service.get_proposal(db, proposal_id)
-    except service.StoryboardCrudNotFoundError as error:
-        raise _http_for(error) from error
-    return ProposalReadExtended.model_validate(row)
-
-
-@router.patch("/proposals/{proposal_id}", response_model=ProposalReadExtended)
-def update_proposal(
-    proposal_id: UUID,
-    payload: ProposalUpdate,
-    db: Session = Depends(get_db),
-) -> ProposalReadExtended:
-    try:
-        row = service.update_proposal(db, proposal_id, payload)
-    except service.StoryboardCrudNotFoundError as error:
-        raise _http_for(error) from error
-    return ProposalReadExtended.model_validate(row)
 
 
 # ---------------------------------------------------------------------------

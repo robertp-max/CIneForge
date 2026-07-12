@@ -24,11 +24,13 @@ from backend.app.services.ai_orchestration.schemas import STORYBOARD_PROPOSAL_TY
 from backend.app.services.ai_orchestration.validator import ProposalValidator, content_hash_for
 from backend.app.services.ai_orchestration.schemas import AIProposal
 from backend.app.services import storyboard_mutations as mutations
+from backend.app.services import storyboard_snapshot as snapshot_service
 from backend.app.services.proposal_service import (
     ProposalNotFoundError,
     ProposalServiceError,
     ProposalStateError,
     _load_reference_catalogs,
+    validate_storyboard_proposal_ownership,
 )
 
 
@@ -59,7 +61,21 @@ def apply_proposal(db: Session, proposal_id: UUID, request: ProposalApplyRequest
     if record is None:
         raise ProposalNotFoundError("Proposal not found.")
 
-    if record.status in {"applied", "rejected", "superseded"}:
+    if record.status == "applied":
+        if record.applied_storyboard_version_id is None:
+            raise ProposalStateError("Applied proposal is missing its storyboard version link.")
+        applied_version = db.get(StoryboardVersion, record.applied_storyboard_version_id)
+        if applied_version is None:
+            raise ProposalStateError("Applied proposal storyboard version was not found.")
+        return ProposalApplyResult(
+            proposal_id=record.id,
+            story_id=applied_version.story_id,
+            new_storyboard_version_id=applied_version.id,
+            version_number=applied_version.version_number,
+            content_hash=applied_version.content_hash,
+            status=record.status,
+        )
+    if record.status in {"rejected", "superseded"}:
         raise ProposalStateError(f"Cannot apply proposal in status '{record.status}'.")
     if record.validation_status == "invalid" or record.validation_errors:
         raise ProposalStateError("Cannot apply proposal with validation errors.")
@@ -78,14 +94,22 @@ def apply_proposal(db: Session, proposal_id: UUID, request: ProposalApplyRequest
         raise ProposalServiceError("Only storyboard Phase 1 proposals can be applied here.")
 
     payload = record.payload if isinstance(record.payload, dict) else {}
-    story_id = record.story_id
-    if story_id is None:
-        existing = (payload.get("story") or {}).get("existing_id")
-        if not existing:
-            raise ProposalServiceError("Proposal is missing story_id.")
-        story_id = UUID(str(existing))
-
-    story = _lock_story(db, story_id)
+    computed_payload_hash = content_hash_for(payload)
+    stored_payload_hash = record.payload_hash or record.content_hash
+    if stored_payload_hash and stored_payload_hash != computed_payload_hash:
+        raise ProposalStateError("Stored proposal payload hash does not match its immutable payload.")
+    if record.story_id is None:
+        raise ProposalServiceError("Proposal is missing its persisted story binding.")
+    story = _lock_story(db, record.story_id)
+    bound_story, _ = validate_storyboard_proposal_ownership(
+        db,
+        payload=payload,
+        story_id=record.story_id,
+        base_storyboard_version_id=record.base_storyboard_version_id,
+        orchestration_run_id=record.orchestration_run_id,
+    )
+    if bound_story.id != story.id:  # defensive; helper already enforces this
+        raise ProposalStateError("Proposal ownership changed while acquiring the story lock.")
 
     base_version_id = record.base_storyboard_version_id
     expected_base_id = request.expected_base_version_id or base_version_id
@@ -101,15 +125,16 @@ def apply_proposal(db: Session, proposal_id: UUID, request: ProposalApplyRequest
         base_hash = base_version.content_hash
 
         # Stale base ID check against active pointer when one exists.
-        if (
-            story.active_storyboard_version_id is not None
-            and story.active_storyboard_version_id != expected_base_id
-        ):
+        if story.active_storyboard_version_id != expected_base_id:
             raise ProposalStateError(
                 "Stale base storyboard version: active version id does not match proposal base."
             )
 
-        expected_hash = request.expected_base_content_hash or payload.get("base_content_hash")
+        expected_hash = (
+            request.expected_base_content_hash
+            or record.base_content_hash
+            or payload.get("base_content_hash")
+        )
         if expected_hash and base_hash and expected_hash != base_hash:
             raise ProposalStateError(
                 "Stale base content hash: base storyboard content changed since proposal creation."
@@ -125,6 +150,18 @@ def apply_proposal(db: Session, proposal_id: UUID, request: ProposalApplyRequest
 
     if base_version_id is not None and expected_base_id is not None and base_version_id != expected_base_id:
         raise ProposalStateError("expected_base_version_id does not match proposal base_storyboard_version_id.")
+
+    expected_live_hash = (
+        request.expected_base_content_hash
+        or record.base_content_hash
+        or payload.get("base_content_hash")
+    )
+    if expected_live_hash:
+        _, live_hash = snapshot_service.build_snapshot_with_hash(db, story.id)
+        if live_hash != expected_live_hash:
+            raise ProposalStateError(
+                "Stale base content hash: live storyboard content changed since proposal creation."
+            )
 
     catalogs = _load_reference_catalogs(db, story.project_id)
     ai_proposal = AIProposal(
@@ -173,13 +210,19 @@ def apply_proposal(db: Session, proposal_id: UUID, request: ProposalApplyRequest
             story_payload.get("chapters") or [],
             characters,
             voices,
+            replace_identities=proposal_type == ProposalType.storyboard_full_plan,
         )
-        snapshot = mutations.build_snapshot(story, voices, characters, shots, payload)
+        mutations.build_snapshot(story, voices, characters, shots, payload)
+        # Applying creates an editable draft.  Set lifecycle state before the
+        # immutable draft snapshot is captured so it never embeds "approved".
+        story.approval_state = "draft"
+        story.updated_at = _now()
+        db.flush()
+        snapshot, snapshot_hash = snapshot_service.build_snapshot_with_hash(db, story.id)
     except mutations.MutationError as exc:
         db.rollback()
         raise ProposalStateError(str(exc)) from exc
 
-    snapshot_hash = content_hash_for(snapshot)
     current_number = db.scalar(
         select(StoryboardVersion.version_number)
         .where(StoryboardVersion.story_id == story.id)
@@ -202,17 +245,15 @@ def apply_proposal(db: Session, proposal_id: UUID, request: ProposalApplyRequest
     # Flush-before-pointer: version row must exist before active pointer assignment.
     db.flush()
 
-    if story.active_storyboard_version_id:
-        previous = db.get(StoryboardVersion, story.active_storyboard_version_id)
-        if previous is not None and previous.id != new_version.id:
-            previous.superseded_at = _now()
-            previous.updated_at = _now()
-
+    # Proposal apply creates the next editable draft.  Preserve the most recent
+    # approved immutable version as the valid approved baseline until this
+    # draft is explicitly approved; approval owns the supersession transition.
     story.active_storyboard_version_id = new_version.id
     story.updated_at = _now()
 
     record.status = "applied"
     record.applied_at = _now()
+    record.applied_storyboard_version_id = new_version.id
     record.reviewed_by = record.reviewed_by or request.applied_by
     record.reviewed_at = record.reviewed_at or record.applied_at
     record.content_hash = record.content_hash or content_hash_for(payload)

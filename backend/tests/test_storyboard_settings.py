@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.db.base import Base, Project
+from backend.app.db.base import Base, Project, Story
 from backend.app.schemas.storyboard_settings import ProjectStoryboardSettingsUpdate
 from backend.app.services import storyboard_settings as settings_service
 
@@ -40,7 +40,7 @@ def _project(db):
     return project
 
 
-def test_get_settings_creates_defaults(db_session):
+def test_get_settings_returns_defaults_without_persisting(db_session):
     project = _project(db_session)
     row = settings_service.get_settings(db_session, project.id)
     assert row.project_id == project.id
@@ -50,11 +50,15 @@ def test_get_settings_creates_defaults(db_session):
     assert row.prefer_local_providers is True
     assert row.allow_rendering is False
     assert row.voice_policy_json["allow_placeholder_for_approval"] is True
+    assert row.approval_policy_json["require_prompt_package_or_exception"] is True
+    assert row.approval_policy_json["require_model_recommendation_or_exception"] is True
+    assert settings_service.get_settings_row(db_session, project.id) is None
 
 
 def test_put_settings_updates_and_increments_version(db_session):
     project = _project(db_session)
     created = settings_service.get_or_create_settings(db_session, project.id)
+    previous_version = int(created.settings_version)
     payload = ProjectStoryboardSettingsUpdate(
         shot_duration_min_sec=6,
         shot_duration_max_sec=12,
@@ -84,7 +88,7 @@ def test_put_settings_updates_and_increments_version(db_session):
     updated = settings_service.put_settings(db_session, project.id, payload)
     assert float(updated.speaking_rate) == 1.1
     assert updated.captions_enabled is False
-    assert int(updated.settings_version) == int(created.settings_version) + 1
+    assert int(updated.settings_version) == previous_version + 1
 
 
 def test_put_settings_stale_version_conflicts(db_session):
@@ -111,3 +115,27 @@ def test_settings_snapshot_fragment_is_stable(db_session):
     assert "id" not in fragment
     assert fragment["settings_version"] == 1
     assert fragment["shot_duration_min_sec"] == 6.0
+
+
+def test_put_settings_reopens_all_project_stories(db_session):
+    project = _project(db_session)
+    stories = [
+        Story(
+            project_id=project.id,
+            title=f"Story {index}",
+            base_story="Approved content",
+            target_duration_sec=8,
+            approval_state="approved",
+        )
+        for index in range(2)
+    ]
+    db_session.add_all(stories)
+    db_session.commit()
+
+    settings_service.put_settings(
+        db_session,
+        project.id,
+        ProjectStoryboardSettingsUpdate(speaking_rate=1.1),
+    )
+
+    assert all(db_session.get(Story, story.id).approval_state == "draft" for story in stories)

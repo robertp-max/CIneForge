@@ -43,6 +43,7 @@ class StoryCreate(BaseModel):
 
 
 class StoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=300)
     base_story: str | None = Field(default=None, min_length=1)
     target_duration_sec: float | None = Field(default=None, gt=0)
@@ -54,7 +55,6 @@ class StoryUpdate(BaseModel):
     visual_style: str | None = None
     point_of_view: str | None = None
     production_notes: str | None = None
-    approval_state: ApprovalState | None = None
     # Optimistic concurrency: either token may be supplied by Phase A clients.
     expected_updated_at: datetime | None = None
     expected_revision: str | None = Field(default=None, min_length=1, max_length=64)
@@ -100,6 +100,21 @@ class CharacterRead(CharacterCreate):
     story_id: UUID
     approval_state: str
     assigned_voice_profile_id: UUID | None = None
+
+
+class CharacterUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    role: str | None = None
+    age_range: str | None = None
+    physical_description: str | None = None
+    personality: str | None = None
+    speaking_style: str | None = None
+    wardrobe: str | None = None
+    consistency_prompt: str | None = None
+    negative_identity_prompt: str | None = None
+    identity_method: str | None = None
 
 
 class VoiceProfileCreate(BaseModel):
@@ -150,6 +165,16 @@ class ChapterRead(ChapterCreate):
     approval_state: str
 
 
+class ChapterUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    summary: str | None = None
+    narrative_purpose: str | None = None
+    target_duration_sec: float | None = Field(default=None, gt=0)
+    dramatic_progression: str | None = None
+
+
 class SceneCreate(BaseModel):
     order_index: int = Field(ge=0)
     title: str = Field(min_length=1, max_length=300)
@@ -166,6 +191,17 @@ class SceneRead(SceneCreate):
     approval_state: str
 
 
+class SceneUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    summary: str | None = None
+    narrative_purpose: str | None = None
+    location: str | None = None
+    conflict_or_beat: str | None = None
+    target_duration_sec: float | None = Field(default=None, gt=0)
+
+
 class ShotCreate(BaseModel):
     order_index: int = Field(ge=0)
     title: str = Field(min_length=1, max_length=300)
@@ -174,6 +210,8 @@ class ShotCreate(BaseModel):
     story_purpose: str | None = None
     visual_description: str | None = None
     location: str | None = None
+    camera_direction: str | None = None
+    motion_direction: str | None = None
     continuity_source_type: str = "none"
     continuity_source_shot_id: UUID | None = None
     starting_image_required: bool = False
@@ -187,8 +225,25 @@ class ShotCreate(BaseModel):
         return self
 
 
-class ShotUpdate(ShotCreate):
-    pass
+class ShotUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_index: int | None = Field(default=None, ge=0)
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    duration_sec: float | None = Field(default=None, gt=0)
+    duration_override_reason: str | None = None
+    story_purpose: str | None = None
+    visual_description: str | None = None
+    location: str | None = None
+    camera_direction: str | None = None
+    motion_direction: str | None = None
+    continuity_source_type: str | None = None
+    continuity_source_shot_id: UUID | None = None
+    starting_image_required: bool | None = None
+    starting_image_asset_id: UUID | None = None
+    approval_state: ApprovalState | None = None
+    production_status: str | None = Field(default=None, min_length=1, max_length=32)
+    blocked_reason: str | None = None
 
 
 class ShotRead(ShotCreate):
@@ -198,6 +253,35 @@ class ShotRead(ShotCreate):
     approval_state: str
     production_status: str
     blocked_reason: str | None = None
+
+
+class ShotCharacterLinkCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    character_id: UUID
+    order_index: int = Field(ge=0)
+    role_in_shot: str | None = None
+    continuity_notes: str | None = None
+
+
+class ShotCharacterLinkRead(ShotCharacterLinkCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    shot_id: UUID
+
+
+class ShotCharacterReplaceRequest(BaseModel):
+    characters: list[ShotCharacterLinkCreate] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_contiguous_order(self):
+        character_ids = [item.character_id for item in self.characters]
+        if len(character_ids) != len(set(character_ids)):
+            raise ValueError("Each character may appear only once per shot.")
+        order = [item.order_index for item in self.characters]
+        if len(order) != len(set(order)) or sorted(order) != list(range(len(order))):
+            raise ValueError("Shot character order_index values must be unique and contiguous.")
+        return self
 
 
 class ReorderRequest(BaseModel):
@@ -232,7 +316,15 @@ class StoryboardVersionRead(BaseModel):
 
 
 class ApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     approved_by: str = Field(min_length=1, max_length=200)
+    expected_revision: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Content-hash revision returned by the Phase A snapshot endpoint.",
+    )
 
 
 class ProposalCreate(BaseModel):

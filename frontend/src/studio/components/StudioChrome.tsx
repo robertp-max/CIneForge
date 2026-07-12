@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useStudio } from '../StudioContext'
+import { useStudio } from '../StudioState'
 import { formatDuration } from '../utils'
 import { AnimaticModal } from './AnimaticModal'
 

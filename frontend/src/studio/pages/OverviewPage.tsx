@@ -1,10 +1,38 @@
-import { useState } from 'react'
-import { useStudio } from '../StudioContext'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  api,
+  type OrchestrationRunDetail,
+  type StoryboardProposal,
+} from '../../api/client'
+import { useStudio } from '../StudioState'
 import { countScenes, countShots, formatDuration } from '../utils'
 
 export function OverviewPage() {
-  const { data, readiness, approvePlan, busy, backendStatus } = useStudio()
+  const { data, readiness, approvePlan, busy, backendStatus, navigate } = useStudio()
   const [approver, setApprover] = useState('Producer')
+  const [currentRun, setCurrentRun] = useState<OrchestrationRunDetail | null>(null)
+  const [currentProposal, setCurrentProposal] = useState<StoryboardProposal | null>(null)
+  const [planningError, setPlanningError] = useState<string | null>(null)
+
+  const loadPlanningSummary = useCallback(async () => {
+    if (!data) return
+    setPlanningError(null)
+    try {
+      const [runs, proposals] = await Promise.all([
+        api.listOrchestrationRuns(data.story.id),
+        api.listStoryProposals(data.story.id),
+      ])
+      setCurrentRun(runs[0] ? await api.getOrchestrationRun(runs[0].id) : null)
+      setCurrentProposal(proposals[0] ?? null)
+    } catch (error) {
+      setPlanningError(error instanceof Error ? error.message : 'Planning status is unavailable.')
+    }
+  }, [data])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadPlanningSummary(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadPlanningSummary])
 
   if (!data) return null
 
@@ -22,6 +50,11 @@ export function OverviewPage() {
   const ratio = target > 0 ? Math.min(100, Math.round((planned / target) * 100)) : 0
   const blocking = readiness?.reasons.filter((reason) => reason.blocking) ?? []
   const canApprove = Boolean(readiness?.ready) && !busy
+  const currentStep = currentRun?.steps.find((step) => step.status === 'running') ??
+    currentRun?.steps.find((step) => step.sequence_index === currentRun.current_step) ??
+    currentRun?.steps.at(-1)
+  const completedSteps = currentRun?.steps.filter((step) => step.status === 'completed').length ?? 0
+  const routing = currentRun?.routing_snapshot_json
 
   return (
     <>
@@ -85,6 +118,40 @@ export function OverviewPage() {
           </ul>
         </div>
       </div>
+
+      <section className="panel" aria-labelledby="overview-planning-status">
+        <div className="panel-title">
+          <div>
+            <h2 id="overview-planning-status">Planning orchestration</h2>
+            <p>Live run, route, step, and proposal state from the backend.</p>
+          </div>
+          <button
+            type="button"
+            className="primary-button touch-target"
+            onClick={() => navigate('story')}
+          >
+            {currentProposal ? 'Review proposal' : currentRun ? 'Open run details' : 'Start planning run'}
+          </button>
+        </div>
+        {planningError ? <p className="notice warning">{planningError}</p> : null}
+        <div className="split-2">
+          <ul className="kv-list">
+            <li><span>Current run</span><strong>{currentRun?.status ?? 'No run'}</strong></li>
+            <li><span>Current step</span><strong>{currentStep?.task_type ?? '—'}</strong></li>
+            <li><span>Logical model</span><strong>{currentStep?.logical_model ?? '—'}</strong></li>
+            <li><span>Resolved route</span><strong>{currentStep?.resolved_model ?? currentStep?.provider_identifier ?? '—'}</strong></li>
+            <li><span>Progress</span><strong>{currentRun ? `${completedSteps}/${currentRun.steps.length} steps` : '—'}</strong></li>
+          </ul>
+          <ul className="kv-list">
+            <li><span>Routing mode</span><strong>{String(routing?.mode ?? 'Not configured')}</strong></li>
+            <li><span>Local providers</span><strong>{routing ? (routing.prefer_local_providers ? 'Permitted' : 'Disabled') : '—'}</strong></li>
+            <li><span>Hosted providers</span><strong>{routing ? (routing.prefer_hosted_providers ? 'Permitted' : 'Disabled') : '—'}</strong></li>
+            <li><span>Repairs</span><strong>{currentRun ? `${currentRun.repair_used}/${currentRun.repair_budget}` : '—'}</strong></li>
+            <li><span>Latest proposal</span><strong>{currentProposal?.status ?? 'None'}</strong></li>
+          </ul>
+        </div>
+        {currentRun?.failure_message ? <p className="notice error">{currentRun.failure_message}</p> : null}
+      </section>
 
       <div className="panel">
         <div className="panel-title">

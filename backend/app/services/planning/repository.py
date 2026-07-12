@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.db.base import (
@@ -40,6 +41,39 @@ class PlanningRepository:
         story = self.db.get(Story, story_id)
         if story is None:
             raise PlanningError(PlanningErrorCode.STORY_NOT_FOUND, f"Story not found: {story_id}")
+        return story
+
+    def lock_story_for_run_creation(self, story_id: UUID) -> Story:
+        """Serialize active-run creation on the parent story row.
+
+        PostgreSQL uses a real row lock. SQLite ignores ``FOR UPDATE``, so a
+        no-op row update acquires its database writer reservation; the partial
+        unique active-run index remains the final race backstop on both.
+        """
+
+        bind = self.db.get_bind()
+        if bind.dialect.name == "sqlite":
+            result = self.db.execute(
+                update(Story)
+                .where(Story.id == story_id)
+                .values(updated_at=Story.updated_at)
+            )
+            if result.rowcount != 1:
+                raise PlanningError(
+                    PlanningErrorCode.STORY_NOT_FOUND,
+                    f"Story not found: {story_id}",
+                )
+            self.db.expire_all()
+            return self.get_story(story_id)
+
+        story = self.db.scalar(
+            select(Story).where(Story.id == story_id).with_for_update()
+        )
+        if story is None:
+            raise PlanningError(
+                PlanningErrorCode.STORY_NOT_FOUND,
+                f"Story not found: {story_id}",
+            )
         return story
 
     def list_characters(self, story_id: UUID) -> list[Character]:
@@ -109,6 +143,114 @@ class PlanningRepository:
         self.db.flush()
         return run
 
+    def acquire_execution_lease(
+        self,
+        run_id: UUID,
+        *,
+        owner_id: str,
+        claim_token: str,
+        lease_seconds: int,
+    ) -> tuple[OrchestrationRun, bool, bool]:
+        """Atomically start or recover a run and acquire its durable lease.
+
+        Returns ``(run, newly_started, acquired)``. An unexpired lease owned
+        by another process is never replaced.
+        """
+
+        now = utcnow()
+        lease_until = now + timedelta(seconds=max(5, lease_seconds))
+        values = {
+            "execution_owner_id": owner_id[:128],
+            "execution_claim_token": claim_token[:64],
+            "execution_lease_expires_at": lease_until,
+            "execution_heartbeat_at": now,
+            "execution_attempt": func.coalesce(OrchestrationRun.execution_attempt, 0) + 1,
+            "updated_at": now,
+        }
+
+        pending = self.db.execute(
+            update(OrchestrationRun)
+            .where(
+                OrchestrationRun.id == run_id,
+                OrchestrationRun.status == RunStatus.pending.value,
+            )
+            .values(
+                **values,
+                status=RunStatus.running.value,
+                started_at=func.coalesce(OrchestrationRun.started_at, now),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        newly_started = pending.rowcount == 1
+        acquired = newly_started
+
+        if not acquired:
+            recovered = self.db.execute(
+                update(OrchestrationRun)
+                .where(
+                    OrchestrationRun.id == run_id,
+                    OrchestrationRun.status == RunStatus.running.value,
+                    or_(
+                        OrchestrationRun.execution_lease_expires_at.is_(None),
+                        OrchestrationRun.execution_lease_expires_at <= now,
+                    ),
+                )
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            )
+            acquired = recovered.rowcount == 1
+
+        self.db.expire_all()
+        run = self.get_run(run_id)
+        return run, newly_started, acquired
+
+    def renew_execution_lease(
+        self,
+        run_id: UUID,
+        *,
+        owner_id: str,
+        claim_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        """Heartbeat a still-valid lease without reviving an expired claim."""
+
+        now = utcnow()
+        result = self.db.execute(
+            update(OrchestrationRun)
+            .where(
+                OrchestrationRun.id == run_id,
+                OrchestrationRun.status == RunStatus.running.value,
+                OrchestrationRun.execution_owner_id == owner_id,
+                OrchestrationRun.execution_claim_token == claim_token,
+                OrchestrationRun.execution_lease_expires_at > now,
+            )
+            .values(
+                execution_heartbeat_at=now,
+                execution_lease_expires_at=now + timedelta(seconds=max(5, lease_seconds)),
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount == 1
+
+    def owns_execution_lease(
+        self,
+        run_id: UUID,
+        *,
+        owner_id: str,
+        claim_token: str,
+    ) -> bool:
+        now = utcnow()
+        return self.db.scalar(
+            select(OrchestrationRun.id).where(
+                OrchestrationRun.id == run_id,
+                OrchestrationRun.status == RunStatus.running.value,
+                OrchestrationRun.execution_owner_id == owner_id,
+                OrchestrationRun.execution_claim_token == claim_token,
+                OrchestrationRun.execution_lease_expires_at > now,
+            )
+        ) is not None
+
     def transition_run(
         self,
         run: OrchestrationRun,
@@ -132,6 +274,11 @@ class PlanningRepository:
             run.canceled_at = now
             run.failure_category = failure_category or FailureCategory.canceled.value
             run.failure_message = sanitize_message(failure_message or "run canceled")
+        if target in {RunStatus.completed, RunStatus.failed, RunStatus.canceled}:
+            run.execution_owner_id = None
+            run.execution_claim_token = None
+            run.execution_lease_expires_at = None
+            run.execution_heartbeat_at = None
         self.db.add(run)
         self.db.flush()
         return run
@@ -340,7 +487,11 @@ class PlanningRepository:
         orchestration_run_id: UUID,
         base_storyboard_version_id: UUID | None,
         schema_name: str,
+        schema_version: int,
         content_hash: str,
+        payload_hash: str,
+        input_context_hash: str,
+        base_content_hash: str,
         validation_status: str,
         validation_report_json: dict[str, Any] | None = None,
         warnings_json: list[Any] | None = None,
@@ -354,7 +505,11 @@ class PlanningRepository:
             orchestration_run_id=orchestration_run_id,
             base_storyboard_version_id=base_storyboard_version_id,
             schema_name=schema_name,
+            schema_version=schema_version,
             content_hash=content_hash,
+            payload_hash=payload_hash,
+            input_context_hash=input_context_hash,
+            base_content_hash=base_content_hash,
             validation_status=validation_status,
             validation_report_json=validation_report_json or {},
             warnings_json=warnings_json or [],
@@ -372,6 +527,9 @@ class PlanningRepository:
 
     def commit(self) -> None:
         self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()
 
     def flush(self) -> None:
         self.db.flush()

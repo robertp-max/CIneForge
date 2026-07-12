@@ -19,8 +19,10 @@ from sqlalchemy.orm import Session
 from backend.app.db.base import (
     AIProposalRecord,
     AuditLog,
+    Chapter,
     ModelVariant,
     ProviderProfile,
+    Scene,
     Shot,
     ShotModelRecommendation,
     ShotNarration,
@@ -79,8 +81,15 @@ def _audit(
 
 def _shot_or_error(db: Session, shot_id: UUID) -> Shot:
     shot = db.get(Shot, shot_id)
-    if shot is None:
+    if shot is None or shot.archived_at is not None:
         raise StoryboardCrudNotFoundError("Shot not found.")
+    scene = db.get(Scene, shot.scene_id)
+    if scene is None or scene.archived_at is not None:
+        raise StoryboardCrudNotFoundError("Shot not found.")
+    chapter = db.get(Chapter, scene.chapter_id)
+    if chapter is None or chapter.archived_at is not None:
+        raise StoryboardCrudNotFoundError("Shot not found.")
+    _story_or_error(db, chapter.story_id)
     return shot
 
 
@@ -89,6 +98,66 @@ def _story_or_error(db: Session, story_id: UUID) -> Story:
     if story is None:
         raise StoryboardCrudNotFoundError("Story not found.")
     return story
+
+
+def _story_for_active_shot(db: Session, shot_id: UUID) -> Story:
+    shot = _shot_or_error(db, shot_id)
+    scene = db.get(Scene, shot.scene_id)
+    chapter = db.get(Chapter, scene.chapter_id) if scene is not None else None
+    if chapter is None:
+        raise StoryboardCrudNotFoundError("Shot not found.")
+    return _lock_story_for_mutation(db, chapter.story_id)
+
+
+def _mark_story_draft(story: Story) -> None:
+    story.approval_state = "draft"
+    story.updated_at = datetime.utcnow()
+
+
+def _lock_story_for_mutation(db: Session, story_id: UUID) -> Story:
+    story = db.scalar(
+        select(Story)
+        .where(Story.id == story_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if story is None:
+        raise StoryboardCrudNotFoundError("Story not found.")
+    return story
+
+
+def _lock_and_mark_provider_stories(db: Session, profile_id: UUID) -> None:
+    story_ids = set(
+        db.scalars(select(Story.id).where(Story.default_provider_profile_id == profile_id))
+    )
+    story_ids.update(
+        db.scalars(
+            select(TaskProviderAssignment.story_id).where(
+                TaskProviderAssignment.provider_profile_id == profile_id
+            )
+        )
+    )
+    story_ids.update(
+        db.scalars(
+            select(Chapter.story_id)
+            .join(Scene, Scene.chapter_id == Chapter.id)
+            .join(Shot, Shot.scene_id == Scene.id)
+            .join(ShotPromptPackage, ShotPromptPackage.shot_id == Shot.id)
+            .where(ShotPromptPackage.provider_profile_id == profile_id)
+        )
+    )
+    if not story_ids:
+        return
+    stories = list(
+        db.scalars(
+            select(Story)
+            .where(Story.id.in_(story_ids))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    for story in stories:
+        _mark_story_draft(story)
 
 
 def _content_hash(payload: dict) -> str:
@@ -116,6 +185,7 @@ def upsert_narration(
     partial: bool = False,
 ) -> ShotNarration:
     shot = _shot_or_error(db, shot_id)
+    story = _story_for_active_shot(db, shot_id)
     existing = db.scalar(select(ShotNarration).where(ShotNarration.shot_id == shot_id))
 
     if isinstance(payload, ShotNarrationCreate):
@@ -159,6 +229,7 @@ def upsert_narration(
         action = "shot_narration_updated"
 
     db.flush()
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="shot_narration",
@@ -172,11 +243,13 @@ def upsert_narration(
 
 
 def delete_narration(db: Session, shot_id: UUID) -> None:
+    story = _story_for_active_shot(db, shot_id)
     row = get_narration(db, shot_id)
     if row is None:
         raise StoryboardCrudNotFoundError("Narration not found.")
     narration_id = row.id
     db.delete(row)
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="shot_narration",
@@ -207,6 +280,7 @@ def get_prompt_package(db: Session, package_id: UUID) -> ShotPromptPackage:
     row = db.get(ShotPromptPackage, package_id)
     if row is None:
         raise StoryboardCrudNotFoundError("Prompt package not found.")
+    _shot_or_error(db, row.shot_id)
     return row
 
 
@@ -228,7 +302,7 @@ def get_prompt_package_version(
 def create_prompt_package(
     db: Session, shot_id: UUID, payload: ShotPromptPackageCreate
 ) -> ShotPromptPackage:
-    _shot_or_error(db, shot_id)
+    story = _story_for_active_shot(db, shot_id)
     data = payload.model_dump()
     explicit_version = data.pop("version", None)
 
@@ -266,6 +340,7 @@ def create_prompt_package(
     row = ShotPromptPackage(shot_id=shot_id, version=version, **data)
     db.add(row)
     db.flush()
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="shot_prompt_package",
@@ -282,6 +357,7 @@ def update_prompt_package(
     db: Session, package_id: UUID, payload: ShotPromptPackageUpdate
 ) -> ShotPromptPackage:
     row = get_prompt_package(db, package_id)
+    story = _story_for_active_shot(db, row.shot_id)
     data = payload.model_dump(exclude_unset=True)
     if "provider_profile_id" in data and data["provider_profile_id"] is not None:
         if db.get(ProviderProfile, data["provider_profile_id"]) is None:
@@ -291,6 +367,7 @@ def update_prompt_package(
             raise StoryboardCrudError("Proposal not found.")
     for field, value in data.items():
         setattr(row, field, value)
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="shot_prompt_package",
@@ -323,13 +400,14 @@ def get_recommendation(db: Session, recommendation_id: UUID) -> ShotModelRecomme
     row = db.get(ShotModelRecommendation, recommendation_id)
     if row is None:
         raise StoryboardCrudNotFoundError("Recommendation not found.")
+    _shot_or_error(db, row.shot_id)
     return row
 
 
 def create_recommendation(
     db: Session, shot_id: UUID, payload: ShotModelRecommendationCreate
 ) -> ShotModelRecommendation:
-    _shot_or_error(db, shot_id)
+    story = _story_for_active_shot(db, shot_id)
     data = payload.model_dump()
     # Coerce enums to values for ORM.
     if hasattr(data.get("recommendation_type"), "value"):
@@ -352,6 +430,7 @@ def create_recommendation(
     row = ShotModelRecommendation(shot_id=shot_id, **data)
     db.add(row)
     db.flush()
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="shot_model_recommendation",
@@ -373,6 +452,7 @@ def update_recommendation(
     db: Session, recommendation_id: UUID, payload: ShotModelRecommendationUpdate
 ) -> ShotModelRecommendation:
     row = get_recommendation(db, recommendation_id)
+    story = _story_for_active_shot(db, row.shot_id)
     data = payload.model_dump(exclude_unset=True)
     acknowledge = data.pop("acknowledge", None)
 
@@ -394,6 +474,8 @@ def update_recommendation(
     if acknowledge is True and row.acknowledged_at is None:
         row.acknowledged_at = datetime.utcnow()
 
+    _mark_story_draft(story)
+
     _audit(
         db,
         entity_type="shot_model_recommendation",
@@ -408,8 +490,10 @@ def update_recommendation(
 
 def delete_recommendation(db: Session, recommendation_id: UUID) -> None:
     row = get_recommendation(db, recommendation_id)
+    story = _story_for_active_shot(db, row.shot_id)
     shot_id = row.shot_id
     db.delete(row)
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="shot_model_recommendation",
@@ -423,6 +507,27 @@ def delete_recommendation(db: Session, recommendation_id: UUID) -> None:
 # ---------------------------------------------------------------------------
 # Provider profiles
 # ---------------------------------------------------------------------------
+
+
+def _declared_capabilities_payload(raw: dict | None) -> dict[str, list[str]]:
+    """Normalize profile input as declarations, never verified capability facts."""
+
+    value = dict(raw or {})
+    candidates = value.get("declared_capabilities", value.get("capabilities"))
+    if isinstance(candidates, list):
+        labels = {str(item).strip() for item in candidates if str(item).strip()}
+    else:
+        # Backward-compatible declaration syntax: {"planning": true}.
+        labels = {
+            str(key).strip()
+            for key, enabled in value.items()
+            if isinstance(enabled, bool) and enabled and str(key).strip()
+        }
+    if len(labels) > 64 or any(len(label) > 80 for label in labels):
+        raise StoryboardCrudError(
+            "Declared capabilities are limited to 64 labels of 80 characters each."
+        )
+    return {"declared_capabilities": sorted(labels)}
 
 
 def list_provider_profiles(db: Session) -> list[ProviderProfile]:
@@ -444,8 +549,24 @@ def create_provider_profile(
     data = payload.model_dump()
     if hasattr(data.get("execution_mode"), "value"):
         data["execution_mode"] = data["execution_mode"].value
-    data["availability_status"] = (data.get("availability_status") or "unknown").lower()
-    # Factual: new profiles start unknown for capability/health timestamps.
+    # Profile CRUD is a declaration boundary.  Runtime/provider facts may only
+    # come from the provider registry or an explicit bounded connection test.
+    if data.get("availability_status") not in {None, "unknown"}:
+        raise StoryboardCrudError(
+            "Provider availability is factual and cannot be asserted by profile CRUD."
+        )
+    data["availability_status"] = "unknown"
+    declaration_supplied = bool(
+        {"capabilities_json", "capability_source"} & payload.model_fields_set
+    )
+    data["capabilities_json"] = _declared_capabilities_payload(
+        data.get("capabilities_json")
+    )
+    data["capability_source"] = (
+        "user_declared" if declaration_supplied else None
+    )
+    # capabilities_checked_at and health_checked_at are intentionally absent
+    # from all CRUD request schemas and therefore remain unset here.
     row = ProviderProfile(**data)
     db.add(row)
     db.flush()
@@ -473,7 +594,28 @@ def update_provider_profile(
     if "execution_mode" in data and hasattr(data["execution_mode"], "value"):
         data["execution_mode"] = data["execution_mode"].value
     if "availability_status" in data and data["availability_status"] is not None:
-        data["availability_status"] = data["availability_status"].lower()
+        if data["availability_status"] != "unknown":
+            raise StoryboardCrudError(
+                "Provider availability is factual and cannot be asserted by profile CRUD."
+            )
+        data["availability_status"] = "unknown"
+    if "capabilities_json" in data:
+        data["capabilities_json"] = _declared_capabilities_payload(
+            data["capabilities_json"]
+        )
+        data["capability_source"] = "user_declared"
+    elif "capability_source" in data:
+        # A source label cannot elevate an existing declaration to a verified
+        # fact.  Keep the only write-side source explicit.
+        data["capability_source"] = (
+            "user_declared"
+            if _declared_capabilities_payload(row.capabilities_json)[
+                "declared_capabilities"
+            ]
+            else None
+        )
+    if data:
+        _lock_and_mark_provider_stories(db, profile_id)
     for field, value in data.items():
         setattr(row, field, value)
     _audit(
@@ -500,6 +642,7 @@ def delete_provider_profile(db: Session, profile_id: UUID) -> None:
         raise StoryboardCrudConflictError(
             "Cannot delete provider profile while task assignments reference it."
         )
+    _lock_and_mark_provider_stories(db, profile_id)
     db.delete(row)
     _audit(
         db,
@@ -537,7 +680,7 @@ def get_task_assignment(db: Session, assignment_id: UUID) -> TaskProviderAssignm
 def create_task_assignment(
     db: Session, story_id: UUID, payload: TaskProviderAssignmentCreate
 ) -> TaskProviderAssignment:
-    _story_or_error(db, story_id)
+    story = _lock_story_for_mutation(db, story_id)
     data = payload.model_dump()
     if hasattr(data.get("assignment_mode"), "value"):
         data["assignment_mode"] = data["assignment_mode"].value
@@ -559,6 +702,7 @@ def create_task_assignment(
     row = TaskProviderAssignment(story_id=story_id, **data)
     db.add(row)
     db.flush()
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="task_provider_assignment",
@@ -579,6 +723,7 @@ def update_task_assignment(
     db: Session, assignment_id: UUID, payload: TaskProviderAssignmentUpdate
 ) -> TaskProviderAssignment:
     row = get_task_assignment(db, assignment_id)
+    story = _lock_story_for_mutation(db, row.story_id)
     data = payload.model_dump(exclude_unset=True)
     if "assignment_mode" in data and hasattr(data["assignment_mode"], "value"):
         data["assignment_mode"] = data["assignment_mode"].value
@@ -587,6 +732,7 @@ def update_task_assignment(
             raise StoryboardCrudError("Provider profile not found.")
     for field, value in data.items():
         setattr(row, field, value)
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="task_provider_assignment",
@@ -601,9 +747,11 @@ def update_task_assignment(
 
 def delete_task_assignment(db: Session, assignment_id: UUID) -> None:
     row = get_task_assignment(db, assignment_id)
+    story = _lock_story_for_mutation(db, row.story_id)
     story_id = row.story_id
     task_type = row.task_type
     db.delete(row)
+    _mark_story_draft(story)
     _audit(
         db,
         entity_type="task_provider_assignment",

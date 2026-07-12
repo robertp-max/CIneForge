@@ -1,57 +1,103 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, type StorySettings } from '../../api/client'
-import { useStudio } from '../StudioContext'
+import {
+  api,
+  type ProjectStoryboardSettings,
+  type ProjectStoryboardSettingsUpdate,
+} from '../../api/client'
+import { useStudio } from '../StudioState'
 import { ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
-const DEFAULT_DRAFT: Omit<StorySettings, 'story_id'> = {
-  duration_min_sec: 6,
-  duration_max_sec: 12,
-  approval_policy: 'producer_gate',
-  continuity_policy: 'explicit_source_shot',
-  consent_policy: 'user_provided_requires_confirmation',
+const DEFAULT_DRAFT: ProjectStoryboardSettingsUpdate = {
+  shot_duration_min_sec: 6,
+  shot_duration_max_sec: 12,
+  continuity_policy_json: {
+    require_starting_image_when_flagged: true,
+    allow_cross_scene_continuity: true,
+  },
+  prompting_policy_json: {
+    require_visual_description: false,
+    require_story_purpose: false,
+  },
+  voice_policy_json: {
+    allow_placeholder_for_approval: true,
+    allow_manual_for_approval: true,
+    require_consent_when_required: true,
+    block_unresolved_provider_voices: false,
+  },
+  approval_policy_json: {
+    require_exact_duration: true,
+    require_at_least_one_chapter: true,
+    require_at_least_one_scene: true,
+    require_at_least_one_shot: true,
+    require_narration_or_exception: true,
+    block_on_shot_blocked: true,
+  },
+  speaking_rate: 1,
   aspect_ratio: '16:9',
-  render_approval_required: true,
-  generation_enabled: false,
-  notes: null,
+  preview_width: 1280,
+  preview_height: 720,
+  final_width: 1920,
+  final_height: 1080,
+  fps: 24,
+  captions_enabled: true,
+  audio_enabled: true,
+  prefer_hosted_providers: false,
+  prefer_local_providers: true,
+  allow_model_download: false,
+  allow_rendering: false,
+  require_voice_consent: true,
+  require_production_plan_approval: true,
+}
+
+function editableSettings(settings: ProjectStoryboardSettings): ProjectStoryboardSettingsUpdate {
+  return {
+    shot_duration_min_sec: settings.shot_duration_min_sec,
+    shot_duration_max_sec: settings.shot_duration_max_sec,
+    continuity_policy_json: settings.continuity_policy_json,
+    prompting_policy_json: settings.prompting_policy_json,
+    voice_policy_json: settings.voice_policy_json,
+    approval_policy_json: settings.approval_policy_json,
+    speaking_rate: settings.speaking_rate,
+    aspect_ratio: settings.aspect_ratio,
+    preview_width: settings.preview_width,
+    preview_height: settings.preview_height,
+    final_width: settings.final_width,
+    final_height: settings.final_height,
+    fps: settings.fps,
+    captions_enabled: settings.captions_enabled,
+    audio_enabled: settings.audio_enabled,
+    prefer_hosted_providers: settings.prefer_hosted_providers,
+    prefer_local_providers: settings.prefer_local_providers,
+    allow_model_download: settings.allow_model_download,
+    allow_rendering: settings.allow_rendering,
+    require_voice_consent: settings.require_voice_consent,
+    require_production_plan_approval: settings.require_production_plan_approval,
+  }
 }
 
 export function SettingsPage() {
   const { data, busy, setMessage, backendStatus } = useStudio()
-  const [settings, setSettings] = useState<StorySettings | null>(null)
+  const [settings, setSettings] = useState<ProjectStoryboardSettings | null>(null)
   const [available, setAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [draft, setDraft] = useState(DEFAULT_DRAFT)
+  const [draft, setDraft] = useState<ProjectStoryboardSettingsUpdate>(DEFAULT_DRAFT)
 
   const load = useCallback(async () => {
     if (!data) return
     setLoading(true)
     setError(null)
     try {
-      const result = await api.getSettings(data.story.id)
+      const result = await api.getSettings(data.story.project_id)
       if (result == null) {
         setAvailable(false)
         setSettings(null)
-        setDraft({
-          ...DEFAULT_DRAFT,
-          // Reflect story target only as display context — not as invented policy truth.
-          notes: `Story target duration: ${data.story.target_duration_sec}s. Settings API unavailable.`,
-        })
+        setDraft(DEFAULT_DRAFT)
       } else {
         setAvailable(true)
         setSettings(result)
-        setDraft({
-          duration_min_sec: result.duration_min_sec,
-          duration_max_sec: result.duration_max_sec,
-          approval_policy: result.approval_policy,
-          continuity_policy: result.continuity_policy,
-          consent_policy: result.consent_policy,
-          aspect_ratio: result.aspect_ratio,
-          render_approval_required: result.render_approval_required,
-          generation_enabled: result.generation_enabled,
-          notes: result.notes,
-        })
+        setDraft(editableSettings(result))
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings.')
@@ -61,7 +107,8 @@ export function SettingsPage() {
   }, [data])
 
   useEffect(() => {
-    void load()
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
   }, [load])
 
   if (!data) return null
@@ -72,19 +119,21 @@ export function SettingsPage() {
     setSaving(true)
     setError(null)
     try {
-      const updated = await api.updateSettings(data.story.id, {
+      const updated = await api.updateSettings(data.story.project_id, {
         ...draft,
-        // Never allow the UI to silently enable generation from planning settings.
-        generation_enabled: false,
-        render_approval_required: true,
+        expected_settings_version: settings?.id ? settings.settings_version : undefined,
+        // Phase A remains plan-only even if stale server data says otherwise.
+        allow_model_download: false,
+        allow_rendering: false,
       })
       if (!updated) {
         setAvailable(false)
-        setMessage('Settings write API is unavailable on this backend.')
+        setMessage('Project storyboard settings API is unavailable on this backend.')
         return
       }
       setSettings(updated)
-      setMessage('Project settings saved on the server. Generation remains disabled in planning.')
+      setDraft(editableSettings(updated))
+      setMessage('Project storyboard settings saved. Rendering and model downloads remain disabled.')
     } catch (err) {
       const text = err instanceof Error ? err.message : 'Could not save settings.'
       setError(text)
@@ -95,7 +144,7 @@ export function SettingsPage() {
   }
 
   if (loading) {
-    return <LoadingState title="Loading project settings…" detail="Fetching server-backed policy configuration." />
+    return <LoadingState title="Loading project settings…" detail="Fetching project-scoped policy configuration." />
   }
 
   if (!available) {
@@ -103,44 +152,34 @@ export function SettingsPage() {
       <>
         <UnavailableState
           title="Settings API unavailable"
-          detail="Phase 1 policy settings—duration range, approval policy, continuity, consent, aspect ratio, and render approval—are planned for persisted configuration. Runtime configuration remains read-only until the endpoint exists."
+          detail="This backend does not currently expose the project storyboard-settings GET/PUT contract. No local fallback is presented as persisted policy."
         />
         <div className="panel" style={{ marginTop: 14 }}>
           <h2>Read-only story context</h2>
           <ul className="kv-list">
-            <li>
-              <span>Story</span>
-              <strong>{data.story.title}</strong>
-            </li>
-            <li>
-              <span>Target duration</span>
-              <strong>{data.story.target_duration_sec}s</strong>
-            </li>
-            <li>
-              <span>Approval state</span>
-              <strong>{data.story.approval_state}</strong>
-            </li>
-            <li>
-              <span>Backend</span>
-              <strong>{backendStatus}</strong>
-            </li>
+            <li><span>Project</span><strong className="mono">{data.story.project_id}</strong></li>
+            <li><span>Story</span><strong>{data.story.title}</strong></li>
+            <li><span>Target duration</span><strong>{data.story.target_duration_sec}s</strong></li>
+            <li><span>Backend</span><strong>{backendStatus}</strong></li>
           </ul>
         </div>
       </>
     )
   }
 
+  const savingDisabled = saving || busy
+
   return (
-    <form className="panel stack-form" style={{ maxWidth: 720 }} onSubmit={(event) => void onSave(event)}>
+    <form className="panel stack-form" style={{ maxWidth: 760 }} onSubmit={(event) => void onSave(event)}>
       <div className="panel-title">
         <div>
-          <h2>Project settings</h2>
+          <h2>Project storyboard settings</h2>
           <p>
-            Persisted policy for story <span className="mono">{data.story.id}</span>. Generation cannot
-            be enabled from this planning UI.
+            Project <span className="mono">{data.story.project_id}</span> · settings version{' '}
+            {settings?.settings_version ?? 'new'}.
           </p>
         </div>
-        <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={busy || saving}>
+        <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={savingDisabled}>
           Refresh
         </button>
       </div>
@@ -149,121 +188,126 @@ export function SettingsPage() {
 
       <div className="split-2">
         <label>
-          Duration min (sec)
+          Shot duration min (sec)
           <input
             type="number"
-            min={0}
-            value={draft.duration_min_sec}
-            onChange={(e) => setDraft({ ...draft, duration_min_sec: Number(e.target.value) })}
-            disabled={saving}
+            min={0.1}
+            step={0.1}
+            value={draft.shot_duration_min_sec}
+            onChange={(event) => setDraft({ ...draft, shot_duration_min_sec: Number(event.target.value) })}
+            disabled={savingDisabled}
           />
         </label>
         <label>
-          Duration max (sec)
+          Shot duration max (sec)
           <input
             type="number"
-            min={0}
-            value={draft.duration_max_sec}
-            onChange={(e) => setDraft({ ...draft, duration_max_sec: Number(e.target.value) })}
-            disabled={saving}
+            min={0.1}
+            step={0.1}
+            value={draft.shot_duration_max_sec}
+            onChange={(event) => setDraft({ ...draft, shot_duration_max_sec: Number(event.target.value) })}
+            disabled={savingDisabled}
           />
         </label>
       </div>
 
-      <label>
-        Approval policy
-        <select
-          value={draft.approval_policy}
-          onChange={(e) => setDraft({ ...draft, approval_policy: e.target.value })}
-          disabled={saving}
-        >
-          <option value="producer_gate">Producer gate</option>
-          <option value="dual_review">Dual review</option>
-          <option value="auto_when_ready">Auto when ready (server-enforced)</option>
-        </select>
-      </label>
+      <div className="split-2">
+        <label>
+          Aspect ratio
+          <select
+            value={draft.aspect_ratio}
+            onChange={(event) => setDraft({ ...draft, aspect_ratio: event.target.value })}
+            disabled={savingDisabled}
+          >
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="1:1">1:1</option>
+            <option value="2.39:1">2.39:1</option>
+          </select>
+        </label>
+        <label>
+          Frames per second
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={draft.fps}
+            onChange={(event) => setDraft({ ...draft, fps: Number(event.target.value) })}
+            disabled={savingDisabled}
+          />
+        </label>
+      </div>
 
-      <label>
-        Continuity policy
-        <select
-          value={draft.continuity_policy}
-          onChange={(e) => setDraft({ ...draft, continuity_policy: e.target.value })}
-          disabled={saving}
-        >
-          <option value="explicit_source_shot">Explicit source shot</option>
-          <option value="chapter_local">Chapter local</option>
-          <option value="free">Free</option>
-        </select>
-      </label>
-
-      <label>
-        Consent policy
-        <select
-          value={draft.consent_policy}
-          onChange={(e) => setDraft({ ...draft, consent_policy: e.target.value })}
-          disabled={saving}
-        >
-          <option value="user_provided_requires_confirmation">User-provided requires confirmation</option>
-          <option value="always_confirm">Always confirm</option>
-          <option value="not_required_for_stock">Not required for stock</option>
-        </select>
-      </label>
-
-      <label>
-        Aspect ratio
-        <select
-          value={draft.aspect_ratio}
-          onChange={(e) => setDraft({ ...draft, aspect_ratio: e.target.value })}
-          disabled={saving}
-        >
-          <option value="16:9">16:9</option>
-          <option value="9:16">9:16</option>
-          <option value="1:1">1:1</option>
-          <option value="2.39:1">2.39:1</option>
-        </select>
+      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+        <input
+          type="checkbox"
+          checked={Boolean(draft.approval_policy_json.require_exact_duration)}
+          onChange={(event) => setDraft({
+            ...draft,
+            approval_policy_json: {
+              ...draft.approval_policy_json,
+              require_exact_duration: event.target.checked,
+            },
+          })}
+          disabled={savingDisabled}
+          style={{ width: 20, height: 20, minHeight: 20 }}
+        />
+        <span>Require exact reconciled story duration</span>
       </label>
 
       <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
         <input
           type="checkbox"
-          checked={draft.render_approval_required}
-          onChange={(e) => setDraft({ ...draft, render_approval_required: e.target.checked })}
-          disabled={saving}
+          checked={Boolean(draft.continuity_policy_json.require_starting_image_when_flagged)}
+          onChange={(event) => setDraft({
+            ...draft,
+            continuity_policy_json: {
+              ...draft.continuity_policy_json,
+              require_starting_image_when_flagged: event.target.checked,
+            },
+          })}
+          disabled={savingDisabled}
           style={{ width: 20, height: 20, minHeight: 20 }}
         />
-        <span>Render approval required (recommended; forced true on save in planning)</span>
+        <span>Require a starting image when a shot is flagged</span>
       </label>
 
       <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
         <input
           type="checkbox"
-          checked={false}
-          disabled
-          aria-disabled="true"
+          checked={draft.require_voice_consent}
+          onChange={(event) => setDraft({ ...draft, require_voice_consent: event.target.checked })}
+          disabled={savingDisabled}
           style={{ width: 20, height: 20, minHeight: 20 }}
         />
-        <span>Generation enabled — locked off in Phase 1 planning UI</span>
+        <span>Require voice consent</span>
       </label>
 
-      <label>
-        Notes
-        <textarea
-          value={draft.notes ?? ''}
-          onChange={(e) => setDraft({ ...draft, notes: e.target.value || null })}
-          disabled={saving}
+      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+        <input
+          type="checkbox"
+          checked={draft.require_production_plan_approval}
+          onChange={(event) => setDraft({ ...draft, require_production_plan_approval: event.target.checked })}
+          disabled={savingDisabled}
+          style={{ width: 20, height: 20, minHeight: 20 }}
         />
+        <span>Require production-plan approval</span>
+      </label>
+
+      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+        <input type="checkbox" checked={false} disabled aria-disabled="true" style={{ width: 20, height: 20, minHeight: 20 }} />
+        <span>Rendering and model downloads — locked off in Phase A planning</span>
       </label>
 
       <div className="inline-actions">
-        <button type="submit" className="primary-button touch-target" disabled={saving || busy}>
+        <button type="submit" className="primary-button touch-target" disabled={savingDisabled}>
           {saving ? 'Saving…' : 'Save settings'}
         </button>
-        <span className="truth-pill">{settings ? 'Server-backed' : 'Unsaved'}</span>
+        <span className="truth-pill">Server-backed · revision-aware PUT</span>
       </div>
 
       <p className="form-hint">
-        Runtime configuration remains observational. Saving settings never installs workflows, queues
-        jobs, clones voices, or starts renders.
+        Saving settings does not install models, submit workflows, queue renders, or generate media.
       </p>
     </form>
   )

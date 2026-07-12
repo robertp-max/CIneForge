@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type RuntimeStatus, type WorkflowRegistryEntry } from '../../api/client'
-import { useStudio } from '../StudioContext'
+import { api, type RuntimeCatalogWorkflowTemplate, type RuntimeStatus } from '../../api/client'
+import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
-function truthClass(value: boolean | null | undefined): string {
+function truthClass(value: boolean | undefined): string {
   if (value === true) return 'verified'
-  if (value === false) return 'blocked'
   return 'unknown'
 }
 
-function truthText(value: boolean | null | undefined): string {
-  if (value === true) return 'Yes'
-  if (value === false) return 'No'
-  return 'Unknown'
+function truthText(value: boolean | undefined): string {
+  return value === true ? 'Evidence recorded' : 'Not claimed'
 }
 
 export function WorkflowsPage() {
   const { data, busy, backendStatus } = useStudio()
-  const [workflows, setWorkflows] = useState<WorkflowRegistryEntry[] | null>(null)
+  const [workflows, setWorkflows] = useState<RuntimeCatalogWorkflowTemplate[] | null>(null)
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [available, setAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -29,7 +26,7 @@ export function WorkflowsPage() {
     setError(null)
     try {
       const [wf, rt] = await Promise.all([
-        api.listWorkflows(data.story.id),
+        api.listRuntimeWorkflowTemplates(),
         api.runtimeStatus().catch(() => null),
       ])
       setRuntime(rt)
@@ -48,7 +45,8 @@ export function WorkflowsPage() {
   }, [data])
 
   useEffect(() => {
-    void load()
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
   }, [load])
 
   if (!data) return null
@@ -114,8 +112,8 @@ export function WorkflowsPage() {
           <div>
             <h2>Workflow registry</h2>
             <p>
-              Installed / validated / benchmarked flags are only shown when the backend provides them.
-              This screen never claims a workflow is ready without evidence.
+              Registration, manifest, API, and benchmark facts come from /runtime-catalog/workflow-templates.
+              False claim flags mean “not claimed,” not a negative runtime probe.
             </p>
           </div>
           <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={loading || busy}>
@@ -143,11 +141,11 @@ export function WorkflowsPage() {
               <thead>
                 <tr>
                   <th>Workflow</th>
-                  <th>Category</th>
+                  <th>Version</th>
                   <th>Installed</th>
                   <th>Validated</th>
                   <th>Benchmarked</th>
-                  <th>Status</th>
+                  <th>Evidence</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -156,25 +154,28 @@ export function WorkflowsPage() {
                   <tr key={wf.id}>
                     <td>
                       <strong>{wf.name}</strong>
-                      <div className="form-hint">{wf.evidence ?? wf.disabled_reason ?? '—'}</div>
+                      <div className="form-hint mono">{wf.sha256}</div>
                     </td>
-                    <td>{wf.category}</td>
+                    <td>{wf.version}</td>
                     <td>
-                      <span className={`truth-pill ${truthClass(wf.installed)}`}>
-                        {truthText(wf.installed)}
+                      <span className={`truth-pill ${truthClass(wf.claims.installed)}`}>
+                        {truthText(wf.claims.installed)}
                       </span>
                     </td>
                     <td>
-                      <span className={`truth-pill ${truthClass(wf.validated)}`}>
-                        {truthText(wf.validated)}
+                      <span className={`truth-pill ${truthClass(wf.claims.validated)}`}>
+                        {truthText(wf.claims.validated)}
                       </span>
                     </td>
                     <td>
-                      <span className={`truth-pill ${truthClass(wf.benchmarked)}`}>
-                        {truthText(wf.benchmarked)}
+                      <span className={`truth-pill ${truthClass(wf.claims.benchmarked)}`}>
+                        {truthText(wf.claims.benchmarked)}
                       </span>
                     </td>
-                    <td>{wf.status}</td>
+                    <td>
+                      {wf.registration_status} · manifest {wf.has_manifest ? 'recorded' : 'unknown'} · API{' '}
+                      {wf.has_workflow_api ? 'recorded' : 'unknown'} · benchmark {wf.benchmark_status}
+                    </td>
                     <td>
                       <div className="inline-actions">
                         <button type="button" className="ghost-button" disabled title="Install is not available from planning">

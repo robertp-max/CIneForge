@@ -47,10 +47,6 @@ export function AppShell({
   const activeLabel = navItems.find((item) => item.id === activePage)?.label ?? 'Studio'
 
   useEffect(() => {
-    setMobileNavOpen(false)
-  }, [activePage])
-
-  useEffect(() => {
     if (!mobileNavOpen) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMobileNavOpen(false)

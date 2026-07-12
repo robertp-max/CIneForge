@@ -26,7 +26,8 @@ LOCAL_CLI_PROVIDER = "local_cli"
 HOSTED_PROVIDERS = ("openai", "anthropic", "xai", "qwen")
 
 
-def default_provider_catalog(*
+def default_provider_catalog(
+    *,
     prefer_local: bool = True,
     prefer_hosted: bool = False,
 ) -> list[dict[str, Any]]:
@@ -104,16 +105,36 @@ def _pick_automatic_provider(
     prefer_hosted: bool,
     catalog: list[dict[str, Any]] | None = None,
 ) -> str:
-    entries = catalog or default_provider_catalog(
-        prefer_local=prefer_local, prefer_hosted=prefer_hosted
+    entries = (
+        catalog
+        if catalog is not None
+        else default_provider_catalog(
+            prefer_local=prefer_local, prefer_hosted=prefer_hosted
+        )
     )
     available = [
         e for e in entries
         if e.get("availability_status") == "available" and "planning" in (e.get("capabilities") or [])
     ]
+    allowed_privacy_classes: set[str] = set()
+    if prefer_local:
+        allowed_privacy_classes.add("local")
+    if prefer_hosted:
+        allowed_privacy_classes.add("hosted")
+    available = [
+        entry
+        for entry in available
+        if entry.get("privacy_classification") in allowed_privacy_classes
+    ]
     if not available:
-        # Phase 1 always falls back to the deterministic mock.
-        return MOCK_PROVIDER
+        raise PlanningError(
+            PlanningErrorCode.ROUTING_FAILED,
+            "No available planning provider satisfies the project/run provider policy",
+            details={
+                "prefer_local_providers": prefer_local,
+                "prefer_hosted_providers": prefer_hosted,
+            },
+        )
     if prefer_local:
         local = [e for e in available if e.get("privacy_classification") == "local"]
         if local:
@@ -192,7 +213,9 @@ def select_route(
     # automatic (or hybrid without manual assignment)
     logical = force_logical_model or default_profile_for_task(task_type)
     provider = _pick_automatic_provider(
-        prefer_local=prefer_local, prefer_hosted=prefer_hosted
+        prefer_local=prefer_local,
+        prefer_hosted=prefer_hosted,
+        catalog=routing_snapshot.get("provider_catalog"),
     )
     resolved = resolve_model_name(logical, provider_identifier=provider)
     rationale = (

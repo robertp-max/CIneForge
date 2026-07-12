@@ -36,6 +36,12 @@ def _now() -> datetime:
     return datetime.utcnow()
 
 
+def _optional_uuid(value: Any) -> UUID | None:
+    if value is None or value == "":
+        return None
+    return value if isinstance(value, UUID) else UUID(str(value))
+
+
 def upsert_story_fields(story: Story, proposed: dict[str, Any]) -> None:
     for field in (
         "title",
@@ -118,6 +124,7 @@ def upsert_voices(
                         raise MutationError(
                             f"Cannot modify approved voice field '{field}' on {row.id}"
                         )
+            row.archived_at = None
 
         for field in mutable:
             if field in item:
@@ -165,6 +172,8 @@ def upsert_characters(
         if row is None:
             row = Character(id=uuid4(), story_id=story_id, name=item["name"])
             db.add(row)
+        else:
+            row.archived_at = None
         for field in fields:
             if field in item:
                 setattr(row, field, item[field])
@@ -173,6 +182,12 @@ def upsert_characters(
             voice = voices_by_client.get(voice_client)
             if voice is None:
                 raise MutationError(f"Unknown voice client_id '{voice_client}' for character {client_id}")
+            if row.assigned_voice_profile_id not in (None, voice.id):
+                current_voice = db.get(VoiceProfile, row.assigned_voice_profile_id)
+                if current_voice is not None and current_voice.approval_state == "approved":
+                    raise MutationError(
+                        f"Cannot replace approved voice assignment for character {client_id}"
+                    )
             row.assigned_voice_profile_id = voice.id
         row.updated_at = _now()
         by_client[client_id] = row
@@ -212,12 +227,123 @@ def _archive_missing_chapters(db: Session, story_id: UUID, keep_ids: set[UUID]) 
             row.updated_at = now
 
 
+def _archive_omitted_identities(
+    db: Session,
+    story_id: UUID,
+    keep_character_ids: set[UUID],
+    keep_voice_ids: set[UUID],
+) -> None:
+    """Soft-archive omitted identities after the replacement graph is final.
+
+    Approved identities and identities still referenced by the active graph are
+    never silently removed. The preflight completes before any archive marker
+    is written so a conflict leaves the transaction graph untouched.
+    """
+
+    omitted_voices = list(
+        db.scalars(
+            select(VoiceProfile).where(
+                VoiceProfile.story_id == story_id,
+                VoiceProfile.archived_at.is_(None),
+                VoiceProfile.id.not_in(keep_voice_ids) if keep_voice_ids else True,
+            )
+        )
+    )
+    omitted_characters = list(
+        db.scalars(
+            select(Character).where(
+                Character.story_id == story_id,
+                Character.archived_at.is_(None),
+                Character.id.not_in(keep_character_ids) if keep_character_ids else True,
+            )
+        )
+    )
+
+    active_shot_ids = select(Shot.id).join(Scene, Shot.scene_id == Scene.id).join(
+        Chapter, Scene.chapter_id == Chapter.id
+    ).where(
+        Chapter.story_id == story_id,
+        Chapter.archived_at.is_(None),
+        Scene.archived_at.is_(None),
+        Shot.archived_at.is_(None),
+    )
+    referenced_voice_ids = {
+        voice_id
+        for voice_id in db.scalars(
+            select(Character.assigned_voice_profile_id).where(
+                Character.story_id == story_id,
+                Character.archived_at.is_(None),
+                Character.id.in_(keep_character_ids) if keep_character_ids else False,
+                Character.assigned_voice_profile_id.is_not(None),
+            )
+        )
+        if voice_id is not None
+    }
+    referenced_voice_ids.update(
+        voice_id
+        for voice_id in db.scalars(
+            select(ShotNarration.voice_profile_id).where(
+                ShotNarration.shot_id.in_(active_shot_ids),
+                ShotNarration.voice_profile_id.is_not(None),
+            )
+        )
+        if voice_id is not None
+    )
+
+    referenced_character_ids = set(
+        db.scalars(
+            select(ShotCharacter.character_id).where(
+                ShotCharacter.shot_id.in_(active_shot_ids)
+            )
+        )
+    )
+    referenced_character_ids.update(
+        character_id
+        for character_id in db.scalars(
+            select(VoiceProfile.character_id).where(
+                VoiceProfile.story_id == story_id,
+                VoiceProfile.archived_at.is_(None),
+                VoiceProfile.id.in_(keep_voice_ids) if keep_voice_ids else False,
+                VoiceProfile.character_id.is_not(None),
+            )
+        )
+        if character_id is not None
+    )
+
+    conflicts: list[str] = []
+    for voice in omitted_voices:
+        if voice.approval_state == "approved":
+            conflicts.append(f"approved voice {voice.id}")
+        elif voice.id in referenced_voice_ids:
+            conflicts.append(f"referenced voice {voice.id}")
+    for character in omitted_characters:
+        if character.approval_state == "approved":
+            conflicts.append(f"approved character {character.id}")
+        elif character.id in referenced_character_ids:
+            conflicts.append(f"referenced character {character.id}")
+    if conflicts:
+        raise MutationError(
+            "Cannot omit protected identities from full-plan replacement: "
+            + ", ".join(conflicts)
+        )
+
+    now = _now()
+    for voice in omitted_voices:
+        voice.archived_at = now
+        voice.updated_at = now
+    for character in omitted_characters:
+        character.archived_at = now
+        character.updated_at = now
+
+
 def upsert_hierarchy(
     db: Session,
     story_id: UUID,
     proposed_chapters: list[dict[str, Any]],
     characters_by_client: dict[str, Character],
     voices_by_client: dict[str, VoiceProfile],
+    *,
+    replace_identities: bool = False,
 ) -> dict[str, Shot]:
     """Upsert chapters/scenes/shots and nested narration/prompt/recommendation rows."""
     existing_chapters = {
@@ -277,6 +403,34 @@ def upsert_hierarchy(
             existing_shots = {
                 str(row.id): row for row in db.scalars(select(Shot).where(Shot.scene_id == scene.id))
             }
+            retained_existing_shot_ids = {
+                UUID(str(item["existing_id"]))
+                for item in (scene_item.get("shots") or [])
+                if item.get("existing_id")
+                and str(item["existing_id"]) in existing_shots
+            }
+
+            # Full-plan replacement semantics apply within retained scenes too:
+            # shots omitted from the proposal are soft-archived. Move all
+            # existing rows to temporary negative positions before assigning
+            # the proposed order so SQLite/PostgreSQL's non-partial sibling
+            # uniqueness constraint cannot make a valid replacement collide
+            # with an omitted or reordered row.
+            existing_shot_rows = list(existing_shots.values())
+            temporary_order = min(
+                [int(row.order_index) for row in existing_shot_rows] + [0]
+            ) - len(existing_shot_rows) - 1
+            now = _now()
+            for existing_shot in existing_shot_rows:
+                existing_shot.order_index = temporary_order
+                temporary_order -= 1
+                if existing_shot.id in retained_existing_shot_ids:
+                    existing_shot.archived_at = None
+                else:
+                    existing_shot.archived_at = now
+                existing_shot.updated_at = now
+            db.flush()
+
             for shot_item in scene_item.get("shots") or []:
                 shot_existing = shot_item.get("existing_id")
                 shot = existing_shots.get(str(shot_existing)) if shot_existing else None
@@ -298,7 +452,10 @@ def upsert_hierarchy(
                 shot.location = shot_item.get("location")
                 shot.continuity_source_type = shot_item.get("continuity_source_type") or "none"
                 shot.starting_image_required = bool(shot_item.get("starting_image_required") or False)
-                shot.starting_image_asset_id = shot_item.get("starting_image_asset_id")
+                shot.starting_image_asset_id = _optional_uuid(
+                    shot_item.get("starting_image_asset_id")
+                )
+                shot.archived_at = None
                 shot.updated_at = _now()
                 db.flush()
                 shots_by_client[shot_item["client_id"]] = shot
@@ -335,6 +492,13 @@ def upsert_hierarchy(
                 else:
                     shot.continuity_source_shot_id = None
                 shot.updated_at = _now()
+    if replace_identities:
+        _archive_omitted_identities(
+            db,
+            story_id,
+            {row.id for row in characters_by_client.values()},
+            {row.id for row in voices_by_client.values()},
+        )
     db.flush()
     return shots_by_client
 
@@ -412,7 +576,7 @@ def _upsert_prompt_package(db: Session, shot: Shot, package: dict[str, Any] | No
         negative_prompt=package.get("negative_prompt"),
         continuity_instructions=package.get("continuity_instructions"),
         style_lock_prompt=package.get("style_lock_prompt"),
-        provider_profile_id=package.get("provider_profile_id"),
+        provider_profile_id=_optional_uuid(package.get("provider_profile_id")),
         provider_model_id=package.get("provider_model_id"),
         approval_state="draft",
     )
@@ -437,8 +601,10 @@ def _upsert_model_recommendations(
                 id=uuid4(),
                 shot_id=shot.id,
                 recommendation_type=item.get("recommendation_type") or "primary",
-                generation_model_variant_id=item.get("generation_model_variant_id"),
-                workflow_template_id=item.get("workflow_template_id"),
+                generation_model_variant_id=_optional_uuid(
+                    item.get("generation_model_variant_id")
+                ),
+                workflow_template_id=_optional_uuid(item.get("workflow_template_id")),
                 rationale=item.get("rationale"),
                 availability_status=item.get("availability_status") or "unknown",
                 benchmark_status=item.get("benchmark_status") or "unknown",

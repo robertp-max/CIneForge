@@ -31,6 +31,12 @@ class PlanningAssetError(Exception):
     """Domain error for planning media assets."""
 
 
+VOICE_PREVIEW_AUDIO_REQUIRED_MESSAGE = (
+    "Voice preview assets must reference generated audio; "
+    "marker or non-audio artifacts are not valid previews."
+)
+
+
 def _sanitize_metadata(metadata: dict | None) -> dict:
     data = dict(metadata or {})
     bad = FORBIDDEN_META_KEYS.intersection({str(k).lower() for k in data})
@@ -100,7 +106,20 @@ def register_voice_preview_asset(
     model: str | None = None,
     extra_metadata: dict | None = None,
 ) -> PlanningMediaAsset:
-    """Register a managed voice preview artifact (URI/hash only)."""
+    """Register a managed audio preview reference, never a marker payload.
+
+    Preview adapters historically emitted JSON marker files while reporting a
+    successful preview. Requiring an audio media type and rejecting marker-like
+    URIs prevents those artifacts from becoming selectable voice previews.
+    """
+    normalized_mime = (mime_type or "").strip().lower()
+    if not normalized_mime.startswith("audio/"):
+        raise PlanningAssetError(VOICE_PREVIEW_AUDIO_REQUIRED_MESSAGE)
+
+    normalized_uri = managed_uri.strip().lower().split("#", 1)[0].split("?", 1)[0]
+    if normalized_uri.endswith((".json", ".txt", ".marker")):
+        raise PlanningAssetError(VOICE_PREVIEW_AUDIO_REQUIRED_MESSAGE)
+
     meta = {
         "kind_detail": "voice_preview",
         "provider": provider,

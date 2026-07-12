@@ -51,15 +51,15 @@ PROFILE_SPECS: dict[LogicalModelProfile, LogicalProfileSpec] = {
 
 # Default starting profile per task. Production proposal always prefers Sol.
 DEFAULT_TASK_PROFILE: dict[PlanningTaskType, LogicalModelProfile] = {
-    PlanningTaskType.story_structure: LogicalModelProfile.luna,
-    PlanningTaskType.character_bible: LogicalModelProfile.luna,
-    PlanningTaskType.chapter_outline: LogicalModelProfile.luna,
+    PlanningTaskType.story_structure: LogicalModelProfile.sol,
+    PlanningTaskType.character_bible: LogicalModelProfile.terra,
+    PlanningTaskType.chapter_outline: LogicalModelProfile.terra,
     PlanningTaskType.scene_breakdown: LogicalModelProfile.terra,
-    PlanningTaskType.shot_list: LogicalModelProfile.terra,
-    PlanningTaskType.narration_plan: LogicalModelProfile.luna,
-    PlanningTaskType.prompt_package: LogicalModelProfile.terra,
+    PlanningTaskType.shot_list: LogicalModelProfile.luna,
+    PlanningTaskType.narration_plan: LogicalModelProfile.terra,
+    PlanningTaskType.prompt_package: LogicalModelProfile.luna,
     PlanningTaskType.continuity_plan: LogicalModelProfile.terra,
-    PlanningTaskType.model_recommendation: LogicalModelProfile.luna,
+    PlanningTaskType.model_recommendation: LogicalModelProfile.terra,
     PlanningTaskType.production_proposal: LogicalModelProfile.sol,
 }
 

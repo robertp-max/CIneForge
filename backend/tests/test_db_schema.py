@@ -1,8 +1,11 @@
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+import pytest
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.db.base import Base
+from backend.app.db.session import enable_sqlite_foreign_keys
 
 
 REQUIRED_TABLES = {
@@ -122,6 +125,29 @@ def test_required_schema_tables_exist():
 
 def test_storyboard_phase1_tables_exist_in_metadata():
     assert STORYBOARD_PHASE1_TABLES.issubset(set(Base.metadata.tables))
+
+
+def test_sqlite_connections_enforce_foreign_keys():
+    sqlite_engine = create_engine("sqlite://", future=True)
+    enable_sqlite_foreign_keys(sqlite_engine)
+    try:
+        with sqlite_engine.begin() as connection:
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+            connection.execute(text("CREATE TABLE parent (id INTEGER PRIMARY KEY)"))
+            connection.execute(
+                text(
+                    "CREATE TABLE child ("
+                    "id INTEGER PRIMARY KEY, "
+                    "parent_id INTEGER REFERENCES parent(id)"
+                    ")"
+                )
+            )
+
+        with pytest.raises(IntegrityError):
+            with sqlite_engine.begin() as connection:
+                connection.execute(text("INSERT INTO child (id, parent_id) VALUES (1, 999)"))
+    finally:
+        sqlite_engine.dispose()
 
 
 def test_queue_worker_fields_exist_in_metadata():

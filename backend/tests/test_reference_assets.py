@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -16,12 +18,19 @@ from sqlalchemy.pool import StaticPool
 from backend.app.db.base import (
     AuditLog,
     Base,
+    Chapter,
     Character,
     CharacterReferenceAsset,
     PlanningMediaAsset,
     Project,
+    Scene,
+    Shot,
     Story,
+    VoicePreview,
+    VoiceProfile,
 )
+from backend.app.api.routes.assets import router as assets_router
+from backend.app.db.session import get_db
 from backend.app.services import reference_assets as assets
 
 
@@ -86,6 +95,36 @@ def db(tmp_path, monkeypatch):
 
     yield session, project
     session.close()
+
+
+def _create_story_with_shot(session, project, *, asset_id, approval_state="approved"):
+    story = Story(
+        project_id=project.id,
+        title="Asset-linked story",
+        base_story="base",
+        target_duration_sec=8,
+        approval_state=approval_state,
+    )
+    session.add(story)
+    session.flush()
+    chapter = Chapter(story_id=story.id, order_index=0, title="Chapter")
+    session.add(chapter)
+    session.flush()
+    scene = Scene(chapter_id=chapter.id, order_index=0, title="Scene")
+    session.add(scene)
+    session.flush()
+    shot = Shot(
+        scene_id=scene.id,
+        order_index=0,
+        title="Shot",
+        duration_sec=8,
+        starting_image_required=True,
+        starting_image_asset_id=asset_id,
+    )
+    session.add(shot)
+    session.commit()
+    session.refresh(story)
+    return story
 
 
 def test_upload_character_reference_generates_managed_name_and_sha(db):
@@ -158,6 +197,65 @@ def test_duplicate_sha_never_clones(db):
     assert len(files) == 1
 
 
+def test_same_bytes_in_different_asset_kinds_remain_distinct(db):
+    session, project = db
+    png = _make_png(3, 3)
+
+    starting_image, starting_created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="shot.png",
+        content_type="image/png",
+    )
+    character_reference, reference_created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="character_reference",
+        data=png,
+        original_filename="hero.png",
+        content_type="image/png",
+    )
+
+    starting_reuse, starting_recreated = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="shot-copy.png",
+        content_type="image/png",
+    )
+    reference_reuse, reference_recreated = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="character_reference",
+        data=png,
+        original_filename="hero-copy.png",
+        content_type="image/png",
+    )
+
+    assert starting_created is True
+    assert reference_created is True
+    assert starting_image.id != character_reference.id
+    assert starting_image.kind == "starting_image"
+    assert character_reference.kind == "character_reference"
+    assert starting_recreated is False
+    assert reference_recreated is False
+    assert starting_reuse.id == starting_image.id
+    assert reference_reuse.id == character_reference.id
+
+    from sqlalchemy import select
+
+    rows = list(session.scalars(select(PlanningMediaAsset)))
+    assert {(row.kind, row.sha256) for row in rows} == {
+        ("starting_image", hashlib.sha256(png).hexdigest()),
+        ("character_reference", hashlib.sha256(png).hexdigest()),
+    }
+    assert assets.resolve_managed_path(starting_image).is_file()
+    assert assets.resolve_managed_path(character_reference).is_file()
+
+
 def test_rejects_bad_mime_extension_and_oversize(db):
     session, project = db
     with pytest.raises(assets.ReferenceAssetError, match="Extension"):
@@ -205,6 +303,38 @@ def test_voice_source_requires_consent(db):
         )
 
 
+def test_raw_body_upload_route_needs_no_multipart_dependency(db):
+    session, project = db
+    app = FastAPI()
+    app.include_router(assets_router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+    response = client.post(
+        f"/assets/projects/{project.id}/upload",
+        params={"kind": "story_document", "original_filename": "notes.md"},
+        content=b"# Managed story notes\n",
+        headers={"Content-Type": "text/markdown"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["created"] is True
+    assert body["asset"]["managed_uri"].startswith("cineforge-planning://")
+    assert "storage_root" not in response.text
+
+    duplicate = client.post(
+        f"/assets/projects/{project.id}/upload",
+        params={"kind": "story_document", "original_filename": "copy.md"},
+        content=b"# Managed story notes\n",
+        headers={"Content-Type": "text/markdown"},
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["duplicate_of_existing"] is True
+
+
 def test_story_document_upload_and_archive_delete_policy(db):
     session, project = db
     text = b"# Story notes\nOnce upon a time.\n"
@@ -238,6 +368,132 @@ def test_story_document_upload_and_archive_delete_policy(db):
     assert "planning_media_asset_deleted" in actions
 
 
+def test_starting_image_approval_transitions_same_managed_record_with_audit(db):
+    session, project = db
+    asset, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=_make_png(8, 6),
+        original_filename="candidate.png",
+        content_type="image/png",
+    )
+    asset_id = asset.id
+    managed_uri = asset.managed_uri
+    managed_path = assets.resolve_managed_path(asset)
+    story = _create_story_with_shot(session, project, asset_id=asset.id)
+
+    reviewed = assets.transition_starting_image_approval(
+        session,
+        asset.id,
+        approval_state="in_review",
+        expected_approval_state="draft",
+        reason="Ready for producer review",
+        changed_by="test-reviewer",
+    )
+    approved = assets.transition_starting_image_approval(
+        session,
+        asset.id,
+        approval_state="approved",
+        expected_approval_state="in_review",
+        reason="Approved in Starting Images",
+        changed_by="test-reviewer",
+    )
+
+    assert reviewed.id == approved.id == asset_id
+    assert approved.managed_uri == managed_uri
+    assert assets.resolve_managed_path(approved) == managed_path
+    assert managed_path.is_file()
+    assert approved.approval_state == "approved"
+    session.refresh(story)
+    assert story.approval_state == "draft"
+
+    audits = list(
+        session.scalars(
+            __import__("sqlalchemy").select(AuditLog).where(
+                AuditLog.action == "planning_media_asset_approval_transitioned"
+            )
+        )
+    )
+    assert [row.details["approval_state"] for row in audits] == ["in_review", "approved"]
+    assert audits[-1].details["previous_approval_state"] == "in_review"
+    assert audits[-1].details["changed_by"] == "test-reviewer"
+
+    with pytest.raises(assets.ReferenceAssetConflictError, match="Refresh and retry"):
+        assets.transition_starting_image_approval(
+            session,
+            asset.id,
+            approval_state="blocked",
+            expected_approval_state="draft",
+        )
+    assert assets.get_asset(session, asset.id).approval_state == "approved"
+
+
+def test_starting_image_approval_route_rejects_wrong_kind_and_archived_asset(db):
+    session, project = db
+    image, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=_make_png(),
+        original_filename="candidate.png",
+        content_type="image/png",
+    )
+    document, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="story_document",
+        data=b"notes",
+        original_filename="notes.txt",
+        content_type="text/plain",
+    )
+
+    app = FastAPI()
+    app.include_router(assets_router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    approved = client.patch(
+        f"/assets/{image.id}/starting-image-approval",
+        json={
+            "approval_state": "approved",
+            "expected_approval_state": "draft",
+            "reason": "Explicit UI approval",
+        },
+    )
+    assert approved.status_code == 200
+    assert approved.json()["id"] == str(image.id)
+    assert approved.json()["approval_state"] == "approved"
+
+    stale = client.patch(
+        f"/assets/{image.id}/starting-image-approval",
+        json={"approval_state": "blocked", "expected_approval_state": "draft"},
+    )
+    assert stale.status_code == 409
+    assert "Refresh and retry" in stale.json()["detail"]
+
+    wrong_kind = client.patch(
+        f"/assets/{document.id}/starting-image-approval",
+        json={"approval_state": "approved", "expected_approval_state": "draft"},
+    )
+    assert wrong_kind.status_code == 422
+    assert "Only starting_image assets" in wrong_kind.json()["detail"]
+
+    assets.archive_asset(session, image.id, reason="Retired candidate")
+    archived = client.patch(
+        f"/assets/{image.id}/starting-image-approval",
+        json={"approval_state": "draft", "expected_approval_state": "approved"},
+    )
+    assert archived.status_code == 409
+    session.refresh(image)
+    assert image.approval_state == "archived"
+    assert image.archived_at is not None
+
+
 def test_path_escape_rejected_on_resolve(db):
     session, project = db
     asset, _ = assets.upload_asset(
@@ -261,6 +517,7 @@ def test_character_reference_link_and_project_guard(db):
         title="T",
         base_story="base",
         target_duration_sec=60,
+        approval_state="approved",
     )
     session.add(story)
     session.commit()
@@ -286,6 +543,8 @@ def test_character_reference_link_and_project_guard(db):
         order_index=0,
     )
     assert link.asset_id == asset.id
+    session.refresh(story)
+    assert story.approval_state == "draft"
     listed = assets.list_character_references(session, character.id)
     assert len(listed) == 1
 
@@ -314,8 +573,139 @@ def test_character_reference_link_and_project_guard(db):
             order_index=1,
         )
 
+    story.approval_state = "approved"
+    session.commit()
     assets.unlink_character_reference(session, link.id)
+    session.refresh(story)
+    assert story.approval_state == "draft"
     assert assets.list_character_references(session, character.id) == []
+
+
+def test_archive_and_delete_revoke_story_using_starting_image(db):
+    session, project = db
+    png = _make_png()
+    asset, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="linked.png",
+        content_type="image/png",
+    )
+    story = _create_story_with_shot(session, project, asset_id=asset.id)
+
+    assets.archive_asset(session, asset.id, reason="Retire linked image")
+    session.refresh(story)
+    assert story.approval_state == "draft"
+
+    story.approval_state = "approved"
+    session.commit()
+    reused, created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="linked-reuse.png",
+        content_type="image/png",
+    )
+    assert created is False
+    assert reused.id == asset.id
+    assert reused.archived_at is None
+    session.refresh(story)
+    assert story.approval_state == "draft"
+
+    assets.archive_asset(session, asset.id, reason="Retire linked image again")
+    story.approval_state = "approved"
+    session.commit()
+    assets.delete_asset(session, asset.id, reason="Remove linked image")
+    session.refresh(story)
+    assert story.approval_state == "draft"
+
+
+def test_archive_resolves_voice_source_selected_asset_and_preview_story(db):
+    session, project = db
+    wav = b"RIFF" + struct.pack("<I", 36) + b"WAVEfmt " + (b"\x00" * 24) + b"data" + struct.pack("<I", 0)
+    source_asset, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="voice_source",
+        data=wav,
+        original_filename="source.wav",
+        content_type="audio/wav",
+        consent_confirmed=True,
+    )
+    preview_asset, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="voice_source",
+        data=wav + b"preview",
+        original_filename="preview.wav",
+        content_type="audio/wav",
+        consent_confirmed=True,
+    )
+    story = Story(
+        project_id=project.id,
+        title="Voice asset story",
+        base_story="base",
+        target_duration_sec=10,
+        approval_state="approved",
+    )
+    session.add(story)
+    session.flush()
+    profile = VoiceProfile(
+        story_id=story.id,
+        name="Narrator",
+        source_type="user_provided_consented",
+        source_asset_id=source_asset.id,
+        selected_preview_asset_id=preview_asset.id,
+        consent_required=True,
+        consent_confirmed=True,
+        approval_state="approved",
+    )
+    session.add(profile)
+    session.flush()
+    preview = VoicePreview(
+        voice_profile_id=profile.id,
+        planning_media_asset_id=preview_asset.id,
+        selected=True,
+        rejected=False,
+    )
+    session.add(preview)
+    session.commit()
+
+    assets.archive_asset(session, source_asset.id, reason="Retire source")
+    session.refresh(story)
+    assert story.approval_state == "draft"
+
+    story.approval_state = "approved"
+    session.commit()
+    assets.archive_asset(session, preview_asset.id, reason="Retire preview")
+    session.refresh(story)
+    assert story.approval_state == "draft"
+
+
+def test_unreferenced_upload_does_not_revoke_story_approval(db):
+    session, project = db
+    story = Story(
+        project_id=project.id,
+        title="Unaffected story",
+        base_story="base",
+        target_duration_sec=10,
+        approval_state="approved",
+    )
+    session.add(story)
+    session.commit()
+
+    assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=_make_png(),
+        original_filename="unreferenced.png",
+        content_type="image/png",
+    )
+    session.refresh(story)
+    assert story.approval_state == "approved"
 
 
 def test_upload_from_fileobj_bounds_read(db):

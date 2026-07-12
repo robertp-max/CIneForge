@@ -1,60 +1,24 @@
 import {
-  createContext,
   useCallback,
-  useContext,
-  useEffect,
   useMemo,
   useState,
   type FormEvent,
   type ReactNode,
 } from 'react'
+import type { PageId } from '../components/AppShell'
 import {
   ApiError,
   api,
+  normalizePhaseASnapshot,
   type Readiness,
   type Shot,
+  type ShotNarrationPayload,
+  type ShotPromptPackagePayload,
+  type ShotUpdatePayload,
   type StoryboardAggregate,
-  type VoiceSourceMode,
+  type VoiceProfileCreatePayload,
 } from '../api/client'
-
-export type LoadState = 'idle' | 'loading' | 'ready' | 'error' | 'empty'
-
-type StudioContextValue = {
-  backendStatus: string
-  projectId: string
-  setProjectId: (value: string) => void
-  storyId: string
-  setStoryId: (value: string) => void
-  data: StoryboardAggregate | null
-  readiness: Readiness | null
-  message: string
-  setMessage: (value: string) => void
-  loadState: LoadState
-  error: string | null
-  selectedShot: Shot | null
-  setSelectedShot: (shot: Shot | null) => void
-  animaticOpen: boolean
-  setAnimaticOpen: (open: boolean) => void
-  busy: boolean
-  reload: (id?: string) => Promise<void>
-  createStory: (event: FormEvent<HTMLFormElement>) => Promise<void>
-  loadExistingStory: (storyId: string) => Promise<void>
-  addHierarchy: (kind: 'chapter' | 'scene' | 'shot') => Promise<void>
-  addCharacter: (payload: { name: string; role?: string; description?: string }) => Promise<void>
-  addVoice: (payload: {
-    name: string
-    source_type: VoiceSourceMode
-    consent_confirmed: boolean
-    consent_required: boolean
-    language?: string
-    notes?: string
-  }) => Promise<void>
-  saveShot: (shotId: string, payload: Record<string, unknown>) => Promise<void>
-  approvePlan: (approvedBy: string) => Promise<void>
-  updateStoryFields: (payload: Record<string, unknown>) => Promise<void>
-}
-
-const StudioContext = createContext<StudioContextValue | null>(null)
+import { StudioContext, type LoadState, type StudioContextValue } from './StudioState'
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
@@ -63,9 +27,11 @@ function errorMessage(error: unknown, fallback: string): string {
 
 export function StudioProvider({
   backendStatus,
+  onNavigate,
   children,
 }: {
   backendStatus: string
+  onNavigate: (page: PageId) => void
   children: ReactNode
 }) {
   const [projectId, setProjectId] = useState('')
@@ -93,9 +59,10 @@ export function StudioProvider({
     setLoadState('loading')
     setError(null)
     try {
-      const [aggregate, nextReadiness] = await Promise.all([api.aggregate(id), api.readiness(id)])
+      const snapshot = await api.phaseA(id)
+      const aggregate = normalizePhaseASnapshot(snapshot)
       setData(aggregate)
-      setReadiness(nextReadiness)
+      setReadiness(snapshot.readiness)
       setStoryId(aggregate.story.id)
       setProjectId(aggregate.story.project_id)
       setLoadState('ready')
@@ -119,10 +86,6 @@ export function StudioProvider({
       setBusy(false)
     }
   }, [storyId])
-
-  useEffect(() => {
-    // No localStorage canonical state — session memory only until user loads a story.
-  }, [])
 
   const createStory = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -228,7 +191,7 @@ export function StudioProvider({
   )
 
   const addCharacter = useCallback(
-    async (payload: { name: string; role?: string; description?: string }) => {
+    async (payload: { name: string; role?: string; physical_description?: string }) => {
       if (!data) return
       setBusy(true)
       try {
@@ -247,26 +210,25 @@ export function StudioProvider({
   )
 
   const addVoice = useCallback(
-    async (payload: {
-      name: string
-      source_type: VoiceSourceMode
-      consent_confirmed: boolean
-      consent_required: boolean
-      language?: string
-      notes?: string
-    }) => {
-      if (!data) return
+    async (payload: VoiceProfileCreatePayload): Promise<boolean> => {
+      if (!data) return false
       setBusy(true)
       try {
-        await api.createVoice(data.story.id, payload)
+        const created = await api.createVoiceProfile(data.story.id, payload)
+        if (!created) {
+          setMessage('Voice profile API is unavailable on this backend. No profile or preview was created.')
+          return false
+        }
         await reload()
         setMessage(
           `Voice profile “${payload.name}” saved as planning data. Cloning and audio generation were not performed.`,
         )
+        return true
       } catch (err) {
         const text = errorMessage(err, 'Could not add voice profile.')
         setMessage(text)
         setError(text)
+        return false
       } finally {
         setBusy(false)
       }
@@ -275,7 +237,7 @@ export function StudioProvider({
   )
 
   const saveShot = useCallback(
-    async (shotId: string, payload: Record<string, unknown>) => {
+    async (shotId: string, payload: ShotUpdatePayload) => {
       setBusy(true)
       try {
         await api.updateShot(shotId, payload)
@@ -292,12 +254,48 @@ export function StudioProvider({
     [reload],
   )
 
+  const saveNarration = useCallback(
+    async (shotId: string, payload: ShotNarrationPayload) => {
+      setBusy(true)
+      try {
+        await api.putShotNarration(shotId, payload)
+        await reload()
+        setMessage('Shot narration saved through the canonical narration resource.')
+      } catch (err) {
+        const text = errorMessage(err, 'Could not save shot narration.')
+        setMessage(text)
+        setError(text)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [reload],
+  )
+
+  const savePromptPackage = useCallback(
+    async (shotId: string, payload: ShotPromptPackagePayload) => {
+      setBusy(true)
+      try {
+        await api.createShotPromptPackage(shotId, payload)
+        await reload()
+        setMessage('A new versioned prompt package was saved for this shot.')
+      } catch (err) {
+        const text = errorMessage(err, 'Could not save the shot prompt package.')
+        setMessage(text)
+        setError(text)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [reload],
+  )
+
   const approvePlan = useCallback(
     async (approvedBy: string) => {
       if (!data) return
       setBusy(true)
       try {
-        await api.approveStoryboard(data.story.id, approvedBy)
+        await api.approveStoryboard(data.story.id, approvedBy, data.revision)
         await reload()
         setMessage(
           'Production plan approved. No timeline slot, queue job, ComfyUI submission, or FFmpeg job was created.',
@@ -323,7 +321,7 @@ export function StudioProvider({
       if (!data) return
       setBusy(true)
       try {
-        await api.updateStory(data.story.id, payload)
+        await api.updateStory(data.story.id, payload, data.revision)
         await reload()
         setMessage('Story fields updated on the server.')
       } catch (err) {
@@ -340,6 +338,7 @@ export function StudioProvider({
   const value = useMemo<StudioContextValue>(
     () => ({
       backendStatus,
+      navigate: onNavigate,
       projectId,
       setProjectId,
       storyId,
@@ -362,11 +361,14 @@ export function StudioProvider({
       addCharacter,
       addVoice,
       saveShot,
+      saveNarration,
+      savePromptPackage,
       approvePlan,
       updateStoryFields,
     }),
     [
       backendStatus,
+      onNavigate,
       projectId,
       storyId,
       data,
@@ -384,18 +386,12 @@ export function StudioProvider({
       addCharacter,
       addVoice,
       saveShot,
+      saveNarration,
+      savePromptPackage,
       approvePlan,
       updateStoryFields,
     ],
   )
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>
-}
-
-export function useStudio(): StudioContextValue {
-  const ctx = useContext(StudioContext)
-  if (!ctx) {
-    throw new Error('useStudio must be used within StudioProvider')
-  }
-  return ctx
 }

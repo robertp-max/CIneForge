@@ -1,5 +1,5 @@
 import type { PageId } from '../components/AppShell'
-import { useStudio } from './StudioContext'
+import { useStudio } from './StudioState'
 import { StudioChrome } from './components/StudioChrome'
 import { StoryBootstrap } from './components/StoryBootstrap'
 import { OverviewPage } from './pages/OverviewPage'
@@ -32,7 +32,7 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
   },
   voices: {
     title: 'Voices',
-    description: 'Eight voice source modes, consent gates, and provider-safe previews.',
+    description: 'Eight voice setup modes, consent gates, and explicit provider-safe preview jobs.',
   },
   images: {
     title: 'Starting Images',
@@ -40,11 +40,11 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
   },
   routing: {
     title: 'Model Routing',
-    description: 'Provider and model proposals only — Unknown until registry evidence exists.',
+    description: 'Factual model catalog evidence — Unknown remains unknown until evidence is recorded.',
   },
   workflows: {
     title: 'Workflows',
-    description: 'Workflow readiness from the backend registry; no install or queue actions.',
+    description: 'Factual workflow-template catalog; no install, validation, or queue actions.',
   },
   exports: {
     title: 'Exports',
@@ -66,8 +66,8 @@ export function StudioRouter({ page }: { page: PageId }) {
   const meta = PAGE_META[page]
   const content = {
     overview: <OverviewPage />,
-    storyboard: <StoryboardPage />,
-    story: <StoryPage />,
+    storyboard: <StoryboardPage key={data.revision} />,
+    story: <StoryPage key={data.revision} />,
     characters: <CharactersPage />,
     voices: <VoicesPage />,
     images: <ImagesPage />,

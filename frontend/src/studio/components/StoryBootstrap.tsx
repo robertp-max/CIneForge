@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useStudio } from '../StudioContext'
+import { useStudio } from '../StudioState'
 
 export function StoryBootstrap() {
   const {

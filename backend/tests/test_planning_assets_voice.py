@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from backend.app.db.base import Base, PlanningMediaAsset, Project
 from backend.app.schemas.voice import PlanningAssetRegisterRequest
 from backend.app.services.planning_assets import (
     PlanningAssetError,
@@ -15,49 +17,19 @@ from backend.app.services.planning_assets import (
 )
 
 
-class _MemDB:
-    def __init__(self):
-        self.rows: dict[uuid.UUID, object] = {}
-        self.pending: list[object] = []
-
-    def add(self, obj):
-        self.pending.append(obj)
-
-    def commit(self):
-        for obj in self.pending:
-            if getattr(obj, "id", None) is None:
-                obj.id = uuid.uuid4()
-            self.rows[obj.id] = obj
-        self.pending.clear()
-
-    def refresh(self, obj):
-        return obj
-
-    def get(self, model, ident):  # noqa: ANN001
-        return self.rows.get(ident)
-
-    def scalars(self, stmt):  # noqa: ANN001
-        class _R:
-            def __init__(self, items):
-                self._items = items
-
-            def first(self):
-                return self._items[0] if self._items else None
-
-        return _R([])
-
-
 @pytest.fixture
-def asset_db(monkeypatch):
-    from backend.app.services import planning_assets as pa
-
-    def factory(**kwargs):
-        obj = SimpleNamespace(**kwargs)
-        obj.id = None
-        return obj
-
-    monkeypatch.setattr(pa, "PlanningMediaAsset", factory)
-    return _MemDB()
+def asset_db():
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[Project.__table__, PlanningMediaAsset.__table__],
+    )
+    session = sessionmaker(bind=engine, future=True)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def test_register_rejects_data_uri():
@@ -85,17 +57,41 @@ def test_register_voice_preview_asset_stores_uri_only(asset_db):
     asset = register_voice_preview_asset(
         asset_db,
         project_id=uuid.uuid4(),
-        managed_uri="/storage/voice_previews/demo.json",
+        managed_uri="/storage/voice_previews/demo.wav",
         sha256="a" * 64,
-        mime_type="application/json",
+        mime_type="audio/wav",
         provider="qwen",
         model="demo",
-        extra_metadata={"preview_kind": "marker"},
+        extra_metadata={"preview_kind": "generated_audio"},
     )
     assert asset.kind == "voice_preview"
-    assert asset.managed_uri.endswith("demo.json")
+    assert asset.managed_uri.endswith("demo.wav")
     assert "audio" not in (asset.metadata_json or {})
     assert asset.metadata_json.get("provider") == "qwen"
+
+
+@pytest.mark.parametrize(
+    ("managed_uri", "mime_type"),
+    [
+        ("/storage/voice_previews/demo.json", "application/json"),
+        ("/storage/voice_previews/demo.json", "audio/wav"),
+        ("/storage/voice_previews/demo.wav", None),
+    ],
+)
+def test_register_voice_preview_asset_rejects_false_success_markers(
+    asset_db,
+    managed_uri,
+    mime_type,
+):
+    with pytest.raises(PlanningAssetError, match="must reference generated audio"):
+        register_voice_preview_asset(
+            asset_db,
+            project_id=uuid.uuid4(),
+            managed_uri=managed_uri,
+            mime_type=mime_type,
+            provider="qwen",
+            model="demo",
+        )
 
 
 def test_register_planning_asset_happy_path(asset_db):

@@ -5,23 +5,19 @@ is intentionally outside this ownership boundary.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.db.base import VoicePreview, VoiceProfile
 from backend.app.db.session import get_db
 from backend.app.schemas.voice import (
-    GpuLeaseAcquireRequest,
-    GpuLeaseHeartbeatRequest,
-    GpuLeaseRead,
-    PlanningAssetRead,
-    PlanningAssetRegisterRequest,
+    PARLER_UNAVAILABLE_MESSAGE,
     ProviderEvidenceRead,
     VoiceApproveRequest,
     VoiceApproveResult,
-    VoicePreviewJobRead,
     VoicePreviewRead,
     VoicePreviewRequest,
     VoicePreviewSelectRequest,
@@ -34,38 +30,74 @@ from backend.app.schemas.voice import (
     VoiceRoutingRecommendation,
     VoiceRoutingRequest,
 )
-from backend.app.services.planning_assets import (
-    PlanningAssetError,
-    get_planning_asset,
-    register_planning_asset,
-)
-from backend.app.services.runtime.discovery import discover_all_voice_providers
-from backend.app.services.runtime.gpu_leases import (
-    GpuLeaseError,
-    acquire_lease,
-    heartbeat_lease,
-    release_lease,
+from backend.app.services.runtime.discovery import (
+    discover_all_voice_providers,
+    discover_provider,
 )
 from backend.app.services.routing.voice_routing import recommend_voice_routing
 from backend.app.services.voice_design.service import (
+    VoiceDesignConflictError,
     VoiceDesignError,
     VoiceDesignService,
+    resolve_preview_provider_name,
     select_preview,
-)
-from backend.app.workers.voice_preview import (
-    get_preview_job,
-    list_previews,
-    run_voice_preview_job,
 )
 
 router = APIRouter(prefix="/voices", tags=["voices"])
 
+PREVIEW_WORKER_UNAVAILABLE_MESSAGE = (
+    "Voice preview generation is unavailable until a durable preview worker is configured."
+)
+PREVIEW_JOB_TRACKING_UNAVAILABLE_MESSAGE = (
+    "Voice preview job tracking is unavailable until a durable preview worker is configured."
+)
+PRIVATE_PROVIDER_DETAIL_KEYS = frozenset({"runtime_ref"})
+
 
 def _http_error(error: Exception, *, not_found: bool = False) -> HTTPException:
-    code = status.HTTP_404_NOT_FOUND if not_found else status.HTTP_422_UNPROCESSABLE_ENTITY
-    if isinstance(error, GpuLeaseError):
+    if isinstance(error, VoiceDesignConflictError):
         code = status.HTTP_409_CONFLICT
+    else:
+        code = status.HTTP_404_NOT_FOUND if not_found else status.HTTP_422_UNPROCESSABLE_ENTITY
     return HTTPException(status_code=code, detail=str(error))
+
+
+def _public_provider_details(details: dict) -> dict:
+    """Keep readiness evidence while withholding local runtime locations."""
+    return {
+        key: value
+        for key, value in details.items()
+        if str(key).strip().lower() not in PRIVATE_PROVIDER_DETAIL_KEYS
+    }
+
+
+def _preview_unavailable(
+    profile: VoiceProfile,
+    requested_provider: str | None,
+) -> HTTPException:
+    """Return a truthful response without invoking a provider or worker.
+
+    Parler remains optional. Discovery reads only installation/approval evidence;
+    when that evidence is absent its required message takes precedence over the
+    generic durable-worker message.
+    """
+    provider_name = resolve_preview_provider_name(profile, requested_provider)
+    if provider_name.strip().lower() in {
+        "parler",
+        "parler_local",
+        "parler-tts",
+        "parler_tts",
+    }:
+        evidence = discover_provider("parler")
+        if not evidence.available:
+            return HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=PARLER_UNAVAILABLE_MESSAGE,
+            )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=PREVIEW_WORKER_UNAVAILABLE_MESSAGE,
+    )
 
 
 @router.get("/providers/discovery", response_model=VoiceProviderDiscoveryRead)
@@ -79,7 +111,7 @@ def discover_providers() -> VoiceProviderDiscoveryRead:
             status=item.status,  # type: ignore[arg-type]
             evidence_level=item.evidence_level,
             evidence_source=item.evidence_source,
-            details=item.details,
+            details=_public_provider_details(item.details),
             message=item.message,
             checked_at=item.checked_at,
         )
@@ -143,6 +175,19 @@ def patch_profile(
         raise _http_error(error) from error
 
 
+@router.delete("/profiles/{voice_profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_profile(
+    voice_profile_id: UUID,
+    reason: str | None = Query(default=None, max_length=500),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        VoiceDesignService(db).archive_profile(voice_profile_id, reason=reason)
+    except VoiceDesignError as error:
+        raise _http_error(error, not_found="not found" in str(error).lower()) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/profiles/{voice_profile_id}/recipes",
     response_model=VoiceRecipeRead,
@@ -171,48 +216,57 @@ def list_recipes(voice_profile_id: UUID, db: Session = Depends(get_db)):
 
 @router.post(
     "/profiles/{voice_profile_id}/previews",
-    response_model=VoicePreviewJobRead,
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "Preview execution requires a durable worker and is currently unavailable."
+        }
+    },
 )
 def request_preview(
     voice_profile_id: UUID,
     payload: VoicePreviewRequest,
     db: Session = Depends(get_db),
-):
-    """Explicit preview only. Acquires a shared GPU lease with video work."""
-    try:
-        # Prefer configured storage root when available without editing config module.
-        storage_root: Path = Path("./storage")
-        try:
-            from backend.app.core.config import get_settings
+) -> None:
+    """Reject preview execution until a durable, isolated worker is available.
 
-            storage_root = Path(get_settings().storage_root)
-        except Exception:
-            pass
-        return run_voice_preview_job(
-            db,
-            voice_profile_id,
-            payload,
-            storage_root=storage_root,
-        )
+    This public request never calls a provider, acquires a GPU lease, writes an
+    artifact, submits Comfy work, or invokes FFmpeg in the API process.
+    """
+    try:
+        profile = VoiceDesignService(db).get_profile(voice_profile_id)
     except VoiceDesignError as error:
         raise _http_error(error, not_found="not found" in str(error).lower()) from error
-    except ValueError as error:
-        raise _http_error(error) from error
+    raise _preview_unavailable(profile, payload.provider)
 
 
-@router.get("/preview-jobs/{job_id}", response_model=VoicePreviewJobRead)
-def get_preview_job_status(job_id: str):
-    job = get_preview_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Preview job {job_id} not found.")
-    return job.to_read()
+@router.get(
+    "/preview-jobs/{job_id}",
+    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "Durable preview-job tracking is currently unavailable."
+        }
+    },
+)
+def get_preview_job_status(job_id: str) -> None:
+    del job_id
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=PREVIEW_JOB_TRACKING_UNAVAILABLE_MESSAGE,
+    )
 
 
 @router.get("/profiles/{voice_profile_id}/previews", response_model=list[VoicePreviewRead])
 def list_profile_previews(voice_profile_id: UUID, db: Session = Depends(get_db)):
     try:
-        return list_previews(db, voice_profile_id)
+        VoiceDesignService(db).get_profile(voice_profile_id)
+        stmt = (
+            select(VoicePreview)
+            .where(VoicePreview.voice_profile_id == voice_profile_id)
+            .order_by(VoicePreview.created_at.desc())
+        )
+        return list(db.scalars(stmt))
     except VoiceDesignError as error:
         raise _http_error(error, not_found=True) from error
 
@@ -244,51 +298,3 @@ def approve_profile(
 @router.post("/routing/recommend", response_model=VoiceRoutingRecommendation)
 def routing_recommend(payload: VoiceRoutingRequest, db: Session = Depends(get_db)):
     return recommend_voice_routing(db, payload)
-
-
-@router.post(
-    "/planning-assets",
-    response_model=PlanningAssetRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_planning_asset(payload: PlanningAssetRegisterRequest, db: Session = Depends(get_db)):
-    try:
-        return register_planning_asset(db, payload)
-    except (PlanningAssetError, ValueError) as error:
-        raise _http_error(error) from error
-
-
-@router.get("/planning-assets/{asset_id}", response_model=PlanningAssetRead)
-def read_planning_asset(asset_id: UUID, db: Session = Depends(get_db)):
-    try:
-        return get_planning_asset(db, asset_id)
-    except PlanningAssetError as error:
-        raise _http_error(error, not_found=True) from error
-
-
-@router.post("/gpu-leases", response_model=GpuLeaseRead, status_code=status.HTTP_201_CREATED)
-def create_gpu_lease(payload: GpuLeaseAcquireRequest, db: Session = Depends(get_db)):
-    try:
-        return acquire_lease(db, payload)
-    except GpuLeaseError as error:
-        raise _http_error(error) from error
-
-
-@router.post("/gpu-leases/{lease_id}/heartbeat", response_model=GpuLeaseRead)
-def lease_heartbeat(
-    lease_id: UUID,
-    payload: GpuLeaseHeartbeatRequest,
-    db: Session = Depends(get_db),
-):
-    try:
-        return heartbeat_lease(db, lease_id, extend_seconds=payload.extend_seconds)
-    except GpuLeaseError as error:
-        raise _http_error(error, not_found="not found" in str(error).lower()) from error
-
-
-@router.post("/gpu-leases/{lease_id}/release", response_model=GpuLeaseRead)
-def lease_release(lease_id: UUID, db: Session = Depends(get_db)):
-    try:
-        return release_lease(db, lease_id)
-    except GpuLeaseError as error:
-        raise _http_error(error, not_found=True) from error

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, type Campaign, type Project } from '../api/client'
 import { DebugPanel, EmptyState, ErrorNotice, SuccessNotice } from '../components/Cards'
-import { PageHeader, formatDate } from '../components/Page'
+import { PageHeader } from '../components/Page'
+import { formatDate } from '../components/formatDate'
 
 export function Campaigns() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -33,7 +34,8 @@ export function Campaigns() {
   }
 
   useEffect(() => {
-    void loadData()
+    const timer = window.setTimeout(() => void loadData(), 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   async function createCampaign(event: FormEvent<HTMLFormElement>) {

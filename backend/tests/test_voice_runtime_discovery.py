@@ -36,12 +36,16 @@ def test_placeholder_and_manual_always_available():
         assert ev.status == "available"
 
 
-def test_qwen_discovery_without_config_is_not_configured():
+def test_qwen_discovery_without_config_is_not_configured(monkeypatch):
     env = {
         k: v
         for k, v in os.environ.items()
         if not k.startswith("CINEFORGE_QWEN") and not k.startswith("QWEN_")
     }
+    monkeypatch.setattr(
+        "backend.app.services.runtime.discovery._discover_existing_local_qwen",
+        lambda: None,
+    )
     with mock.patch.dict(os.environ, env, clear=True):
         ev = discover_qwen_runtime()
     assert ev.available is False
@@ -65,6 +69,44 @@ def test_qwen_discovery_reuses_configured_runtime_ref_only():
     assert ev.status == "available"
     assert ev.details["runtime_ref"] == "existing://qwen-runtime"
     assert ev.details["configured_model"] == "qwen-voice-demo"
+    assert ev.details["loads_models_on_discover"] is False
+
+
+def test_qwen_enablement_alone_never_claims_availability(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.services.runtime.discovery._discover_existing_local_qwen",
+        lambda: None,
+    )
+    with mock.patch.dict(
+        os.environ,
+        {"CINEFORGE_QWEN_ENABLED": "true"},
+        clear=True,
+    ):
+        ev = discover_qwen_runtime()
+    assert ev.available is False
+    assert ev.status == "not_configured"
+
+
+def test_qwen_reuses_bounded_existing_local_runtime(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.services.runtime.discovery._discover_existing_local_qwen",
+        lambda: {
+            "runtime_ref": "C:/AI/Qwen3-TTS",
+            "configured_model": "Qwen3-TTS-12Hz-1.7B-local",
+            "runtime_present": True,
+            "venv_present": True,
+            "base_model_present": True,
+            "voice_design_model_present": True,
+            "custom_voice_model_present": True,
+            "bounded_local_discovery": True,
+        },
+    )
+    env = {k: v for k, v in os.environ.items() if "QWEN" not in k}
+    with mock.patch.dict(os.environ, env, clear=True):
+        ev = discover_qwen_runtime()
+    assert ev.available is True
+    assert ev.details["runtime_present"] is True
+    assert ev.details["voice_design_model_present"] is True
     assert ev.details["loads_models_on_discover"] is False
 
 
