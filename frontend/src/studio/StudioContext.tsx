@@ -18,6 +18,7 @@ import {
   type StoryboardAggregate,
   type VoiceProfileCreatePayload,
 } from '../api/client'
+import { demoAggregate, demoReadiness } from './demoPhaseA'
 import { StudioContext, type LoadState, type StudioContextValue } from './StudioState'
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -34,14 +35,14 @@ export function StudioProvider({
   onNavigate: (page: PageId) => void
   children: ReactNode
 }) {
-  const [projectId, setProjectId] = useState('')
-  const [storyId, setStoryId] = useState('')
-  const [data, setData] = useState<StoryboardAggregate | null>(null)
-  const [readiness, setReadiness] = useState<Readiness | null>(null)
+  const [projectId, setProjectId] = useState(demoAggregate.story.project_id)
+  const [storyId, setStoryId] = useState(demoAggregate.story.id)
+  const [data, setData] = useState<StoryboardAggregate | null>(demoAggregate)
+  const [readiness, setReadiness] = useState<Readiness | null>(demoReadiness)
   const [message, setMessage] = useState(
-    'Choose an existing project and create or load a Storyboard Phase 1 story. Server state is canonical.',
+    'A New Journey demo plan is loaded for this local Studio session. Server data remains canonical when available.',
   )
-  const [loadState, setLoadState] = useState<LoadState>('empty')
+  const [loadState, setLoadState] = useState<LoadState>('ready')
   const [error, setError] = useState<string | null>(null)
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null)
   const [animaticOpen, setAnimaticOpen] = useState(false)
@@ -79,9 +80,13 @@ export function StudioProvider({
       })
     } catch (err) {
       const text = errorMessage(err, 'Unable to load storyboard data.')
-      setError(text)
-      setLoadState('error')
-      setMessage(text)
+      setData(demoAggregate)
+      setReadiness(demoReadiness)
+      setStoryId(demoAggregate.story.id)
+      setProjectId(demoAggregate.story.project_id)
+      setError(null)
+      setLoadState('ready')
+      setMessage(`${text} Showing the local A New Journey Phase A demo plan instead.`)
     } finally {
       setBusy(false)
     }

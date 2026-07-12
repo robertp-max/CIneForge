@@ -1,7 +1,40 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client'
 import { AppShell, type PageId } from './components/AppShell'
 import { StoryboardStudio } from './pages/StoryboardStudio'
+import { StudioProvider } from './studio/StudioContext'
+import { useStudio } from './studio/StudioState'
+import { countShots } from './studio/utils'
+
+const DEFAULT_PROJECT_ID = 'a-new-journey'
+
+const PAGE_TO_ROUTE: Record<PageId, string> = {
+  overview: 'overview',
+  storyboard: 'storyboard',
+  story: 'story',
+  characters: 'characters',
+  voices: 'voices',
+  images: 'starting-images',
+  routing: 'model-routing',
+  workflows: 'workflows',
+  exports: 'exports',
+  settings: 'settings',
+}
+
+const ROUTE_TO_PAGE: Record<string, PageId> = {
+  overview: 'overview',
+  storyboard: 'storyboard',
+  story: 'story',
+  characters: 'characters',
+  voices: 'voices',
+  'starting-images': 'images',
+  images: 'images',
+  'model-routing': 'routing',
+  routing: 'routing',
+  workflows: 'workflows',
+  exports: 'exports',
+  settings: 'settings',
+}
 
 function normalizeBackendStatus(value: string | undefined): string {
   const status = (value ?? 'unknown').toLowerCase()
@@ -12,18 +45,107 @@ function normalizeBackendStatus(value: string | undefined): string {
   return 'unavailable'
 }
 
+function readStudioRoute(): { projectId: string; page: PageId } {
+  const pathMatch = window.location.pathname.match(/^\/projects\/([^/]+)\/studio\/([^/]+)\/?$/)
+  if (pathMatch) {
+    const [, projectId, route] = pathMatch
+    return {
+      projectId: decodeURIComponent(projectId || DEFAULT_PROJECT_ID),
+      page: ROUTE_TO_PAGE[route] ?? 'overview',
+    }
+  }
+
+  // Hash fallback for static hosts: #/overview or #/storyboard
+  const hash = window.location.hash.replace(/^#\/?/, '')
+  if (hash && ROUTE_TO_PAGE[hash]) {
+    return { projectId: DEFAULT_PROJECT_ID, page: ROUTE_TO_PAGE[hash] }
+  }
+  if (hash && (hash === 'story' || hash in PAGE_TO_ROUTE)) {
+    return { projectId: DEFAULT_PROJECT_ID, page: hash as PageId }
+  }
+
+  return { projectId: DEFAULT_PROJECT_ID, page: 'overview' }
+}
+
+function studioPath(projectId: string, page: PageId): string {
+  return `/projects/${encodeURIComponent(projectId || DEFAULT_PROJECT_ID)}/studio/${PAGE_TO_ROUTE[page]}`
+}
+
+function StudioAppShell({
+  activePage,
+  backendStatus,
+  projectId,
+  onNavigate,
+  onRefreshStatus,
+  children,
+}: {
+  activePage: PageId
+  backendStatus: string
+  projectId: string
+  onNavigate: (page: PageId) => void
+  onRefreshStatus?: () => void
+  children: React.ReactNode
+}) {
+  const { data, setAnimaticOpen, setMessage } = useStudio()
+  const shotCount = useMemo(() => (data ? countShots(data.chapters) : undefined), [data])
+  const projectName = data?.story.title ?? 'A New Journey'
+
+  return (
+    <AppShell
+      activePage={activePage}
+      backendStatus={backendStatus}
+      projectId={projectId}
+      projectName={projectName}
+      shotCount={shotCount}
+      onNavigate={onNavigate}
+      onRefreshStatus={onRefreshStatus}
+      onSaveDraft={() =>
+        setMessage('Draft state is current in this browser session. Server data remains canonical when connected.')
+      }
+      onPreviewAnimatic={() => setAnimaticOpen(true)}
+    >
+      {children}
+    </AppShell>
+  )
+}
+
 function App() {
-  const [activePage, setActivePage] = useState<PageId>('overview')
+  const [routeState, setRouteState] = useState(readStudioRoute)
   const [backendStatus, setBackendStatus] = useState('checking')
+  const activePage = routeState.page
+
+  const navigate = useCallback(
+    (page: PageId, options?: { replace?: boolean }) => {
+      const next = { projectId: routeState.projectId || DEFAULT_PROJECT_ID, page }
+      const path = studioPath(next.projectId, page)
+      const method = options?.replace ? 'replaceState' : 'pushState'
+      if (window.location.pathname !== path) {
+        window.history[method]({ page, projectId: next.projectId }, '', path)
+      }
+      setRouteState(next)
+    },
+    [routeState.projectId],
+  )
 
   const refreshBackendStatus = useCallback(async () => {
     try {
-      const [root, runtime] = await Promise.all([api.rootStatus(), api.runtimeStatus()])
-      const combined = runtime.status || root.status || 'unknown'
-      setBackendStatus(normalizeBackendStatus(combined))
+      const health = await api.health()
+      setBackendStatus(normalizeBackendStatus(health.status))
     } catch {
       setBackendStatus('unavailable')
     }
+  }, [])
+
+  useEffect(() => {
+    const route = readStudioRoute()
+    const canonical = studioPath(route.projectId, route.page)
+    if (window.location.pathname !== canonical) {
+      window.history.replaceState({ page: route.page, projectId: route.projectId }, '', canonical)
+    }
+
+    const onPopState = () => setRouteState(readStudioRoute())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   useEffect(() => {
@@ -38,18 +160,17 @@ function App() {
   }, [refreshBackendStatus])
 
   return (
-    <AppShell
-      activePage={activePage}
-      backendStatus={backendStatus}
-      onNavigate={setActivePage}
-      onRefreshStatus={() => void refreshBackendStatus()}
-    >
-      <StoryboardStudio
-        page={activePage}
+    <StudioProvider backendStatus={backendStatus} onNavigate={navigate}>
+      <StudioAppShell
+        activePage={activePage}
         backendStatus={backendStatus}
-        onNavigate={setActivePage}
-      />
-    </AppShell>
+        projectId={routeState.projectId}
+        onNavigate={navigate}
+        onRefreshStatus={() => void refreshBackendStatus()}
+      >
+        <StoryboardStudio page={activePage} backendStatus={backendStatus} onNavigate={navigate} />
+      </StudioAppShell>
+    </StudioProvider>
   )
 }
 
