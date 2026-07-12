@@ -272,15 +272,24 @@ class MockPlanningProvider(PlanningProvider):
         )
 
 
-def get_provider(provider_identifier: str, registry: dict[str, PlanningProvider] | None = None) -> PlanningProvider:
-    reg = registry or {}
-    if provider_identifier in reg:
-        return reg[provider_identifier]
+def get_provider(
+    provider_identifier: str,
+    registry: dict[str, PlanningProvider] | None = None,
+) -> PlanningProvider:
+    """Resolve a planning provider.
+
+    Explicit registry entries win. When no registry is supplied (or the
+    identifier is absent), fall through to the provider registry which keeps
+    mock as the default and OpenAI available only when configured. Hosted
+    non-OpenAI adapters and local_cli remain explicitly unavailable.
+    """
+    if registry is not None and provider_identifier in registry:
+        return registry[provider_identifier]
+
     if provider_identifier == MockPlanningProvider.identifier:
         return MockPlanningProvider()
-    # Phase 1: unknown providers are not invoked; engine treats as routing failure.
-    raise PlanningError(
-        PlanningErrorCode.ROUTING_FAILED,
-        f"Provider '{provider_identifier}' is not available for planning",
-        details={"provider_identifier": provider_identifier},
-    )
+
+    # Lazy import avoids circular dependency with provider_registry.
+    from backend.app.services.planning.provider_registry import resolve_provider
+
+    return resolve_provider(provider_identifier, registry=registry)
