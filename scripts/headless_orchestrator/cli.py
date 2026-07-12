@@ -51,7 +51,7 @@ def preflight(worktree: Path, expected_head: str, expected_branch: str) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cineforge-headless-orch")
     parser.add_argument("--state-root", type=Path, default=DEFAULT_STATE_ROOT)
-    parser.add_argument("--max-grok-workers", type=int, default=47)
+    parser.add_argument("--max-grok-workers", type=int, default=64)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     preflight_parser = subparsers.add_parser("preflight")

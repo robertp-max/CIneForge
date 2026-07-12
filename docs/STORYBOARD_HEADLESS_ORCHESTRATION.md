@@ -18,8 +18,9 @@ media runtime.
 - Runtime state defaults to `C:\AI\Git\_orchestration\CIneForge`, outside all
   worker worktrees. `CINEFORGE_ORCH_STATE_ROOT` may select another dedicated
   controller-owned directory.
-- The SQLite ledger uses WAL mode and a transactional lease count. At most 47
-  Grok processes may be active, reserving the 48th model slot for independent
+- The SQLite ledger uses WAL mode and a transactional lease count. At most 64
+  Grok processes may be active, with one separate 65th Sol model slot for
+  independent
   final review. The CLI can lower this with `--max-grok-workers`; on genuine
   concurrent process/provider instability the operating ceiling drops by eight.
 - Workers never stage, commit, cherry-pick, push, reset, clean, stash, rebase,

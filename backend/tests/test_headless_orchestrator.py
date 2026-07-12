@@ -98,8 +98,8 @@ def test_ledger_validates_transitions_and_worker_limit(tmp_path):
         ledger.reserve_slot(first.task_id, "lease-1", max_active=1)
         with pytest.raises(RuntimeError, match="worker limit reached"):
             ledger.reserve_slot(second.task_id, "lease-2", max_active=1)
-        with pytest.raises(ValueError, match="between 1 and 47"):
-            ledger.reserve_slot(second.task_id, "lease-3", max_active=48)
+        with pytest.raises(ValueError, match="between 1 and 64"):
+            ledger.reserve_slot(second.task_id, "lease-3", max_active=65)
         with pytest.raises(ValueError, match="invalid task transition"):
             ledger.transition(first.run_id, first.task_id, TaskStatus.passed)
         ledger.release_slot(first.task_id)
