@@ -153,6 +153,17 @@ def test_strict_grok_envelope_and_inner_result_validation():
         session_id,
     )
     assert parsed.status == "completed"
+    fallback = parse_implementation_result(
+        {
+            "text": json.dumps(payload),
+            "stopReason": "EndTurn",
+            "sessionId": session_id,
+            "requestId": request_id,
+            "structuredOutputError": "provider schema wrapper rejected output",
+        },
+        session_id,
+    )
+    assert fallback.status == "completed"
     with pytest.raises(ValueError, match="session ID mismatch"):
         parse_implementation_result(
             {

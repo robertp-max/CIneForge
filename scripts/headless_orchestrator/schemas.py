@@ -107,8 +107,16 @@ def _string_list(value: object, field: str, maximum: int, item_maximum: int) -> 
 def parse_implementation_result(envelope: object, expected_session_id: str) -> ImplementationResult:
     if not isinstance(envelope, dict):
         raise ValueError("Grok envelope must be an object")
-    allowed = {"text", "stopReason", "sessionId", "requestId", "thought", "structuredOutput"}
-    required = {"text", "stopReason", "sessionId", "requestId", "structuredOutput"}
+    allowed = {
+        "text",
+        "stopReason",
+        "sessionId",
+        "requestId",
+        "thought",
+        "structuredOutput",
+        "structuredOutputError",
+    }
+    required = {"text", "stopReason", "sessionId", "requestId"}
     unknown = sorted(set(envelope) - allowed)
     missing = sorted(required - set(envelope))
     if unknown or missing:
@@ -123,7 +131,15 @@ def parse_implementation_result(envelope: object, expected_session_id: str) -> I
         raise ValueError("Grok envelope request ID is invalid") from error
     if not isinstance(envelope["text"], str):
         raise ValueError("Grok envelope text must be a string")
-    payload = envelope["structuredOutput"]
+    if "structuredOutput" in envelope:
+        payload = envelope["structuredOutput"]
+    elif "structuredOutputError" in envelope:
+        try:
+            payload = json.loads(envelope["text"])
+        except json.JSONDecodeError as error:
+            raise ValueError("Grok structured-output fallback text is not valid JSON") from error
+    else:
+        raise ValueError("Grok envelope has no structured result")
     if not isinstance(payload, dict):
         raise ValueError("Grok result must be an object")
     expected_fields = {"status", "summary", "patches", "findings", "tests", "blockers"}
