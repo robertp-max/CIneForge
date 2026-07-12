@@ -78,7 +78,7 @@ def normalize_relative_path(path: str) -> str:
     posix_path = PurePosixPath(path.replace("\\", "/"))
     if windows_path.is_absolute() or windows_path.drive or windows_path.root or posix_path.is_absolute():
         raise ValueError(f"absolute paths are forbidden: {path}")
-    normalized = str(PurePosixPath(path.replace("\\", "/"))).lower()
+    normalized = str(PurePosixPath(path.replace("\\", "/")))
     if normalized.startswith("./"):
         normalized = normalized[2:]
     if normalized.startswith("../") or normalized == "..":
@@ -90,7 +90,8 @@ def normalize_relative_path(path: str) -> str:
 
 def path_is_owned(path: str, owned_patterns: tuple[str, ...]) -> bool:
     normalized = normalize_relative_path(path)
-    return any(fnmatch.fnmatchcase(normalized, pattern.replace("\\", "/").lower()) for pattern in owned_patterns)
+    folded = normalized.casefold()
+    return any(fnmatch.fnmatchcase(folded, pattern.replace("\\", "/").casefold()) for pattern in owned_patterns)
 
 
 def assert_owned_paths(paths: list[str], owned_patterns: tuple[str, ...]) -> None:
