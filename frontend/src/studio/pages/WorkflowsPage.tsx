@@ -20,7 +20,7 @@ import { Button, Icon, PageTitle, StatusPill, type IconName } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState } from '../components/StateBlocks'
 
-export type DemoWorkflow = {
+type DemoWorkflow = {
   id: string
   name: string
   version: string
@@ -43,7 +43,7 @@ export type DemoWorkflow = {
 }
 
 /** Prototype mockProject.workflows — screenshot 2026-07-11 172759 SoT. */
-export const DEMO_WORKFLOWS: DemoWorkflow[] = [
+const DEMO_WORKFLOWS: DemoWorkflow[] = [
   {
     id: 'wf-char',
     name: 'Character Reference Studio',
