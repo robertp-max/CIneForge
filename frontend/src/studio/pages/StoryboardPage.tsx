@@ -687,6 +687,13 @@ function ShotInspector({
   )
 }
 
+function approvalLabel(state: string): string {
+  if (state === 'in_review' || state === 'review') return 'Review'
+  if (state === 'approved') return 'Approved'
+  if (state === 'blocked') return 'Blocked'
+  return 'Draft'
+}
+
 export function StoryboardPage() {
   const {
     data,
@@ -701,6 +708,7 @@ export function StoryboardPage() {
     setMessage,
   } = useStudio()
   const [runtimeCatalog, setRuntimeCatalog] = useState<RuntimeCatalog | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'in_review' | 'approved' | 'blocked'>('all')
 
   useEffect(() => {
     let active = true
@@ -716,11 +724,36 @@ export function StoryboardPage() {
 
   if (!data) return null
 
+  const allShots = data.chapters.flatMap((chapter) => chapter.scenes.flatMap((scene) => scene.shots))
+  const filterCounts = {
+    all: allShots.length,
+    draft: allShots.filter((shot) => shot.approval_state === 'draft').length,
+    in_review: allShots.filter((shot) => shot.approval_state === 'in_review' || shot.approval_state === 'review').length,
+    approved: allShots.filter((shot) => shot.approval_state === 'approved').length,
+    blocked: allShots.filter((shot) => shot.approval_state === 'blocked').length,
+  }
+
+  const matchesFilter = (shot: Shot) => {
+    if (statusFilter === 'all') return true
+    if (statusFilter === 'in_review') {
+      return shot.approval_state === 'in_review' || shot.approval_state === 'review'
+    }
+    return shot.approval_state === statusFilter
+  }
+
+  const selectedScene = selectedShot
+    ? data.chapters
+        .flatMap((chapter) => chapter.scenes.map((scene) => ({ scene, chapter })))
+        .find(({ scene }) => scene.shots.some((shot) => shot.id === selectedShot.id))
+    : null
+  const timelineShots = selectedScene?.scene.shots ?? []
+  const timelineTotal = timelineShots.reduce((sum, shot) => sum + (shot.duration_sec || 0), 0) || 1
+
   return (
     <div className="storyboard-layout">
       <div>
         <div className="toolbar">
-          <span>Ordered hierarchy · display labels are cosmetic; UUIDs remain identity.</span>
+          <span>Storyboard workspace · ordered Chapter → Scene → Shot hierarchy.</span>
           <div>
             <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('chapter')}>
               + Chapter
@@ -732,6 +765,29 @@ export function StoryboardPage() {
               + Shot
             </button>
           </div>
+        </div>
+
+        <div className="segmented" role="tablist" aria-label="Filter shots by approval state">
+          {(
+            [
+              ['all', 'All'],
+              ['draft', 'Draft'],
+              ['in_review', 'Review'],
+              ['approved', 'Approved'],
+              ['blocked', 'Blocked'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={statusFilter === id}
+              className={statusFilter === id ? 'active' : ''}
+              onClick={() => setStatusFilter(id)}
+            >
+              {label} <em>{filterCounts[id]}</em>
+            </button>
+          ))}
         </div>
 
         {!data.chapters.length ? (
@@ -750,44 +806,111 @@ export function StoryboardPage() {
               <header>
                 <span>CH{String(index + 1).padStart(2, '0')}</span>
                 <b>{chapter.title}</b>
-                <small>{formatDuration(chapter.duration_sec)}</small>
+                <small>
+                  {formatDuration(chapter.duration_sec)} · {chapter.scenes.length} scenes ·{' '}
+                  {chapter.scenes.reduce((n, scene) => n + scene.shots.length, 0)} shots
+                </small>
               </header>
-              {chapter.scenes.map((scene, sceneIndex) => (
-                <section key={scene.id} aria-label={`Scene ${scene.title}`}>
-                  <div className="scene-name">
-                    <span>SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}</span>
-                    <small>{formatDuration(scene.duration_sec)}</small>
-                  </div>
-                  <div className="shot-row" role="list">
-                    {scene.shots.map((shot) => (
-                      <button
-                        key={shot.id}
-                        type="button"
-                        role="listitem"
-                        className={`shot-card ${selectedShot?.id === shot.id ? 'selected' : ''}`}
-                        aria-pressed={selectedShot?.id === shot.id}
-                        onClick={() => setSelectedShot(shot)}
-                      >
-                        <span>SH{String(shot.order_index + 1).padStart(2, '0')} · {shot.display_label}</span>
-                        <b>{shot.title}</b>
-                        <small>
-                          {shot.duration_sec}s · {shot.approval_state}
-                          {shot.blocked_reason ? ` · ${shot.blocked_reason}` : ''}
-                        </small>
-                      </button>
-                    ))}
-                    {!scene.shots.length ? <p className="form-hint" style={{ margin: 0 }}>No shots in this scene.</p> : null}
-                  </div>
+              {chapter.scenes.map((scene, sceneIndex) => {
+                const visibleShots = scene.shots.filter(matchesFilter)
+                return (
+                  <section key={scene.id} aria-label={`Scene ${scene.title}`}>
+                    <div className="scene-name">
+                      <span>
+                        SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}
+                      </span>
+                      <small>
+                        {formatDuration(scene.duration_sec)} · {scene.shots.length} shots
+                      </small>
+                    </div>
+                    <div className="shot-row shot-strip" role="list">
+                      {visibleShots.map((shot, shotIndex) => (
+                        <button
+                          key={shot.id}
+                          type="button"
+                          role="listitem"
+                          className={`shot-card frame-art frame-${shotIndex % 8} ${selectedShot?.id === shot.id ? 'selected' : ''}`}
+                          aria-pressed={selectedShot?.id === shot.id}
+                          onClick={() => setSelectedShot(shot)}
+                        >
+                          <span className="shot-frame-label">
+                            {shot.display_label || String.fromCharCode(65 + (shot.order_index % 26))}
+                          </span>
+                          <span className="shot-meta-top">
+                            SH{String(shot.order_index + 1).padStart(2, '0')}
+                            <em>{shot.duration_sec}s</em>
+                          </span>
+                          <b>{shot.title}</b>
+                          <span className={`truth-pill ${shot.approval_state}`}>
+                            {approvalLabel(shot.approval_state)}
+                          </span>
+                        </button>
+                      ))}
+                      {!visibleShots.length ? (
+                        <p className="form-hint" style={{ margin: 0 }}>
+                          No shots match this filter in this scene.
+                        </p>
+                      ) : null}
+                    </div>
+                  </section>
+                )
+              })}
+              {!chapter.scenes.length ? (
+                <section>
+                  <p className="form-hint">No scenes in this chapter yet.</p>
                 </section>
-              ))}
-              {!chapter.scenes.length ? <section><p className="form-hint">No scenes in this chapter yet.</p></section> : null}
+              ) : null}
             </article>
           ))
         )}
+
+        {timelineShots.length ? (
+          <section className="panel sequence-timeline" aria-label="Sequence timeline">
+            <div className="panel-title">
+              <div>
+                <h2>Sequence timeline</h2>
+                <p>
+                  {selectedScene?.scene.title} · {formatDuration(timelineTotal)} · timing prototype only
+                </p>
+              </div>
+            </div>
+            <div className="timeline-track">
+              {timelineShots.map((shot, index) => (
+                <button
+                  key={shot.id}
+                  type="button"
+                  className={`timeline-block ${selectedShot?.id === shot.id ? 'selected' : ''}`}
+                  style={{ flex: Math.max(shot.duration_sec, 1) }}
+                  onClick={() => setSelectedShot(shot)}
+                >
+                  <span>{shot.display_label || String.fromCharCode(65 + index)}</span>
+                  <small>{shot.duration_sec}s</small>
+                </button>
+              ))}
+            </div>
+            <div className="narration-track">
+              {timelineShots.map((shot) => (
+                <div key={`n-${shot.id}`} style={{ flex: Math.max(shot.duration_sec, 1) }}>
+                  <small>{shot.narration?.slice(0, 48) || 'No narration'}</small>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <aside className="inspector" aria-label="Shot inspector">
-        <h2>Shot inspector</h2>
+        <header className="inspector-head">
+          <div>
+            <span className="eyebrow">Shot</span>
+            <h2>{selectedShot?.display_label || selectedShot?.title || 'Shot inspector'}</h2>
+          </div>
+          {selectedShot ? (
+            <button type="button" className="icon-button touch-target" aria-label="Close inspector" onClick={() => setSelectedShot(null)}>
+              ×
+            </button>
+          ) : null}
+        </header>
         {selectedShot ? (
           <ShotInspector
             key={`${selectedShot.id}-${data.revision}`}

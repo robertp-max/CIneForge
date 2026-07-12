@@ -1,86 +1,156 @@
 import { api, exportJsonUrl, exportShotListCsvUrl } from '../../api/client'
 import { useStudio } from '../StudioState'
 
+type ExportCard = {
+  id: string
+  title: string
+  format: string
+  requirement: string
+  href?: string
+  available: boolean
+  reason?: string
+}
+
 export function ExportsPage() {
-  const { data } = useStudio()
+  const { data, readiness, navigate } = useStudio()
   if (!data) return null
 
   const links = api.exportLinks(data.story.id)
   const jsonUrl = links.json_url || exportJsonUrl(data.story.id)
   const csvUrl = links.shot_list_csv_url || exportShotListCsvUrl(data.story.id)
+  const blocking = readiness?.reasons.filter((reason) => reason.blocking) ?? []
+  const readinessPct = readiness?.ready
+    ? 100
+    : Math.max(8, Math.min(92, 100 - blocking.length * 12))
+
+  const cards: ExportCard[] = [
+    {
+      id: 'json',
+      title: 'Storyboard JSON',
+      format: 'JSON',
+      requirement: 'Always available from stored hierarchy',
+      href: jsonUrl,
+      available: true,
+    },
+    {
+      id: 'csv',
+      title: 'Shot list CSV',
+      format: 'CSV',
+      requirement: 'Always available from stored hierarchy',
+      href: csvUrl,
+      available: true,
+    },
+    {
+      id: 'pdf',
+      title: 'Production plan PDF',
+      format: 'PDF',
+      requirement: 'Future phase',
+      available: false,
+      reason: 'PDF export is a future phase',
+    },
+    {
+      id: 'edl',
+      title: 'Edit decision list',
+      format: 'EDL',
+      requirement: 'Future phase',
+      available: false,
+      reason: 'EDL export is a future phase',
+    },
+    {
+      id: 'render',
+      title: 'Render package',
+      format: 'ZIP',
+      requirement: 'Rendering disabled in Phase A',
+      available: false,
+      reason: 'Render packages are unavailable while rendering is disabled',
+    },
+    {
+      id: 'bible',
+      title: 'Character bible pack',
+      format: 'ZIP',
+      requirement: 'Future phase',
+      available: false,
+      reason: 'Character bible package export is not implemented yet',
+    },
+    {
+      id: 'voices',
+      title: 'Voice assignment report',
+      format: 'JSON',
+      requirement: 'Future phase',
+      available: false,
+      reason: 'Voice assignment report export is not implemented yet',
+    },
+    {
+      id: 'images',
+      title: 'Starting-image manifest',
+      format: 'JSON',
+      requirement: 'Future phase',
+      available: false,
+      reason: 'Starting-image manifest export is not implemented yet',
+    },
+  ]
 
   return (
-    <div className="panel">
-      <div className="panel-title">
+    <>
+      <div className="export-banner panel">
         <div>
-          <h2>Planning exports</h2>
+          <span className="eyebrow">Phase A artifacts</span>
+          <h2>Exports</h2>
           <p>
-            These exports contain the stored planning hierarchy for story{' '}
-            <span className="mono">{data.story.id}</span>. PDF, EDL, render package, and media outputs
-            remain unavailable because Phase 1 planning does not render.
+            Package the current structured production plan for review, handoff, or archive. Only
+            JSON and CSV are live against the backend.
           </p>
+        </div>
+        <div className="export-readiness">
+          <strong>{readinessPct}%</strong>
+          <div className="progress-bar" aria-hidden="true">
+            <span style={{ width: `${readinessPct}%` }} />
+          </div>
+          <small>
+            {blocking.length
+              ? `${blocking.length} readiness blockers may limit future package types`
+              : readiness?.ready
+                ? 'Plan readiness gates currently pass'
+                : 'Readiness pending from server'}
+          </small>
+          <button type="button" className="ghost-button touch-target" onClick={() => navigate('overview')}>
+            View exact blockers
+          </button>
         </div>
       </div>
 
-      <div className="story-actions">
-        <a className="primary-button touch-target" href={jsonUrl}>
-          Storyboard JSON
-        </a>
-        <a className="secondary-button touch-target" href={csvUrl}>
-          Shot list CSV
-        </a>
-        <button
-          type="button"
-          className="ghost-button touch-target"
-          disabled
-          aria-disabled="true"
-          title="PDF export is a future phase"
-        >
-          PDF export — future phase
-        </button>
-        <button
-          type="button"
-          className="ghost-button touch-target"
-          disabled
-          aria-disabled="true"
-          title="EDL export is a future phase"
-        >
-          EDL export — future phase
-        </button>
-        <button
-          type="button"
-          className="ghost-button touch-target"
-          disabled
-          aria-disabled="true"
-          title="Render packages are unavailable while rendering is disabled"
-        >
-          Render package — disabled
-        </button>
+      <div className="export-grid" aria-label="Export packages">
+        {cards.map((card) => (
+          <article key={card.id} className="export-card">
+            <header>
+              <span className="eyebrow">{card.format}</span>
+              <h3>{card.title}</h3>
+              <p>{card.requirement}</p>
+            </header>
+            {card.available && card.href ? (
+              <a className="primary-button touch-target" href={card.href}>
+                Generate export
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="ghost-button touch-target"
+                disabled
+                aria-disabled="true"
+                title={card.reason}
+              >
+                Unavailable
+              </button>
+            )}
+            <small>{card.available ? 'Live download from API' : card.reason}</small>
+          </article>
+        ))}
       </div>
 
-      <div className="notice info" style={{ marginTop: 16 }} role="status">
+      <div className="notice info" role="status">
         Export links point at the live API base. Opening them performs a download/fetch only — no
         render, queue, or media encode is started.
       </div>
-
-      <ul className="kv-list" style={{ marginTop: 16 }}>
-        <li>
-          <span>JSON</span>
-          <strong className="mono">{jsonUrl}</strong>
-        </li>
-        <li>
-          <span>CSV</span>
-          <strong className="mono">{csvUrl}</strong>
-        </li>
-        <li>
-          <span>PDF available</span>
-          <strong>{links.pdf_available ? 'Yes' : 'No'}</strong>
-        </li>
-        <li>
-          <span>Render package</span>
-          <strong>{links.render_package_available ? 'Yes' : 'No'}</strong>
-        </li>
-      </ul>
-    </div>
+    </>
   )
 }
