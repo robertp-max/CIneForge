@@ -55,6 +55,9 @@ class StoryUpdate(BaseModel):
     point_of_view: str | None = None
     production_notes: str | None = None
     approval_state: ApprovalState | None = None
+    # Optimistic concurrency: either token may be supplied by Phase A clients.
+    expected_updated_at: datetime | None = None
+    expected_revision: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class StoryRead(BaseModel):
@@ -178,6 +181,7 @@ class ShotCreate(BaseModel):
 
     @model_validator(mode="after")
     def check_duration_policy(self):
+        # Product default: 6–12 seconds unless a reasoned override is supplied.
         if not 6 <= self.duration_sec <= 12 and not (self.duration_override_reason or "").strip():
             raise ValueError("Shots outside 6–12 seconds require a duration override reason.")
         return self
@@ -222,6 +226,8 @@ class StoryboardVersionRead(BaseModel):
     version_number: int
     status: str
     snapshot_json: dict
+    content_hash: str | None = None
+    approved_by: str | None = None
     approved_at: datetime | None = None
 
 
@@ -241,3 +247,20 @@ class ProposalRead(BaseModel):
     payload: dict
     status: str
     validation_errors: list
+
+
+class PhaseASnapshot(BaseModel):
+    """Revision-aware live Phase A plan for frontend clients."""
+
+    revision: str
+    content_hash: str
+    planned_duration_sec: float
+    target_duration_sec: float
+    discrepancy_sec: float
+    story: dict
+    settings: dict | None = None
+    readiness: StoryboardReadiness
+    chapters: list
+    characters: list
+    voices: list
+    active_storyboard_version_id: UUID | None = None

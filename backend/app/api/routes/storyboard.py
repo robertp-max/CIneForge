@@ -7,10 +7,26 @@ from sqlalchemy.orm import Session
 from backend.app.db.base import Chapter, Character, Scene, Shot, Story, VoiceProfile
 from backend.app.db.session import get_db
 from backend.app.schemas.storyboard import (
-    ApprovalRequest, ChapterCreate, ChapterRead, CharacterCreate, CharacterRead,
-    ProposalCreate, ProposalRead, ReorderRequest, SceneCreate, SceneRead, ShotCreate,
-    ShotRead, StoryCreate, StoryRead, StoryUpdate, StoryboardReadiness,
-    StoryboardVersionRead, VoiceProfileCreate, VoiceProfileRead,
+    ApprovalRequest,
+    ChapterCreate,
+    ChapterRead,
+    CharacterCreate,
+    CharacterRead,
+    PhaseASnapshot,
+    ProposalCreate,
+    ProposalRead,
+    ReorderRequest,
+    SceneCreate,
+    SceneRead,
+    ShotCreate,
+    ShotRead,
+    StoryCreate,
+    StoryRead,
+    StoryUpdate,
+    StoryboardReadiness,
+    StoryboardVersionRead,
+    VoiceProfileCreate,
+    VoiceProfileRead,
 )
 from backend.app.services import storyboard as service
 
@@ -19,7 +35,14 @@ router = APIRouter(prefix="/storyboard", tags=["storyboard"])
 
 
 def _domain_error(error: service.StoryboardDomainError, conflict: bool = False) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_409_CONFLICT if conflict else status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error))
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT if conflict else status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=str(error),
+    )
+
+
+def _conflict_error(error: Exception) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
 
 @router.post("/stories", response_model=StoryRead, status_code=201)
@@ -50,6 +73,8 @@ def get_story(story_id: UUID, db: Session = Depends(get_db)) -> Story:
 def patch_story(story_id: UUID, payload: StoryUpdate, db: Session = Depends(get_db)) -> Story:
     try:
         return service.update_story(db, story_id, payload)
+    except service.StoryboardConflictError as error:
+        raise _conflict_error(error) from error
     except service.StoryboardDomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -147,6 +172,14 @@ def get_aggregate(story_id: UUID, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.get("/stories/{story_id}/phase-a", response_model=PhaseASnapshot)
+def get_phase_a_snapshot(story_id: UUID, db: Session = Depends(get_db)) -> dict:
+    try:
+        return service.phase_a_snapshot(db, story_id)
+    except service.StoryboardDomainError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.get("/stories/{story_id}/readiness", response_model=StoryboardReadiness)
 def get_readiness(story_id: UUID, db: Session = Depends(get_db)) -> dict:
     try:
@@ -159,6 +192,8 @@ def get_readiness(story_id: UUID, db: Session = Depends(get_db)) -> dict:
 def approve(story_id: UUID, payload: ApprovalRequest, db: Session = Depends(get_db)):
     try:
         return service.approve(db, story_id, payload.approved_by)
+    except service.StoryboardConflictError as error:
+        raise _conflict_error(error) from error
     except service.StoryboardDomainError as error:
         raise _domain_error(error, conflict=True) from error
 
@@ -175,4 +210,8 @@ def export_json(story_id: UUID, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/stories/{story_id}/shot-list.csv")
 def export_shot_csv(story_id: UUID, db: Session = Depends(get_db)) -> Response:
-    return Response(content=service.export_csv(db, story_id), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=shot-list.csv"})
+    return Response(
+        content=service.export_csv(db, story_id),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=shot-list.csv"},
+    )
