@@ -25,9 +25,13 @@ export function OverviewPage() {
       setCurrentRun(runs[0] ? await api.getOrchestrationRun(runs[0].id) : null)
       setCurrentProposal(proposals[0] ?? null)
     } catch (error) {
-      setPlanningError(error instanceof Error ? error.message : 'Planning status is unavailable.')
+      setPlanningError(
+        backendStatus === 'ok'
+          ? 'Planning summary API is unavailable for this local demo story. Backend health is OK.'
+          : error instanceof Error ? error.message : 'Planning status is unavailable.',
+      )
     }
-  }, [data])
+  }, [backendStatus, data])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadPlanningSummary(), 0)

@@ -20,6 +20,7 @@ export function StudioChrome({
     reload,
     animaticOpen,
     setAnimaticOpen,
+    setMessage,
     loadState,
     error,
   } = useStudio()
@@ -29,9 +30,41 @@ export function StudioChrome({
 
   return (
     <section className="studio page" aria-busy={busy || loadState === 'loading'}>
+      <div className="studio-commandbar">
+        <div>
+          <span className="eyebrow">Production Phase A</span>
+          <strong>A New Journey</strong>
+          <small>
+            {data
+              ? `${formatDuration(target)} target · ${formatDuration(planned)} planned`
+              : 'Guided storyboard planning workspace'}
+          </small>
+        </div>
+        <div className="command-actions">
+          <button
+            type="button"
+            className="ghost-button touch-target"
+            onClick={() => {
+              setMessage('Draft state is current in the browser session. Server data remains canonical.')
+            }}
+          >
+            Save draft
+          </button>
+          <button
+            type="button"
+            className="primary-button touch-target"
+            onClick={() => setAnimaticOpen(true)}
+            disabled={!data}
+            title="Timing prototype only — no video rendering"
+          >
+            ▷ Preview animatic
+          </button>
+        </div>
+      </div>
+
       <header className="page-header studio-header">
         <div>
-          <span className="eyebrow">PRODUCTION PLAN · PHASE 1</span>
+          <span className="eyebrow">Storyboard workspace</span>
           <h1>{title}</h1>
           <p>
             {data ? (
@@ -54,17 +87,11 @@ export function StudioChrome({
             onClick={() => void reload()}
             disabled={busy || !data}
           >
-            Refresh
+            Continue review
           </button>
-          <button
-            type="button"
-            className="primary-button touch-target"
-            onClick={() => setAnimaticOpen(true)}
-            disabled={!data}
-            title="Timing prototype only — no video rendering"
-          >
-            Preview animatic
-          </button>
+          <span className="readiness-chip">
+            {readiness?.reasons.filter((reason) => reason.blocking).length ?? 0} blockers
+          </span>
         </div>
       </header>
 

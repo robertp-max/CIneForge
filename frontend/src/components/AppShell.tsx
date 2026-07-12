@@ -1,5 +1,4 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import { API_BASE_URL } from '../api/client'
 import { StatusBadge } from './StatusBadge'
 
 export type PageId =
@@ -14,22 +13,29 @@ export type PageId =
   | 'exports'
   | 'settings'
 
-const navItems: { id: PageId; label: string; short: string }[] = [
-  { id: 'overview', label: 'Overview', short: 'Overview' },
-  { id: 'storyboard', label: 'Storyboard', short: 'Board' },
-  { id: 'story', label: 'Story & Chapters', short: 'Story' },
-  { id: 'characters', label: 'Characters', short: 'Cast' },
-  { id: 'voices', label: 'Voices', short: 'Voices' },
-  { id: 'images', label: 'Starting Images', short: 'Images' },
-  { id: 'routing', label: 'Model Routing', short: 'Routing' },
-  { id: 'workflows', label: 'Workflows', short: 'Flows' },
-  { id: 'exports', label: 'Exports', short: 'Export' },
-  { id: 'settings', label: 'Project Settings', short: 'Settings' },
+const navItems: {
+  id: PageId
+  label: string
+  short: string
+  icon: string
+  badge?: string
+}[] = [
+  { id: 'overview', label: 'Overview', short: 'Overview', icon: '▦' },
+  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: '▤', badge: '27' },
+  { id: 'story', label: 'Story & chapters', short: 'Story', icon: '▱' },
+  { id: 'characters', label: 'Characters', short: 'Cast', icon: '♙' },
+  { id: 'voices', label: 'Voices', short: 'Voices', icon: '♬' },
+  { id: 'images', label: 'Starting images', short: 'Images', icon: '▧' },
+  { id: 'routing', label: 'Model routing', short: 'Routing', icon: '◈' },
+  { id: 'workflows', label: 'Workflows', short: 'Flows', icon: '◇' },
+  { id: 'exports', label: 'Exports', short: 'Export', icon: '↓' },
+  { id: 'settings', label: 'Project settings', short: 'Settings', icon: '⚙' },
 ]
 
 type AppShellProps = {
   activePage: PageId
   backendStatus: string
+  projectId: string
   onNavigate: (page: PageId) => void
   onRefreshStatus?: () => void
   children: ReactNode
@@ -38,6 +44,7 @@ type AppShellProps = {
 export function AppShell({
   activePage,
   backendStatus,
+  projectId,
   onNavigate,
   onRefreshStatus,
   children,
@@ -69,11 +76,10 @@ export function AppShell({
       <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''}`} aria-label="Studio sidebar">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
-            CF
+            ▷
           </div>
           <div>
             <strong>CineForge</strong>
-            <span>Storyboard Studio · Phase 1</span>
           </div>
           <button
             type="button"
@@ -85,7 +91,17 @@ export function AppShell({
           </button>
         </div>
 
+        <button type="button" className="project-switcher touch-target" title={projectId}>
+          <span className="project-avatar">AJ</span>
+          <span>
+            <strong>A New Journey</strong>
+            <small>Storyboard Phase A</small>
+          </span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+
         <nav id={navId} aria-label="Primary navigation">
+          <span className="sidebar-section-label">Project</span>
           {navItems.map((item) => {
             const isActive = item.id === activePage
             return (
@@ -96,19 +112,35 @@ export function AppShell({
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => handleNavigate(item.id)}
               >
+                <span className="nav-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
                 <span className="nav-label-full">{item.label}</span>
                 <span className="nav-label-short">{item.short}</span>
+                {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
               </button>
             )
           })}
         </nav>
 
         <div className="sidebar-footer">
-          <StatusBadge status="disabled" label="Rendering disabled" />
-          <span>
-            Planning ends with an approved editable production plan. No ComfyUI, queue, clone, or FFmpeg
-            work is started from planning screens.
-          </span>
+          <button type="button" className="settings-entry touch-target" onClick={() => handleNavigate('settings')}>
+            <span className="nav-icon" aria-hidden="true">⚙</span>
+            <span>Project settings</span>
+          </button>
+          <div className="runtime-card">
+            <span className="live-dot" aria-hidden="true" />
+            <strong>ComfyUI ready</strong>
+            <small>RTX 5090 Laptop · 24 GB</small>
+          </div>
+          <div className="user-card">
+            <span className="user-avatar">RP</span>
+            <span>
+              <strong>Robert</strong>
+              <small>Producer</small>
+            </span>
+            <span aria-hidden="true">•••</span>
+          </div>
         </div>
       </aside>
 
@@ -134,19 +166,26 @@ export function AppShell({
               <span className="sr-only">Open navigation</span>
               <span aria-hidden="true">☰</span>
             </button>
-            <div>
-              <span className="eyebrow">Environment</span>
-              <strong>Production planning · {activeLabel}</strong>
+            <div className="breadcrumb" aria-label="Breadcrumb">
+              <span>Projects</span>
+              <span aria-hidden="true">›</span>
+              <span>A New Journey</span>
+              <span aria-hidden="true">›</span>
+              <strong>{activeLabel}</strong>
+              <span className="phase-badge">Phase A</span>
             </div>
           </div>
           <div className="topbar-status">
-            <span className="mono api-base" title={API_BASE_URL}>
-              {API_BASE_URL}
-            </span>
+            <button type="button" className="icon-button touch-target" aria-label="Search">
+              ⌕
+            </button>
+            <button type="button" className="icon-button touch-target" aria-label="Notifications">
+              ◦
+            </button>
             <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} />
             {onRefreshStatus ? (
-              <button type="button" className="ghost-button touch-target" onClick={onRefreshStatus}>
-                Refresh status
+              <button type="button" className="ghost-button touch-target status-refresh" onClick={onRefreshStatus}>
+                Refresh
               </button>
             ) : null}
           </div>

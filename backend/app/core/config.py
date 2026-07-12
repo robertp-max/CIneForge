@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     queue_worker_enabled: bool = False
     autonomy_mode: str = "scaffold_only"
     cors_allowed_origins: list[str] = [
+        "http://127.0.0.1:5180",
+        "http://localhost:5180",
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     ]
