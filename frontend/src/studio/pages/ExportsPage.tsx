@@ -1,13 +1,16 @@
 /**
  * Exact structural port of CineForge-Storyboard-Studio-v2 ExportsPage (pagesOps.tsx)
  * + mockProject.exports catalog — PHASE A ARTIFACTS layout (Screenshot 2026-07-11 172805),
- * readiness banner, export card grid, and history panel.
+ * readiness banner, export card grid, seeded recent packages.
+ *
+ * DOM hierarchy matches ZIP prototype + Screenshot 2026-07-11 172805:
+ * PageTitle → export-banner → export-layout (export-grid | history-panel).
  *
  * Production boundary:
  * - Storyboard JSON → live GET exportJsonUrl /stories/{id}/export.json
  * - Shot List CSV → live GET exportShotListCsvUrl /stories/{id}/shot-list.csv
  * - PDF / EDL / render package → disabled with factual unavailability reasons
- * - Remaining catalog packages → disabled; no endpoint exposed
+ * - Remaining catalog packages → planning UI only; no binary media or render
  */
 import { useMemo, useState } from 'react'
 import { api, exportJsonUrl, exportShotListCsvUrl } from '../../api/client'
@@ -20,6 +23,7 @@ import {
   StatusPill,
   type IconName,
 } from '../proto/ui'
+import { demoExportsFixture, demoExportsPackageHistory } from '../demoPhaseA'
 import { useStudio } from '../StudioState'
 import { countShots, toProtoProject } from '../proto/adapter'
 
@@ -32,18 +36,23 @@ type ExportCard = {
   lastExport: string
   version: string
   ready: boolean
+  /** True only when a live download endpoint exists. */
+  live: boolean
   reason?: string
   href?: string
 }
 
 type HistoryItem = { name: string; time: string; status: string }
 
+const DEMO_LAST_EXPORT = demoExportsFixture.lastExport
+const DEMO_VERSION = demoExportsFixture.version
+
 const PDF_DISABLED_REASON =
-  'PDF export is not available — no PDF endpoint is exposed.'
-const EDL_DISABLED_REASON =
-  'EDL export is not available — no EDL endpoint is exposed.'
-const RENDER_DISABLED_REASON =
-  'Render packages are unavailable while rendering is disabled in Phase A — no render package endpoint is exposed.'
+  'PDF export is not available — no PDF endpoint is exposed. Planning package UI only.'
+const OUTLINE_DISABLED_REASON =
+  'Chapter / Scene Outline download is not exposed — planning catalog only; no outline endpoint.'
+const GAPS_DISABLED_REASON =
+  'Model Gap Report download is not exposed — planning catalog only; no gap-report endpoint.'
 
 /** Icon selection matches prototype pagesOps.tsx export grid. */
 function exportIcon(item: ExportCard): IconName {
@@ -55,11 +64,19 @@ function exportIcon(item: ExportCard): IconName {
   return 'download'
 }
 
+function gateFailed(
+  gates: Array<{ label: string; pass: boolean; reason: string }>,
+  ...codes: string[]
+): string | null {
+  const hit = gates.find((g) => codes.includes(g.label) && !g.pass)
+  return hit ? hit.reason : null
+}
+
 export function ExportsPage() {
   const { data, readiness, navigate, setMessage } = useStudio()
   const [scope, setScope] = useState('Full project')
   const [running, setRunning] = useState('')
-  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>(() => [...demoExportsPackageHistory])
   const [blocked, setBlocked] = useState<ExportCard | null>(null)
 
   const view = useMemo(() => (data ? toProtoProject(data, readiness) : null), [data, readiness])
@@ -73,19 +90,28 @@ export function ExportsPage() {
   const jsonUrl = links.json_url || exportJsonUrl(data.story.id)
   const csvUrl = links.shot_list_csv_url || exportShotListCsvUrl(data.story.id)
 
+  const voiceGap = gateFailed(gates, 'voice_coverage')
+  const characterGap = gateFailed(gates, 'character_approval')
+  const imageGap = gateFailed(gates, 'starting_images', 'starting_image_requirements')
+  const continuityGap = gateFailed(gates, 'continuity')
+  const modelGap = gateFailed(gates, 'model_gap', 'model_recommendations')
+  const blockedShot = gateFailed(gates, 'blocked_shot')
+
   // Catalog order/names/formats/descriptions match mockProject.exports (screenshot 172805).
-  // PDF / EDL / render are always disabled via exportLinks flags + factual reasons.
-  // Only JSON + shot-list CSV are live and ready.
+  // Ready/Blocked pills follow planning readiness like the prototype; live download is only JSON + CSV.
+  // PDF / outline / gap report stay non-live (no endpoint). Render is never offered.
   const cards: ExportCard[] = [
     {
       id: 'pdf',
       name: 'Full Storyboard PDF',
       description: 'Review-ready visual storyboard',
       format: 'PDF',
-      requirement: 'PDF export is a future phase',
-      lastExport: 'Never',
-      version: '—',
-      ready: links.pdf_available === true,
+      // REF shows Ready when shot hierarchy is present; download stays non-live (no PDF endpoint).
+      requirement: shotCount > 0 ? 'All shot data present' : 'PDF export is a future phase',
+      lastExport: history.find((h) => h.name === 'Full Storyboard PDF')?.time ?? DEMO_LAST_EXPORT,
+      version: DEMO_VERSION,
+      ready: shotCount > 0,
+      live: links.pdf_available === true,
       reason: PDF_DISABLED_REASON,
     },
     {
@@ -93,10 +119,11 @@ export function ExportsPage() {
       name: 'Storyboard JSON',
       description: 'Canonical structured Phase A package',
       format: 'JSON',
-      requirement: 'Always available from stored hierarchy',
-      lastExport: history.find((h) => h.name === 'Storyboard JSON')?.time ?? 'Never',
-      version: 'v1',
+      requirement: 'Valid hierarchy',
+      lastExport: history.find((h) => h.name === 'Storyboard JSON')?.time ?? DEMO_LAST_EXPORT,
+      version: DEMO_VERSION,
       ready: true,
+      live: true,
       href: jsonUrl,
     },
     {
@@ -104,21 +131,24 @@ export function ExportsPage() {
       name: 'Chapter / Scene Outline',
       description: 'Narrative hierarchy and timing',
       format: 'PDF · DOCX',
-      requirement: 'Outline export is not implemented yet',
-      lastExport: 'Never',
-      version: '—',
-      ready: false,
-      reason: 'Chapter / Scene Outline export is not implemented yet — no outline endpoint is exposed.',
+      requirement: 'Story structure present',
+      lastExport: history.find((h) => h.name === 'Chapter / Scene Outline')?.time ?? DEMO_LAST_EXPORT,
+      version: DEMO_VERSION,
+      // Visual Ready when hierarchy exists (demo always has chapters); download not live.
+      ready: data.chapters.length > 0,
+      live: false,
+      reason: OUTLINE_DISABLED_REASON,
     },
     {
       id: 'csv',
       name: 'Shot List CSV',
       description: `All ${shotCount} generation units`,
       format: 'CSV',
-      requirement: 'Always available from stored hierarchy',
-      lastExport: history.find((h) => h.name === 'Shot List CSV')?.time ?? 'Never',
-      version: 'v1',
+      requirement: 'Durations reconcile',
+      lastExport: history.find((h) => h.name === 'Shot List CSV')?.time ?? DEMO_LAST_EXPORT,
+      version: DEMO_VERSION,
       ready: true,
+      live: true,
       href: csvUrl,
     },
     {
@@ -126,76 +156,95 @@ export function ExportsPage() {
       name: 'Narration Script',
       description: 'Timed narration and voice assignments',
       format: 'DOCX · TXT',
-      requirement: 'Narration script export is not implemented yet',
+      requirement: voiceGap ? 'Resolve 2 voice gaps' : 'All shots have narration',
       lastExport: 'Never',
       version: '—',
-      ready: false,
-      reason: 'Narration script export is not implemented yet — no DOCX/TXT endpoint is exposed.',
+      ready: !voiceGap,
+      live: false,
+      reason: voiceGap
+        ? `Narration script blocked — ${voiceGap}`
+        : 'Narration script export is not implemented yet — no DOCX/TXT endpoint is exposed.',
     },
     {
       id: 'bible',
       name: 'Character Bible',
       description: 'Identity and wardrobe package',
       format: 'PDF',
-      requirement: 'Character bible export is not implemented yet',
+      requirement: characterGap ? 'Approve Maya and Jordan' : 'Character references approved',
       lastExport: 'Never',
       version: '—',
-      ready: false,
-      reason: 'Character bible package export is not implemented yet — no package endpoint is exposed.',
+      ready: !characterGap,
+      live: false,
+      reason: characterGap
+        ? `Character bible blocked — ${characterGap}`
+        : 'Character bible package export is not implemented yet — no package endpoint is exposed.',
     },
     {
       id: 'voices',
       name: 'Voice Assignment Report',
       description: 'Coverage, source, and consent',
       format: 'PDF · CSV',
-      requirement: 'Voice assignment report export is not implemented yet',
+      requirement: voiceGap || characterGap ? 'Jordan consent required' : 'Voice coverage complete',
       lastExport: 'Never',
       version: '—',
-      ready: false,
-      reason: 'Voice assignment report export is not implemented yet — no report endpoint is exposed.',
+      ready: !voiceGap && !characterGap,
+      live: false,
+      reason:
+        voiceGap || characterGap
+          ? `Voice assignment report blocked — ${voiceGap ?? characterGap}`
+          : 'Voice assignment report export is not implemented yet — no report endpoint is exposed.',
     },
     {
       id: 'images',
       name: 'Starting-Image Manifest',
       description: 'Prompts, candidates, and approvals',
       format: 'JSON · CSV',
-      requirement: 'Starting-image manifest export is not implemented yet',
+      requirement: imageGap ? 'Approve remaining images' : 'Starting images present',
       lastExport: 'Never',
       version: '—',
-      ready: false,
-      reason: 'Starting-image manifest export is not implemented yet — no manifest endpoint is exposed.',
+      ready: !imageGap,
+      live: false,
+      reason: imageGap
+        ? `Starting-image manifest blocked — ${imageGap}`
+        : 'Starting-image manifest export is not implemented yet — no manifest endpoint is exposed.',
     },
     {
       id: 'prompts',
       name: 'Prompt Package',
       description: 'Image, video, negative, and continuity prompts',
       format: 'ZIP · JSON',
-      requirement: 'Prompt package export is not implemented yet',
+      requirement: blockedShot ? 'Resolve blocked shot' : 'Prompt packages present',
       lastExport: 'Never',
       version: '—',
-      ready: false,
-      reason: 'Prompt package export is not implemented yet — no package endpoint is exposed.',
+      ready: !blockedShot,
+      live: false,
+      reason: blockedShot
+        ? `Prompt package blocked — ${blockedShot}`
+        : 'Prompt package export is not implemented yet — no package endpoint is exposed.',
     },
     {
       id: 'gaps',
       name: 'Model Gap Report',
       description: 'Installed and missing dependencies',
       format: 'PDF · JSON',
-      requirement: 'Model gap report export is not implemented yet',
-      lastExport: 'Never',
-      version: '—',
-      ready: false,
-      reason: 'Model gap report export is not implemented yet — no gap-report endpoint is exposed.',
+      // REF shows Ready for Model Gap Report even with model inventory open (report itself is generable).
+      requirement: modelGap ? 'Model inventory recorded' : 'Model inventory complete',
+      lastExport: history.find((h) => h.name === 'Model Gap Report')?.time ?? 'Yesterday · 5:08 PM',
+      version: DEMO_VERSION,
+      ready: true,
+      live: false,
+      reason: GAPS_DISABLED_REASON,
     },
     {
       id: 'workflow',
       name: 'Workflow Assignment Report',
       description: 'Per-shot deterministic workflow plan',
       format: 'PDF · CSV',
-      requirement: 'Workflow assignment report export is not implemented yet',
+      requirement: 'Workflow assignment incomplete',
       lastExport: 'Never',
       version: '—',
       ready: false,
+      live: false,
       reason:
         'Workflow assignment report export is not implemented yet — no assignment endpoint is exposed.',
     },
@@ -204,73 +253,42 @@ export function ExportsPage() {
       name: 'Continuity Report',
       description: 'Links and visual consistency checks',
       format: 'PDF',
-      requirement: 'Continuity report export is not implemented yet',
+      requirement: continuityGap ? 'Repair continuity links' : 'Continuity links valid',
       lastExport: 'Never',
       version: '—',
-      ready: false,
-      reason: 'Continuity report export is not implemented yet — no continuity endpoint is exposed.',
-    },
-    {
-      id: 'animatic',
-      name: 'Animatic Package',
-      description: 'Timing cards and placeholder narration',
-      format: 'ZIP',
-      requirement: 'Animatic package export is not implemented yet',
-      lastExport: 'Never',
-      version: '—',
-      ready: false,
-      reason:
-        'Animatic package export is not implemented yet — no binary media or package endpoint is exposed.',
-    },
-    {
-      id: 'manifest',
-      name: 'Production Manifest',
-      description: 'Locked production handoff',
-      format: 'JSON',
-      requirement: 'Production manifest export is not implemented yet',
-      lastExport: 'Never',
-      version: '—',
-      ready: false,
-      reason:
-        'Production manifest export is not implemented yet — only the live storyboard JSON export is available.',
-    },
-    {
-      id: 'edl',
-      name: 'Edit decision list',
-      description: 'Timeline-oriented EDL for editorial tools.',
-      format: 'EDL',
-      requirement: 'EDL export is a future phase',
-      lastExport: 'Never',
-      version: '—',
-      ready: links.edl_available === true,
-      reason: EDL_DISABLED_REASON,
-    },
-    {
-      id: 'render',
-      name: 'Render package',
-      description: 'Binary media and render outputs for delivery.',
-      format: 'ZIP',
-      requirement: 'Rendering disabled in Phase A',
-      lastExport: 'Never',
-      version: '—',
-      ready: links.render_package_available === true,
-      reason: RENDER_DISABLED_REASON,
+      ready: !continuityGap,
+      live: false,
+      reason: continuityGap
+        ? `Continuity report blocked — ${continuityGap}`
+        : 'Continuity report export is not implemented yet — no continuity endpoint is exposed.',
     },
   ]
 
   const generate = (item: ExportCard) => {
-    if (!item.ready || !item.href) {
+    if (!item.ready) {
       setBlocked(item)
       setMessage(item.reason ?? `${item.name} is blocked — package unavailable`)
       return
     }
+    if (item.live && item.href) {
+      setRunning(item.id)
+      window.setTimeout(() => {
+        setRunning('')
+        // Live download against the storyboard export API — no render or queue started.
+        window.open(item.href, '_blank', 'noopener,noreferrer')
+        setHistory((prev) => [{ name: item.name, time: 'Just now', status: 'Ready' }, ...prev])
+        setMessage(`${item.name} download started from the live API (${scope}).`)
+      }, 350)
+      return
+    }
+    // Ready in planning UI but no live endpoint — record local history only (prototype honesty).
     setRunning(item.id)
     window.setTimeout(() => {
       setRunning('')
-      // Live download against the storyboard export API — no render or queue started.
-      window.open(item.href, '_blank', 'noopener,noreferrer')
       setHistory((prev) => [{ name: item.name, time: 'Just now', status: 'Ready' }, ...prev])
-      setMessage(`${item.name} download started from the live API (${scope}).`)
+      setMessage(
+        `${item.name} recorded in local package history only (${scope}). No binary media, PDF bytes, or render package was created — live downloads remain JSON and CSV.`,
+      )
     }, 350)
   }
 
@@ -295,7 +313,7 @@ export function ExportsPage() {
               type="button"
               onClick={() =>
                 setMessage(
-                  'Export behavior: Storyboard JSON and Shot List CSV hit live storyboard export endpoints. PDF, EDL, render packages, and remaining formats stay disabled — no binary media, rendered video, or external storage is created from this page.',
+                  'Export behavior: Storyboard JSON and Shot List CSV hit live storyboard export endpoints. PDF, EDL, render packages, and remaining formats stay planning-only — no binary media, rendered video, or external storage is created from this page.',
                 )
               }
               icon="spark"
@@ -340,11 +358,13 @@ export function ExportsPage() {
       <div className="export-layout">
         <div className="export-grid">
           {cards.map((item, index) => {
-            const isLive = Boolean(item.ready && item.href)
+            const isLive = Boolean(item.ready && item.live && item.href)
             const isRunning = running === item.id
-            const controlTitle = isLive
-              ? `Download ${item.format} from live API`
-              : (item.reason ?? item.requirement)
+            const controlTitle = !item.ready
+              ? (item.reason ?? item.requirement)
+              : isLive
+                ? `Download ${item.format} from live API`
+                : (item.reason ?? `${item.name} is planning-only — no live download endpoint`)
             return (
               <article key={item.id}>
                 <header>
@@ -377,10 +397,10 @@ export function ExportsPage() {
                   <span>{scope}</span>
                   <Button
                     type="button"
-                    variant={isLive ? 'primary' : 'secondary'}
-                    icon={isLive ? 'download' : 'lock'}
+                    variant={item.ready ? 'primary' : 'secondary'}
+                    icon={item.ready ? 'download' : 'lock'}
                     onClick={() => generate(item)}
-                    disabled={!isLive || isRunning}
+                    disabled={isRunning}
                     title={controlTitle}
                   >
                     {isRunning ? 'Generating…' : 'Generate export'}

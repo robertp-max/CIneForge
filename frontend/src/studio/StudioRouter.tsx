@@ -44,7 +44,7 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
   },
   workflows: {
     title: 'Workflows',
-    description: 'Factual workflow-template catalog; no install, validation, or queue actions.',
+    description: 'ComfyUI manifest catalog with demo template inventory for planning review.',
   },
   exports: {
     title: 'Exports',

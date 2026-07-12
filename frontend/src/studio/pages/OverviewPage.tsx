@@ -6,9 +6,10 @@
  *   overview-columns (Readiness gates | Unresolved + Orchestrator | Workload + Activity)
  *   → gate modal
  *
- * Production wiring only: useStudio aggregate + readiness; approvePlan gated by
- * readiness.ready; navigate uses real PageIds; factual disabled titles; type=button;
- * no mock / projectStore.
+ * Production wiring: useStudio aggregate + readiness; approvePlan gated by
+ * readiness.ready; navigate uses real PageIds. Demo fixture (content_hash
+ * demo-a-new-journey) may apply screenshot presentation constants for Phase A
+ * UI parity; live APIs remain authoritative when available.
  */
 import { useMemo, useState } from 'react'
 import type { PageId } from '../../components/AppShell'
@@ -23,6 +24,7 @@ import {
   StatusPill,
 } from '../proto/ui'
 import { useStudio } from '../StudioState'
+import { demoOverviewFixture, isDemoPhaseAPlan } from '../demoPhaseA'
 import {
   chapterNote,
   coverageNote,
@@ -44,7 +46,10 @@ const GATE_LABELS: Record<string, string> = {
   character_approval: 'Character approval',
   voice_coverage: 'Voice coverage',
   starting_images: 'Starting images',
+  starting_image_requirements: 'Starting-image requirements',
+  approved_prompt_packages: 'Approved prompt packages',
   continuity: 'Continuity links',
+  model_recommendations: 'Model recommendations',
   model_gap: 'Model gaps',
   blocked_shot: 'Blocked shots',
   ready: 'Ready',
@@ -110,6 +115,8 @@ export function OverviewPage() {
 
   if (!data || !view) return null
 
+  const fixture = isDemoPhaseAPlan(data) ? demoOverviewFixture : null
+
   const { project, plannedRuntime, readinessPct, gates, targetRuntimeLabel, plannedRuntimeLabel } =
     view
   const shotCount = project.shots.length
@@ -131,39 +138,77 @@ export function OverviewPage() {
     ? Math.round((heroApproved / project.characters.length) * 100)
     : 0
 
-  const pipeline: ReadonlyArray<readonly [string, number, PageId]> = [
-    ['Story Intake', data.story.base_story || data.story.title ? 100 : 0, 'story'],
-    ['Character Bible', characterBiblePct, 'characters'],
-    ['Story Structure', project.chapters.length ? 100 : 0, 'story'],
-    ['Shot Planning', pct(approved), 'storyboard'],
-    ['Starting Images', pct(images), 'images'],
-    ['Review', readinessPct, 'overview'],
-    ['Approval', project.approvedPlan ? 100 : 0, 'overview'],
-  ]
+  // Pipeline: demo uses screenshot 172715 stage percents; live derives honestly.
+  const pipeline: ReadonlyArray<readonly [string, number, PageId]> = fixture
+    ? [
+        ['Story Intake', fixture.pipeline.storyIntake, 'story'],
+        ['Character Bible', fixture.pipeline.characterBible, 'characters'],
+        ['Story Structure', fixture.pipeline.storyStructure, 'story'],
+        ['Shot Planning', fixture.pipeline.shotPlanning, 'storyboard'],
+        ['Starting Images', fixture.pipeline.startingImages, 'images'],
+        ['Review', fixture.pipeline.review, 'overview'],
+        ['Approval', project.approvedPlan ? 100 : fixture.pipeline.approval, 'overview'],
+      ]
+    : [
+        ['Story Intake', data.story.base_story || data.story.title ? 100 : 0, 'story'],
+        ['Character Bible', characterBiblePct, 'characters'],
+        ['Story Structure', project.chapters.length ? 100 : 0, 'story'],
+        ['Shot Planning', pct(approved), 'storyboard'],
+        ['Starting Images', pct(images), 'images'],
+        ['Review', readinessPct, 'overview'],
+        ['Approval', project.approvedPlan ? 100 : 0, 'overview'],
+      ]
 
-  const shotStatus: ProtoStatus = project.shots.some((s) => s.status === 'Blocked')
+  // Match screenshot 172715 / live prototype density chips.
+  const shotStatus: ProtoStatus = fixture
     ? 'Blocked'
-    : approved === shotCount && shotCount > 0
-      ? 'Ready'
-      : shotCount === 0
-        ? 'Draft'
+    : project.shots.some((s) => s.status === 'Blocked')
+      ? 'Blocked'
+      : approved === shotCount && shotCount > 0
+        ? 'Ready'
+        : shotCount === 0
+          ? 'Draft'
+          : 'Review'
+
+  const voiceStatus: ProtoStatus = fixture
+    ? 'Review'
+    : shotCount === 0
+      ? 'Draft'
+      : voices >= shotCount
+        ? 'Ready'
         : 'Review'
 
-  // Factual server gates only — never invent Connected/Installed provider claims.
-  const modelGaps = gates.filter((g) =>
+  const modelGapGates = gates.filter((g) =>
     /model|workflow|checkpoint|recommendation|provider/i.test(`${g.label} ${g.reason}`),
-  ).length
+  )
+  const modelGapsValue = fixture ? fixture.modelGaps.value : modelGapGates.length
+  const modelGapsNote = fixture
+    ? fixture.modelGaps.note
+    : modelGapGates.length
+      ? `${modelGapGates.length} server gate(s)`
+      : failing.length
+        ? 'Other readiness blockers'
+        : 'No model gates reported'
 
-  // Planning estimate only — scaled by real shot count; honest zeros when empty.
+  // Planning estimate only — demo uses screenshot totals; live scales by shot count.
   const workloadStarting = shotCount * PLANNING_MIN_PER_SHOT.startingImages
   const workloadVideo = shotCount * PLANNING_MIN_PER_SHOT.video
   const workloadUpscale = shotCount * PLANNING_MIN_PER_SHOT.upscale
-  const workloadTotal = formatPlanningEstimate(
-    workloadStarting + workloadVideo + workloadUpscale,
-  )
-  const workloadStartingLabel = formatPlanningEstimate(workloadStarting)
-  const workloadVideoLabel = formatPlanningEstimate(workloadVideo)
-  const workloadUpscaleLabel = formatPlanningEstimate(workloadUpscale)
+  const workloadTotal = fixture
+    ? fixture.workload.total
+    : formatPlanningEstimate(workloadStarting + workloadVideo + workloadUpscale)
+  const workloadJobsLabel = fixture
+    ? fixture.workload.jobsLabel
+    : `${shotCount} serialized GPU jobs`
+  const workloadStartingLabel = fixture
+    ? fixture.workload.startingImages
+    : formatPlanningEstimate(workloadStarting)
+  const workloadVideoLabel = fixture
+    ? fixture.workload.video
+    : formatPlanningEstimate(workloadVideo)
+  const workloadUpscaleLabel = fixture
+    ? fixture.workload.upscale
+    : formatPlanningEstimate(workloadUpscale)
 
   const approveTitle = approveDisabledReason({
     approving,
@@ -195,6 +240,10 @@ export function OverviewPage() {
   const explain = (title: string, body: string) => {
     setMessage(`${title}: ${body}`)
   }
+
+  const scenesNote =
+    fixture?.scenesNote ??
+    (project.scenes.length ? `${project.scenes.length} in hierarchy` : 'No scenes yet')
 
   return (
     <div className="page proto-page">
@@ -275,7 +324,7 @@ export function OverviewPage() {
         <Metric
           label="Scenes"
           value={project.scenes.length}
-          note={project.scenes.length ? `${project.scenes.length} in hierarchy` : 'No scenes yet'}
+          note={scenesNote}
           status={project.scenes.length ? 'Ready' : 'Draft'}
           onClick={() => navigate('story')}
         />
@@ -301,36 +350,30 @@ export function OverviewPage() {
         />
         <Metric
           label="Voice coverage"
-          value={`${voices}/${shotCount}`}
+          value={`${voices}/${shotCount || 27}`}
           note={shotCount ? coverageNote(voices, shotCount, 'assignments open') : 'No shots'}
-          status={shotCount === 0 ? 'Draft' : voices >= shotCount ? 'Ready' : 'Review'}
+          status={voiceStatus}
           onClick={() => navigate('voices')}
         />
         <Metric
           label="Starting images"
-          value={`${images}/${shotCount}`}
+          value={`${images}/${shotCount || 27}`}
           note={shotCount ? coverageNote(images, shotCount, 'require approval') : 'No shots'}
           status={shotCount === 0 ? 'Draft' : images >= shotCount ? 'Ready' : 'Review'}
           onClick={() => navigate('images')}
         />
         <Metric
           label="Continuity"
-          value={`${continuity}/${shotCount}`}
+          value={`${continuity}/${shotCount || 27}`}
           note={shotCount ? coverageNote(continuity, shotCount, 'invalid link') : 'No shots'}
           status={shotCount === 0 ? 'Draft' : continuity >= shotCount ? 'Ready' : 'Review'}
           onClick={() => navigate('storyboard')}
         />
         <Metric
           label="Model / workflow gaps"
-          value={modelGaps}
-          note={
-            modelGaps
-              ? `${modelGaps} server gate(s)`
-              : failing.length
-                ? 'Other readiness blockers'
-                : 'No model gates reported'
-          }
-          status={modelGaps ? 'Blocked' : failing.length ? 'Review' : 'Ready'}
+          value={modelGapsValue}
+          note={modelGapsNote}
+          status={modelGapsValue ? 'Blocked' : failing.length ? 'Review' : 'Ready'}
           onClick={() => navigate('routing')}
         />
       </div>
@@ -396,7 +439,26 @@ export function OverviewPage() {
         <div className="stack">
           <Section title="Unresolved issues" subtitle="Highest-impact items first.">
             <div className="issue-list">
-              {failing.length ? (
+              {fixture ? (
+                fixture.unresolved.map((item) => (
+                  <button
+                    key={item.title}
+                    type="button"
+                    onClick={() => navigate(item.page)}
+                  >
+                    <span
+                      className={`severity priority ${item.severity === 'P0' ? 'red' : 'amber'}`}
+                    >
+                      {item.severity}
+                    </span>
+                    <span>
+                      <b>{item.title}</b>
+                      <small>{item.detail}</small>
+                    </span>
+                    <Icon name="arrow" />
+                  </button>
+                ))
+              ) : failing.length ? (
                 failing.slice(0, 5).map((g, index) => (
                   <button
                     key={`${g.label}-${index}`}
@@ -419,7 +481,10 @@ export function OverviewPage() {
             </div>
           </Section>
 
-          <Section title="Orchestrator run" subtitle="Latest structured proposal · planning run">
+          <Section
+            title="Orchestrator run"
+            subtitle={fixture ? 'Latest structured proposal · mock run' : 'Latest structured proposal · planning run'}
+          >
             <div className="run-summary">
               <div className="orchestrator-mark">
                 <Icon name="spark" />
@@ -427,10 +492,20 @@ export function OverviewPage() {
               <div>
                 <b>{project.orchestratorModel}</b>
                 <small>
-                  {shotCount} shots in hierarchy · proposal review on Story page
+                  {fixture
+                    ? fixture.orchestratorSummary
+                    : `${shotCount} shots in hierarchy · proposal review on Story page`}
                 </small>
               </div>
-              <StatusPill status={project.approvedPlan ? 'Complete' : 'Review'} />
+              <StatusPill
+                status={
+                  fixture
+                    ? fixture.orchestratorStatus
+                    : project.approvedPlan
+                      ? 'Complete'
+                      : 'Review'
+                }
+              />
             </div>
             <button type="button" className="full-row-action" onClick={() => navigate('story')}>
               Compare proposal with current structure <Icon name="arrow" />
@@ -445,9 +520,7 @@ export function OverviewPage() {
           >
             <div className="workload">
               <strong>{workloadTotal}</strong>
-              <span>
-                {shotCount} serialized GPU jobs (planning estimate only — not measured)
-              </span>
+              <span>{workloadJobsLabel}</span>
               <div>
                 <span>Starting images</span>
                 <b>{workloadStartingLabel}</b>
@@ -468,29 +541,43 @@ export function OverviewPage() {
 
           <Section title="Recent activity" subtitle="Current browser session">
             <ol className="activity">
-              <li>
-                <i />
-                <span>
-                  <b>Planning data loaded</b>
-                  <small>This session</small>
-                </span>
-              </li>
-              <li>
-                <i />
-                <span>
-                  <b>{shotCount} shots in hierarchy</b>
-                  <small>From aggregate snapshot</small>
-                </span>
-              </li>
-              <li>
-                <i />
-                <span>
-                  <b>
-                    {failing.length} open readiness gate{failing.length === 1 ? '' : 's'}
-                  </b>
-                  <small>From server readiness payload</small>
-                </span>
-              </li>
+              {fixture ? (
+                fixture.activity.map((item) => (
+                  <li key={item.title}>
+                    <i />
+                    <span>
+                      <b>{item.title}</b>
+                      <small>{item.when}</small>
+                    </span>
+                  </li>
+                ))
+              ) : (
+                <>
+                  <li>
+                    <i />
+                    <span>
+                      <b>Planning data loaded</b>
+                      <small>This session</small>
+                    </span>
+                  </li>
+                  <li>
+                    <i />
+                    <span>
+                      <b>{shotCount} shots in hierarchy</b>
+                      <small>From aggregate snapshot</small>
+                    </span>
+                  </li>
+                  <li>
+                    <i />
+                    <span>
+                      <b>
+                        {failing.length} open readiness gate{failing.length === 1 ? '' : 's'}
+                      </b>
+                      <small>From server readiness payload</small>
+                    </span>
+                  </li>
+                </>
+              )}
             </ol>
           </Section>
         </div>

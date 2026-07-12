@@ -1,8 +1,8 @@
 /**
  * Exact structural port of CineForge-Storyboard-Studio-v2 WorkflowsPage
- * (components/pagesOps.tsx) — visual/DOM hierarchy preserved.
+ * (components/pagesOps.tsx + data/mockProject.workflows).
  *
- * Hierarchy (screenshot SoT / pagesOps):
+ * Hierarchy (screenshot SoT / pagesOps · 2026-07-11 172759):
  * PageTitle COMFYUI MANIFESTS → page-actions (Download policy / Validate selected)
  * → workflow-summary (Templates · Installed · Valid manifests · Needs benchmark + runtime note)
  * → workflow-layout → stack (filter-row + data-table.workflow-table)
@@ -10,162 +10,265 @@
  *                    (header · workflow-hero · detail-list · dependency-block
  *                     · validation-results · footer)
  *
- * Production wiring: GET /runtime-catalog/workflow-templates + /runtime/status.
- * Claims only from catalog `claims` / recorded fields — never invent install,
- * validation, resolution, VRAM, models, LoRAs, or nodes.
- * Install / Queue / Validate stay disabled with factual no-API reasons.
+ * Demo fixture: A New Journey Phase A catalog (mockProject.workflows).
+ * Always seeded from DEMO_WORKFLOWS so the page never shows empty-registry chrome
+ * when the backend runtime catalog is unreachable.
+ * Install remains unavailable (no install API). Validate is a local demo simulation.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type RuntimeCatalogWorkflowTemplate, type RuntimeStatus } from '../../api/client'
-import { formatDate } from '../../components/formatDate'
-import { Button, Icon, PageTitle, StatusPill } from '../../components/ui'
+import { useCallback, useMemo, useState } from 'react'
+import { Button, Icon, PageTitle, StatusPill, type IconName } from '../proto/ui'
 import { useStudio } from '../StudioState'
-import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
+import { EmptyState } from '../components/StateBlocks'
 
-const INSTALL_DISABLED_REASON =
-  'Install is not available from planning — no workflow install API is exposed.'
-const QUEUE_DISABLED_REASON =
-  'Queue is not available from planning — no queue-from-catalog API is exposed.'
-const VALIDATE_DISABLED_REASON =
-  'Validate is not available from planning — no workflow validation API is exposed.'
-const ASSIGN_DISABLED_REASON =
-  'Assign to shot type is not available from planning — no workflow-to-shot assignment API is exposed on this surface.'
+export type DemoWorkflow = {
+  id: string
+  name: string
+  version: string
+  category: string
+  type: 'Image' | 'Video' | 'Utility'
+  family: string
+  installed: boolean
+  manifest: string
+  objectInfo: boolean
+  nodes: string[]
+  vae: string
+  encoder: string
+  resolution: string
+  frames: string
+  benchmark: string
+  vramRisk: string
+  validated: string
+  models: string[]
+  loras: string[]
+}
+
+/** Prototype mockProject.workflows — screenshot 2026-07-11 172759 SoT. */
+export const DEMO_WORKFLOWS: DemoWorkflow[] = [
+  {
+    id: 'wf-char',
+    name: 'Character Reference Studio',
+    version: '2.4.1',
+    category: 'Character image',
+    type: 'Image',
+    family: 'Flux / SDXL',
+    installed: true,
+    manifest: 'Approved',
+    objectInfo: true,
+    nodes: ['IPAdapter Plus', 'Impact Pack'],
+    vae: 'ae.safetensors',
+    encoder: 'T5-XXL + CLIP-L',
+    resolution: '1024² / 1536²',
+    frames: '1',
+    benchmark: 'A · 42 sec',
+    vramRisk: 'Ready',
+    validated: 'Jul 10, 2026',
+    models: ['Flux.1 Dev'],
+    loras: ['CineForge identity helper'],
+  },
+  {
+    id: 'wf-start',
+    name: 'Cinematic Starting Image',
+    version: '3.1.0',
+    category: 'Starting image',
+    type: 'Image',
+    family: 'Flux / SDXL',
+    installed: true,
+    manifest: 'Approved',
+    objectInfo: true,
+    nodes: ['ControlNet Aux', 'IPAdapter Plus'],
+    vae: 'SDXL VAE fp16',
+    encoder: 'CLIP-L/G',
+    resolution: '1920 × 1080',
+    frames: '1',
+    benchmark: 'A · 58 sec',
+    vramRisk: 'Ready',
+    validated: 'Jul 10, 2026',
+    models: ['SDXL CineForge Portrait'],
+    loras: [],
+  },
+  {
+    id: 'wf-wan',
+    name: 'Wan 2.2 Subtle I2V',
+    version: '1.8.3',
+    category: 'Wan video',
+    type: 'Video',
+    family: 'Wan 2.2',
+    installed: true,
+    manifest: 'Approved',
+    objectInfo: true,
+    nodes: ['WanVideoWrapper', 'VideoHelperSuite'],
+    vae: 'Wan VAE',
+    encoder: 'UMT5-XXL',
+    resolution: '1920 × 1080',
+    frames: '168–288',
+    benchmark: 'B · 7.8 min',
+    vramRisk: 'Review',
+    validated: 'Jul 9, 2026',
+    models: ['Wan 2.2 I2V'],
+    loras: ['subtle-motion-v2'],
+  },
+  {
+    id: 'wf-ltx',
+    name: 'LTX Cinematic I2V',
+    version: '2.0.2',
+    category: 'LTX video',
+    type: 'Video',
+    family: 'LTX-Video',
+    installed: true,
+    manifest: 'Approved',
+    objectInfo: true,
+    nodes: ['LTXVideo', 'VideoHelperSuite'],
+    vae: 'LTX VAE',
+    encoder: 'T5-XXL',
+    resolution: '1920 × 1080',
+    frames: '144–288',
+    benchmark: 'A · 6.2 min',
+    vramRisk: 'Ready',
+    validated: 'Jul 11, 2026',
+    models: ['LTX-Video 0.9.8'],
+    loras: [],
+  },
+  {
+    id: 'wf-cont',
+    name: 'Final Frame Continuity',
+    version: '1.3.5',
+    category: 'I2V continuity',
+    type: 'Utility',
+    family: 'Universal',
+    installed: true,
+    manifest: 'Review',
+    objectInfo: true,
+    nodes: ['Frame Extractor', 'Color Match'],
+    vae: 'Inherited',
+    encoder: 'Inherited',
+    resolution: 'Up to 4K',
+    frames: '1',
+    benchmark: 'A · 8 sec',
+    vramRisk: 'Ready',
+    validated: 'Jul 8, 2026',
+    models: [],
+    loras: [],
+  },
+  {
+    id: 'wf-up',
+    name: 'Production Upscale',
+    version: '1.2.0',
+    category: 'Upscale',
+    type: 'Utility',
+    family: 'ESRGAN',
+    installed: true,
+    manifest: 'Approved',
+    objectInfo: true,
+    nodes: ['Ultimate SD Upscale'],
+    vae: 'N/A',
+    encoder: 'N/A',
+    resolution: '1080p → 4K',
+    frames: 'Batch',
+    benchmark: 'B · 3.1 min',
+    vramRisk: 'Review',
+    validated: 'Jul 6, 2026',
+    models: ['4x-UltraSharp'],
+    loras: [],
+  },
+  {
+    id: 'wf-int',
+    name: 'Motion Interpolation',
+    version: '0.9.4',
+    category: 'Interpolation',
+    type: 'Utility',
+    family: 'RIFE',
+    installed: false,
+    manifest: 'Draft',
+    objectInfo: false,
+    nodes: ['ComfyUI-Frame-Interpolation'],
+    vae: 'N/A',
+    encoder: 'N/A',
+    resolution: 'Up to 1080p',
+    frames: '2× / 4×',
+    benchmark: 'Needs benchmark',
+    vramRisk: 'Missing',
+    validated: 'Not validated',
+    models: ['RIFE 4.9'],
+    loras: [],
+  },
+]
+
 const DOWNLOAD_POLICY_MESSAGE =
-  'CineForge may list missing models or nodes from registered evidence, but this planning surface never downloads files or changes ComfyUI. A production download would require an explicit install API and user approval.'
-const CATALOG_INVENTORY_NOTE =
-  'Model, LoRA, and custom-node inventories are not returned by the workflow-template list endpoint.'
+  'CineForge may recommend missing models or nodes, but this planning surface never downloads files or changes ComfyUI. A production download would require an explicit install API and user approval.'
+const ASSIGN_DISABLED_REASON =
+  'Assign to shot type is a planning action in production — no workflow-to-shot assignment API is exposed on this surface yet.'
 
-/** Evidence-only claim label: true → whenTrue, otherwise “Not claimed” (never invent missing/failed). */
-function claimLabel(claimed: boolean | undefined, whenTrue: string): string {
-  return claimed === true ? whenTrue : 'Not claimed'
-}
+const RUNTIME_NOTE = 'ComfyUI mock connection · object_info inventory refreshed 8 min ago'
 
-function humanizeStatus(value: string | null | undefined): string {
-  if (!value) return 'Unknown'
-  return value
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(' ')
-}
-
-function shortSha(sha: string): string {
-  if (sha.length <= 12) return sha
-  return `${sha.slice(0, 8)}…${sha.slice(-4)}`
-}
-
-/** Filter chips from registration / claim evidence only (catalog has no mock categories). */
-function filterCategory(wf: RuntimeCatalogWorkflowTemplate): string {
-  if (wf.claims.installed === true) return 'Installed claim'
-  if (wf.claims.validated === true) return 'Validated claim'
-  if (wf.claims.benchmarked === true) return 'Benchmarked claim'
-  return humanizeStatus(wf.registration_status)
-}
-
-/** Manifest column pill: install claim only when catalog claims.installed; else presence fact. */
-function manifestPill(wf: RuntimeCatalogWorkflowTemplate): string {
-  if (wf.claims.installed === true) return 'Installed'
-  if (wf.has_manifest) return 'Recorded'
-  return 'Missing'
-}
-
-function needsBenchmark(wf: RuntimeCatalogWorkflowTemplate): boolean {
-  if (wf.claims.benchmarked === true) return false
-  const bench = (wf.benchmark_status || '').toLowerCase()
-  return bench.includes('need') || bench === 'unknown' || !bench
+function typeIcon(type: DemoWorkflow['type']): IconName {
+  if (type === 'Video') return 'film'
+  if (type === 'Image') return 'image'
+  return 'layers'
 }
 
 export function WorkflowsPage() {
   const { data, busy, setMessage } = useStudio()
-  const [workflows, setWorkflows] = useState<RuntimeCatalogWorkflowTemplate[] | null>(null)
-  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
-  const [available, setAvailable] = useState(true)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState('')
+  const [workflows, setWorkflows] = useState<DemoWorkflow[]>(() =>
+    DEMO_WORKFLOWS.map((w) => ({ ...w, models: [...w.models], loras: [...w.loras], nodes: [...w.nodes] })),
+  )
+  const [selectedId, setSelectedId] = useState(DEMO_WORKFLOWS[0]?.id ?? '')
   const [filter, setFilter] = useState('All')
+  const [validating, setValidating] = useState('')
 
-  const load = useCallback(async () => {
-    if (!data) return
-    setLoading(true)
-    setError(null)
-    try {
-      const [wf, rt] = await Promise.all([
-        api.listRuntimeWorkflowTemplates(),
-        api.runtimeStatus().catch(() => null),
-      ])
-      setRuntime(rt)
-      if (wf == null) {
-        setAvailable(false)
-        setWorkflows(null)
-      } else {
-        setAvailable(true)
-        setWorkflows(wf)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load workflows.')
-    } finally {
-      setLoading(false)
-    }
-  }, [data])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
-  }, [load])
-
-  const listAll = useMemo(() => workflows ?? [], [workflows])
-
-  const categories = useMemo(() => {
-    const set = new Set(listAll.map((wf) => filterCategory(wf)))
-    return ['All', ...Array.from(set)]
-  }, [listAll])
-
-  const list = useMemo(
-    () => (filter === 'All' ? listAll : listAll.filter((wf) => filterCategory(wf) === filter)),
-    [filter, listAll],
+  const categories = useMemo(
+    () => ['All', ...Array.from(new Set(workflows.map((w) => w.category)))],
+    [workflows],
   )
 
-  const effectiveSelectedId = list.some((wf) => wf.id === selectedId)
-    ? selectedId
-    : list[0]?.id ?? listAll[0]?.id ?? ''
-  const selected =
-    listAll.find((wf) => wf.id === effectiveSelectedId) ??
-    list.find((wf) => wf.id === effectiveSelectedId) ??
-    null
+  const list = useMemo(
+    () => (filter === 'All' ? workflows : workflows.filter((w) => w.category === filter)),
+    [filter, workflows],
+  )
 
-  const summary = useMemo(() => {
-    let installedClaims = 0
-    let validatedClaims = 0
-    let needsBenchmarkCount = 0
-    for (const wf of listAll) {
-      if (wf.claims.installed === true) installedClaims += 1
-      if (wf.claims.validated === true) validatedClaims += 1
-      if (needsBenchmark(wf)) needsBenchmarkCount += 1
-    }
-    return {
-      templates: listAll.length,
-      installedClaims,
-      validatedClaims,
-      needsBenchmark: needsBenchmarkCount,
-    }
-  }, [listAll])
+  const effectiveSelectedId = list.some((w) => w.id === selectedId)
+    ? selectedId
+    : list[0]?.id ?? workflows[0]?.id ?? ''
+  const selected =
+    workflows.find((w) => w.id === effectiveSelectedId) ?? list[0] ?? null
+
+  const summary = useMemo(
+    () => ({
+      templates: workflows.length,
+      installed: workflows.filter((w) => w.installed).length,
+      validManifests: workflows.filter((w) => w.manifest === 'Approved').length,
+      needsBenchmark: workflows.filter((w) => w.benchmark.includes('Needs')).length,
+    }),
+    [workflows],
+  )
+
+  const validate = useCallback(
+    (workflow: DemoWorkflow) => {
+      setValidating(workflow.id)
+      window.setTimeout(() => {
+        setValidating('')
+        setWorkflows((prev) =>
+          prev.map((w) =>
+            w.id === workflow.id
+              ? {
+                  ...w,
+                  manifest: w.installed ? 'Approved' : 'Review',
+                  objectInfo: w.installed,
+                  validated: 'Just now',
+                }
+              : w,
+          ),
+        )
+        setMessage(
+          workflow.installed
+            ? `${workflow.name} validated against the demo object_info inventory.`
+            : `${workflow.name} still has missing dependencies in the demo catalog.`,
+        )
+      }, 700)
+    },
+    [setMessage],
+  )
 
   if (!data) return null
-
-  const objectInfoNote = runtime?.object_info?.available
-    ? `object_info available${
-        runtime.object_info.class_count != null
-          ? ` (${runtime.object_info.class_count} classes)`
-          : ''
-      }`
-    : 'object_info unavailable'
-
-  const runtimeNote = runtime
-    ? `ComfyUI ${String(runtime.comfyui.status ?? 'unknown')} · ${objectInfoNote}`
-    : 'Runtime status unavailable'
-
-  const showTable = listAll.length > 0 && available && !loading
 
   return (
     <div className="page">
@@ -182,16 +285,13 @@ export function WorkflowsPage() {
             >
               Download policy
             </Button>
-            <Button onClick={() => void load()} disabled={loading || busy}>
-              Refresh
-            </Button>
             <Button
               variant="primary"
               icon="check"
-              disabled
-              title={VALIDATE_DISABLED_REASON}
+              onClick={() => selected && validate(selected)}
+              disabled={!selected || Boolean(validating) || busy}
             >
-              Validate selected
+              {validating ? 'Validating…' : 'Validate selected'}
             </Button>
           </div>
         }
@@ -204,38 +304,29 @@ export function WorkflowsPage() {
         </div>
         <div>
           <span>Installed</span>
-          <b>{summary.installedClaims}</b>
+          <b>{summary.installed}</b>
         </div>
         <div>
           <span>Valid manifests</span>
-          <b>{summary.validatedClaims}</b>
+          <b>{summary.validManifests}</b>
         </div>
         <div>
           <span>Needs benchmark</span>
           <b>{summary.needsBenchmark}</b>
         </div>
         <p>
-          <i /> {runtimeNote}
+          <i /> {RUNTIME_NOTE}
         </p>
       </div>
 
       <div className="workflow-layout">
         <div className="stack">
-          {loading ? <LoadingState title="Loading workflow registry…" /> : null}
-          {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
-
-          {!available && !loading ? (
-            <UnavailableState
-              title="Workflow registry API unavailable"
-              detail="Workflow readiness comes from the backend runtime registry. Install, validate, and queue actions are not offered from planning."
+          {workflows.length === 0 ? (
+            <EmptyState
+              title="No workflow templates"
+              detail="Demo catalog is empty — restore A New Journey Phase A fixtures."
             />
-          ) : null}
-
-          {!loading && available && listAll.length === 0 ? (
-            <EmptyState title="No workflows registered" detail="Registry returned an empty list." />
-          ) : null}
-
-          {showTable ? (
+          ) : (
             <>
               <div className="filter-row">
                 {categories.map((category) => (
@@ -259,50 +350,48 @@ export function WorkflowsPage() {
                   <span role="columnheader">VRAM</span>
                   <span role="columnheader">Validated</span>
                 </div>
-                {list.map((wf) => {
-                  const isSelected = selected?.id === wf.id
+                {list.map((w) => {
+                  const isSelected = selected?.id === w.id
                   return (
                     <button
-                      key={wf.id}
+                      key={w.id}
                       type="button"
                       role="row"
                       className={isSelected ? 'selected' : ''}
-                      onClick={() => setSelectedId(wf.id)}
+                      onClick={() => setSelectedId(w.id)}
                       aria-pressed={isSelected}
                     >
                       <span role="cell">
-                        <b>{wf.name}</b>
+                        <b>{w.name}</b>
                         <small>
-                          v{wf.version} · {humanizeStatus(wf.registration_status)}
+                          v{w.version} · {w.category}
                         </small>
                       </span>
                       <span role="cell">
-                        <b>Not recorded</b>
-                        <small>family not recorded</small>
+                        <b>{w.type}</b>
+                        <small>{w.family}</small>
                       </span>
                       <span role="cell">
-                        <StatusPill status={manifestPill(wf)} />
+                        <StatusPill status={w.installed ? 'Installed' : 'Missing'} />
                         <small>
-                          {wf.has_manifest ? 'manifest present' : 'manifest not recorded'}
-                          {' · '}
-                          {objectInfoNote}
+                          {w.objectInfo ? 'object_info compatible' : 'object_info unavailable'}
                         </small>
                       </span>
                       <span role="cell">
-                        Not recorded
-                        <small>frames not recorded</small>
+                        {w.resolution}
+                        <small>{w.frames} frames</small>
                       </span>
-                      <span role="cell">{humanizeStatus(wf.benchmark_status)}</span>
+                      <span role="cell">{w.benchmark}</span>
                       <span role="cell">
-                        <StatusPill status="Not recorded" />
+                        <StatusPill status={w.vramRisk} />
                       </span>
-                      <span role="cell">{claimLabel(wf.claims.validated, 'Validated')}</span>
+                      <span role="cell">{w.validated}</span>
                     </button>
                   )
                 })}
               </div>
             </>
-          ) : null}
+          )}
         </div>
 
         <aside className="entity-drawer workflow-drawer" aria-label="Workflow template detail">
@@ -313,114 +402,99 @@ export function WorkflowsPage() {
                   <span className="eyebrow">WORKFLOW MANIFEST</span>
                   <h2>{selected.name}</h2>
                 </div>
-                <StatusPill status={humanizeStatus(selected.registration_status)} />
+                <StatusPill status={selected.manifest} />
               </header>
 
               <div className="workflow-hero">
                 <span className="art-icon">
-                  <Icon name="layers" size={24} />
+                  <Icon name={typeIcon(selected.type)} size={24} />
                 </span>
                 <div>
-                  <b>v{selected.version}</b>
+                  <b>{selected.category}</b>
                   <small>
-                    {shortSha(selected.sha256)}
-                    {selected.comfyui_commit?.trim()
-                      ? ` · Comfy ${selected.comfyui_commit.slice(0, 8)}`
-                      : ' · family not recorded'}
+                    {selected.family} · v{selected.version}
                   </small>
                 </div>
-                <StatusPill
-                  status={
-                    selected.claims.installed === true ? 'Installed' : 'Not installed'
-                  }
-                />
+                <StatusPill status={selected.installed ? 'Installed' : 'Not installed'} />
               </div>
 
               <dl className="detail-list">
                 <div>
                   <dt>Purpose</dt>
-                  <dd>Runtime catalog production template</dd>
+                  <dd>{selected.category} production template</dd>
                 </div>
                 <div>
                   <dt>VAE</dt>
-                  <dd>Not recorded</dd>
+                  <dd>{selected.vae}</dd>
                 </div>
                 <div>
                   <dt>Text encoder</dt>
-                  <dd>Not recorded</dd>
+                  <dd>{selected.encoder}</dd>
                 </div>
                 <div>
                   <dt>Resolution</dt>
-                  <dd>Not recorded</dd>
+                  <dd>{selected.resolution}</dd>
                 </div>
                 <div>
                   <dt>Frame support</dt>
-                  <dd>Not recorded</dd>
+                  <dd>{selected.frames}</dd>
                 </div>
                 <div>
                   <dt>Benchmark tier</dt>
-                  <dd>
-                    {humanizeStatus(selected.benchmark_status)}
-                    {selected.benchmark_run_count
-                      ? ` · ${selected.benchmark_run_count} run(s)`
-                      : ''}
-                  </dd>
+                  <dd>{selected.benchmark}</dd>
                 </div>
                 <div>
                   <dt>VRAM status</dt>
                   <dd>
-                    <StatusPill status="Not recorded" />
+                    <StatusPill status={selected.vramRisk} />
                   </dd>
                 </div>
               </dl>
 
               <div className="dependency-block">
                 <h3>Required models</h3>
-                <p>{CATALOG_INVENTORY_NOTE}</p>
+                {selected.models.length ? (
+                  selected.models.map((m) => (
+                    <span key={m}>
+                      <Icon name={selected.installed ? 'check' : 'warning'} />
+                      {m}
+                    </span>
+                  ))
+                ) : (
+                  <p>Inherits the assigned shot model.</p>
+                )}
                 <h3>Required LoRAs</h3>
-                <p>{CATALOG_INVENTORY_NOTE}</p>
+                {selected.loras.length ? (
+                  selected.loras.map((l) => (
+                    <span key={l}>
+                      <Icon name="check" />
+                      {l}
+                    </span>
+                  ))
+                ) : (
+                  <p>No LoRA required.</p>
+                )}
                 <h3>Custom nodes</h3>
-                <p>{CATALOG_INVENTORY_NOTE}</p>
-                <h3>Evidence claims</h3>
-                <span>
-                  <Icon name={selected.claims.installed === true ? 'check' : 'warning'} />
-                  Installed: {claimLabel(selected.claims.installed, 'Claimed')}
-                </span>
-                <span>
-                  <Icon name={selected.claims.validated === true ? 'check' : 'warning'} />
-                  Validated: {claimLabel(selected.claims.validated, 'Claimed')}
-                </span>
-                <span>
-                  <Icon name={selected.claims.benchmarked === true ? 'check' : 'warning'} />
-                  Benchmarked: {claimLabel(selected.claims.benchmarked, 'Claimed')}
-                </span>
-                <span>
-                  <Icon name={selected.claims.comfy_reachable === true ? 'check' : 'warning'} />
-                  Comfy reachable: {claimLabel(selected.claims.comfy_reachable, 'Claimed')}
-                </span>
-                <p>
-                  Claim flags mean recorded evidence only — false is “not claimed,” not a negative
-                  runtime probe. Registered {formatDate(selected.created_at)} · SHA {shortSha(selected.sha256)} ·
-                  manifest {selected.has_manifest ? 'present' : 'not recorded'} · API{' '}
-                  {selected.has_workflow_api ? 'present' : 'not recorded'}
-                  {selected.comfyui_commit?.trim()
-                    ? ` · Comfy ${selected.comfyui_commit.slice(0, 8)}`
-                    : ''}
-                </p>
+                {selected.nodes.map((n) => (
+                  <span key={n}>
+                    <Icon name={selected.installed ? 'check' : 'warning'} />
+                    {n}
+                  </span>
+                ))}
               </div>
 
               <div className="validation-results">
-                <Icon name={selected.claims.validated === true ? 'check' : 'warning'} />
+                <Icon name={selected.installed ? 'check' : 'warning'} />
                 <span>
                   <b>
-                    {selected.claims.validated === true
+                    {selected.installed
                       ? 'Manifest structurally valid'
-                      : 'Validation claim not recorded'}
+                      : 'Dependencies incomplete'}
                   </b>
                   <small>
-                    {selected.claims.validated === true
-                      ? 'A validation claim is present in catalog evidence.'
-                      : VALIDATE_DISABLED_REASON}
+                    {selected.objectInfo
+                      ? 'Nodes match the current object_info inventory.'
+                      : 'Install is intentionally unavailable in this prototype.'}
                   </small>
                 </span>
               </div>
@@ -433,16 +507,16 @@ export function WorkflowsPage() {
                       JSON.stringify(
                         {
                           id: selected.id,
-                          name: selected.name,
                           version: selected.version,
-                          sha256: selected.sha256,
-                          comfyui_commit: selected.comfyui_commit,
-                          registration_status: selected.registration_status,
-                          has_manifest: selected.has_manifest,
-                          has_workflow_api: selected.has_workflow_api,
-                          benchmark_status: selected.benchmark_status,
-                          benchmark_run_count: selected.benchmark_run_count,
-                          claims: selected.claims,
+                          family: selected.family,
+                          resolution: selected.resolution,
+                          nodes: selected.nodes,
+                          models: selected.models,
+                          loras: selected.loras,
+                          vae: selected.vae,
+                          encoder: selected.encoder,
+                          benchmark: selected.benchmark,
+                          installed: selected.installed,
                         },
                         null,
                         2,
@@ -456,30 +530,20 @@ export function WorkflowsPage() {
                 <Button disabled title={ASSIGN_DISABLED_REASON}>
                   Assign to shot type
                 </Button>
-                <Button disabled title={INSTALL_DISABLED_REASON} icon="download">
-                  Install
-                </Button>
-                <Button disabled title={QUEUE_DISABLED_REASON} icon="play">
-                  Queue
-                </Button>
                 <Button
                   variant="primary"
-                  disabled
-                  title={VALIDATE_DISABLED_REASON}
                   icon="check"
+                  onClick={() => validate(selected)}
+                  disabled={Boolean(validating) || busy}
                 >
-                  Validate
+                  {validating === selected.id ? 'Validating…' : 'Validate'}
                 </Button>
               </footer>
             </>
           ) : (
             <EmptyState
               title="No template selected"
-              detail={
-                loading
-                  ? 'Loading registry…'
-                  : 'Select a workflow template to inspect catalog evidence.'
-              }
+              detail="Select a workflow template to inspect catalog evidence."
             />
           )}
         </aside>

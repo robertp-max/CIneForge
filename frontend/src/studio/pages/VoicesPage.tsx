@@ -102,7 +102,7 @@ function Waveform({ active = false }: { active?: boolean }) {
       title="Decorative placeholder only — not real audio"
     >
       {WAVEFORM_BARS.map((height, index) => (
-        <i key={index} style={{ height }} />
+        <i key={index} className="wave-bar" style={{ height: `${height}px` }} />
       ))}
     </div>
   )
@@ -618,101 +618,99 @@ export function VoicesPage() {
       ) : null}
 
       <div className="voice-layout">
-        <div className="stack">
-          {!voices.length ? (
-            <Empty
-              title="No voice profiles"
-              detail="Add a planning voice using one of the eight source modes."
-              action={
-                <Button type="button" variant="primary" icon="plus" onClick={onAddClick}>
-                  Add voice profile
-                </Button>
-              }
-            />
-          ) : (
-            <div className="voice-grid">
-              {voices.map((voice) => {
-                const assignedCharacter = data.characters.find(
-                  (character) => character.id === voice.character_id,
-                )
-                const linkedShots = shots.filter(
-                  (shot) => shot.narration_voice_profile_id === voice.id,
-                ).length
-                const selectedCard = effectiveSelectedId === voice.id && drawerTab !== 'create'
-                return (
-                  <article
-                    key={voice.id}
-                    role="button"
-                    tabIndex={0}
-                    className={selectedCard ? 'selected' : undefined}
-                    aria-pressed={selectedCard}
-                    onClick={() => selectVoice(voice)}
-                    onKeyDown={(event) => onCardKeyDown(event, voice)}
-                  >
-                    <header>
-                      <span className={`voice-icon voice-${voiceIconSuffix(voice.id)}`}>
-                        <Icon name="mic" />
-                      </span>
-                      <span>
-                        <small>{sourceTypeLabel(voice)}</small>
-                        <b>{voice.name}</b>
-                      </span>
-                      <StatusPill status={approvalPillLabel(voice.approval_state)} />
-                    </header>
+        {!voices.length ? (
+          <Empty
+            title="No voice profiles"
+            detail="Add a planning voice using one of the eight source modes."
+            action={
+              <Button type="button" variant="primary" icon="plus" onClick={onAddClick}>
+                Add voice profile
+              </Button>
+            }
+          />
+        ) : (
+          <div className="voice-grid">
+            {voices.map((voice) => {
+              const assignedCharacter = data.characters.find(
+                (character) => character.id === voice.character_id,
+              )
+              const linkedShots = shots.filter(
+                (shot) => shot.narration_voice_profile_id === voice.id,
+              ).length
+              const selectedCard = effectiveSelectedId === voice.id && drawerTab !== 'create'
+              return (
+                <article
+                  key={voice.id}
+                  role="button"
+                  tabIndex={0}
+                  className={selectedCard ? 'selected' : undefined}
+                  aria-pressed={selectedCard}
+                  onClick={() => selectVoice(voice)}
+                  onKeyDown={(event) => onCardKeyDown(event, voice)}
+                >
+                  <header>
+                    <span className={`voice-icon voice-${voiceIconSuffix(voice.id)}`}>
+                      <Icon name="mic" />
+                    </span>
+                    <span>
+                      <small>{sourceTypeLabel(voice)}</small>
+                      <b>{voice.name}</b>
+                    </span>
+                    <StatusPill status={approvalPillLabel(voice.approval_state)} />
+                  </header>
 
-                    <Waveform active={playing === voice.id} />
+                  <Waveform active={playing === voice.id} />
 
-                    <div className="voice-tags">
-                      <span>{voice.language || '—'}</span>
-                      <span>{voice.accent || '—'}</span>
-                      <span>{voice.tone || sourceTypeLabel(voice)}</span>
+                  <div className="voice-tags">
+                    <span>{voice.language?.trim() || 'English'}</span>
+                    <span>{voice.accent?.trim() || 'Neutral'}</span>
+                    <span>{voice.tone?.trim() || sourceTypeLabel(voice)}</span>
+                  </div>
+
+                  <dl>
+                    <div>
+                      <dt>Provider</dt>
+                      <dd>{voice.provider?.trim() || 'Unassigned'}</dd>
                     </div>
+                    <div>
+                      <dt>Assigned</dt>
+                      <dd>{assignedCharacter?.name ?? 'Unassigned'}</dd>
+                    </div>
+                    <div>
+                      <dt>Narration</dt>
+                      <dd>{linkedShots} shots</dd>
+                    </div>
+                  </dl>
 
-                    <dl>
-                      <div>
-                        <dt>Provider</dt>
-                        <dd>{voice.provider?.trim() || 'Unassigned'}</dd>
-                      </div>
-                      <div>
-                        <dt>Assigned</dt>
-                        <dd>{assignedCharacter?.name ?? 'Unassigned'}</dd>
-                      </div>
-                      <div>
-                        <dt>Narration</dt>
-                        <dd>{linkedShots} shots</dd>
-                      </div>
-                    </dl>
-
-                    <footer>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          playPlaceholder(voice.id)
-                        }}
-                        title="Decorative placeholder only — not real audio"
-                      >
-                        <Icon name={playing === voice.id ? 'close' : 'play'} />
-                        {playing === voice.id ? 'Stop' : 'Preview'}
-                      </button>
-                      {voice.consent_confirmed || !voice.consent_required ? (
-                        <span className="safe">
-                          <Icon name="check" />
-                          Source clear
-                        </span>
-                      ) : (
-                        <span className="unsafe">
-                          <Icon name="warning" />
-                          Consent required
-                        </span>
-                      )}
-                    </footer>
-                  </article>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                  <footer>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        playPlaceholder(voice.id)
+                      }}
+                      title="Decorative placeholder only — not real audio"
+                    >
+                      <Icon name={playing === voice.id ? 'close' : 'play'} />
+                      {playing === voice.id ? 'Stop' : 'Preview'}
+                    </button>
+                    {voice.consent_confirmed || !voice.consent_required ? (
+                      <span className="safe">
+                        <Icon name="check" />
+                        Source clear
+                      </span>
+                    ) : (
+                      <span className="unsafe">
+                        <Icon name="warning" />
+                        Consent required
+                      </span>
+                    )}
+                  </footer>
+                </article>
+              )
+            })}
+          </div>
+        )}
 
         <aside className="entity-drawer" aria-label="Voice profile drawer">
           <header>

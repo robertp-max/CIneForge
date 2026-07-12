@@ -4,7 +4,7 @@
  *
  * DOM hierarchy matches ZIP prototype + Screenshot 2026-07-11 172736:
  * page-title (CHARACTER BIBLE + Needs review / Create character) →
- * character-layout → stack (segmented filter + character-grid cards) |
+ * character-layout → stack (segmented filter + 2×2 character-grid cards) |
  * entity-drawer (portrait, reference-strip, Identity / Linked shots / Continuity tabs,
  * identity field stack ending in a single Save character bible control).
  *
@@ -25,6 +25,7 @@ import {
 import { Button, Empty, Icon, PageTitle, StatusPill } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
+import { DEMO_APPROVED_OUTFITS } from '../demoPhaseA'
 import { initials } from '../utils'
 
 const REFERENCE_ROLES = ['primary', 'alternate', 'expression', 'costume', 'detail'] as const
@@ -87,8 +88,13 @@ function characterVoiceName(character: Character, voices: Voice[]): string {
   return associated?.name ?? 'Voice missing'
 }
 
-/** Display-only outfit chips (no outfits API field) — short wardrobe phrases. */
+/**
+ * Display-only outfit chips (no outfits API field).
+ * Prefer demo approved-outfit names (REF 172736), else short wardrobe phrases.
+ */
 function outfitTokens(character: Character): string[] {
+  const demo = DEMO_APPROVED_OUTFITS[character.id]
+  if (demo?.length) return demo.slice(0, 4)
   const wardrobe = character.wardrobe?.trim()
   if (!wardrobe) return []
   return wardrobe
@@ -370,7 +376,7 @@ export function CharactersPage() {
         setMessage('Character edit API is unavailable; no changes were persisted.')
         return
       }
-      // Optional voice pick on Identity select: assign mutable profile when user chose one.
+      // If Linked tab pre-selected a mutable voice, persist association with the identity save.
       if (selectedVoiceId && selectedVoice && selectedVoice.approval_state !== 'approved') {
         const voiceResult = await api.updateVoice(selectedVoice.id, {
           character_id: selectedCharacter.id,
@@ -902,27 +908,7 @@ export function CharactersPage() {
                     title={fieldsDisabledReason}
                   />
                 </label>
-                <label>
-                  Voice assignment
-                  <select
-                    value={
-                      selectedVoiceId ||
-                      selectedCharacter.assigned_voice_profile_id ||
-                      associatedVoices[0]?.id ||
-                      ''
-                    }
-                    onChange={(event) => setSelectedVoiceId(event.target.value)}
-                    disabled={Boolean(fieldsDisabledReason)}
-                    title={fieldsDisabledReason}
-                  >
-                    <option value="">Unassigned</option>
-                    {data.voices.map((voice) => (
-                      <option key={voice.id} value={voice.id}>
-                        {voice.name} · {voice.approval_state}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {/* Voice assignment lives on Linked shots (REF Identity stack ends at prompts). */}
                 {/* Proto always renders a single Save control; disable when not editing. */}
                 <Button type="submit" variant="primary" disabled={Boolean(saveReason)} title={saveReason}>
                   {saving && edit ? 'Saving…' : 'Save character bible'}

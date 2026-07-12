@@ -19,8 +19,14 @@ export function countShots(
   )
 }
 
+/** Skip honorifics so “Dr. Maya Chen” → MC (matches REF 172736 portrait chips). */
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
+  const honorifics = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'prof', 'prof.'])
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((part) => !honorifics.has(part.toLowerCase()))
   if (!parts.length) return '??'
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()

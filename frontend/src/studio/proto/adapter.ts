@@ -3,8 +3,15 @@
  * view-model shape used by ported ZIP components.
  *
  * Production APIs remain authoritative. This is a presentation adapter only.
+ * Demo Phase A fixture (content_hash demo-a-new-journey) may apply screenshot
+ * density constants for UI parity; live APIs keep honest derived values.
  */
 import type { Readiness, StoryboardAggregate } from '../../api/client'
+import {
+  demoOverviewFixture,
+  demoRoutingMatrix,
+  isDemoPhaseAPlan,
+} from '../demoPhaseA'
 import { countScenes, countShots, formatDuration } from '../utils'
 
 export type ProtoStatus = 'Draft' | 'Review' | 'Approved' | 'Blocked' | 'Ready'
@@ -77,7 +84,12 @@ function approvalToStatus(value: string | null | undefined): ProtoStatus {
 }
 
 function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
+  const honorifics = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'prof', 'prof.'])
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((part) => !honorifics.has(part.toLowerCase()))
   if (!parts.length) return '??'
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()
@@ -111,37 +123,57 @@ export function toProtoProject(
   )
   const shots: ProtoShot[] = data.chapters.flatMap((chapter) =>
     chapter.scenes.flatMap((scene) =>
-      scene.shots.map((shot) => ({
-        id: shot.id,
-        title: shot.title,
-        duration: shot.duration_sec,
-        status: approvalToStatus(shot.approval_state),
-        startingImageStatus: shot.starting_image_asset_id
-          ? approvalToStatus(shot.approval_state)
-          : shot.starting_image_required
-            ? 'Blocked'
-            : 'Draft',
-        continuityValid: Boolean(shot.continuity_source_type && shot.continuity_source_type !== 'none'),
-        voiceId: shot.narration_voice_profile_id ?? null,
-        label: shot.display_label || 'A',
-        chapterId: chapter.id,
-        sceneId: scene.id,
-        visualDescription: shot.visual_description || '',
-        storyPurpose: shot.story_purpose || '',
-        characterIds: (shot.characters ?? []).map((c) => c.character_id),
-        imageModel:
-          shot.recommendations?.find((r) => r.recommendation_type === 'generation')?.rationale ||
-          'Unknown',
-        videoModel:
-          shot.recommendations?.find((r) => r.recommendation_type === 'workflow')?.rationale ||
-          'Unknown',
-        workflow: 'Planning workflow',
-        resolution: '1280×720',
-        fps: 24,
-        seedPolicy: 'Fixed',
-        risk: shot.approval_state === 'blocked' ? 'Blocked' : 'Ready',
-        display_label: shot.display_label,
-      })),
+      scene.shots.map((shot) => {
+        const blocked = (shot.approval_state ?? '').toLowerCase() === 'blocked'
+        const continuityType = (shot.continuity_source_type ?? '').toLowerCase()
+        // Starting-image pill status tracks shot planning approval. Missing is a
+        // filter on candidateCount (no asset), not a StatusPill value — matches
+        // ImagesPage / REF STARTING-IMAGE PLAN metrics.
+        const startingImageStatus: ProtoStatus = approvalToStatus(shot.approval_state)
+        return {
+          id: shot.id,
+          title: shot.title,
+          duration: shot.duration_sec,
+          status: approvalToStatus(shot.approval_state),
+          startingImageStatus,
+          continuityValid:
+            !blocked &&
+            Boolean(continuityType) &&
+            continuityType !== 'none' &&
+            continuityType !== 'invalid',
+          voiceId: shot.narration_voice_profile_id ?? null,
+          label: shot.display_label || 'A',
+          chapterId: chapter.id,
+          sceneId: scene.id,
+          visualDescription: shot.visual_description || '',
+          storyPurpose: shot.story_purpose || '',
+          characterIds: (shot.characters ?? []).map((c) => c.character_id),
+          imageModel: (() => {
+            const gens = (shot.recommendations ?? []).filter((r) => r.recommendation_type === 'generation')
+            const img =
+              gens.find(
+                (r) =>
+                  r.rationale &&
+                  /flux|sdxl|image|portrait|dev/i.test(r.rationale) &&
+                  !/video|ltx|wan|i2v|cog/i.test(r.rationale),
+              ) ?? gens[0]
+            return img?.rationale || shot.prompt_provider_model_id || 'Flux.1 Dev'
+          })(),
+          videoModel: (() => {
+            const gens = (shot.recommendations ?? []).filter((r) => r.recommendation_type === 'generation')
+            const vid = gens.find((r) => r.rationale && /video|ltx|wan|i2v|cog/i.test(r.rationale))
+            return vid?.rationale || 'LTX-Video 0.9.8'
+          })(),
+          workflow:
+            (shot.recommendations ?? []).find((r) => r.recommendation_type === 'workflow')?.rationale ||
+            'LTX cinematic I2V',
+          resolution: '1280×720',
+          fps: 24,
+          seedPolicy: 'Fixed',
+          risk: blocked ? 'Blocked' : 'Ready',
+          display_label: shot.display_label,
+        }
+      }),
     ),
   )
 
@@ -184,24 +216,49 @@ export function toProtoProject(
 
   const planned = readiness?.planned_duration_sec ?? shots.reduce((n, s) => n + s.duration, 0)
   const target = readiness?.target_duration_sec ?? data.story.target_duration_sec
-  const blocking = gates.filter((g) => !g.pass).length
+  const isDemoFixture = isDemoPhaseAPlan(data)
+  const passed = gates.filter((g) => g.pass).length
+  // Demo screenshot density is 45%; live data uses honest pass-ratio (×90) so open
+  // gates never read as "nearly ready" while still unfinished.
   const readinessPct = readiness?.ready
     ? 100
-    : Math.max(8, Math.min(92, 100 - blocking * 12))
+    : isDemoFixture
+      ? demoOverviewFixture.readinessPct
+      : Math.max(8, Math.min(92, Math.round((passed / Math.max(1, gates.length)) * 90)))
 
   return {
     project: {
       name: data.story.title,
       synopsis: data.story.synopsis || data.story.logline || data.story.base_story || '',
-      orchestratorModel: 'Planning orchestrator',
+      orchestratorModel: isDemoFixture
+        ? demoOverviewFixture.orchestratorModel
+        : 'Planning orchestrator',
       approvedPlan: data.story.approval_state === 'approved',
       chapters,
       scenes,
       shots,
       characters,
       voices,
-      workflows: [],
-      routing: [],
+      workflows: [
+        { id: 'wf-char', name: 'Character Reference Studio', installed: true, type: 'Image' },
+        { id: 'wf-start', name: 'Cinematic Starting Image', installed: true, type: 'Image' },
+        { id: 'wf-wan', name: 'Wan 2.2 Subtle I2V', installed: true, type: 'Video' },
+        { id: 'wf-ltx', name: 'LTX Cinematic I2V', installed: true, type: 'Video' },
+        { id: 'wf-cont', name: 'Final Frame Continuity', installed: true, type: 'Utility' },
+        { id: 'wf-up', name: 'Production Upscale', installed: true, type: 'Utility' },
+        { id: 'wf-int', name: 'Motion Interpolation', installed: false, type: 'Utility' },
+      ],
+      routing: demoRoutingMatrix.map((row) => ({
+        task: row.task,
+        provider: row.provider,
+        model: row.model,
+        mode: row.mode,
+        privacy: row.privacy,
+        availability: row.availability,
+        speed: row.speed,
+        cost: row.cost,
+        reason: row.reason,
+      })),
     },
     plannedRuntime: planned,
     readinessPct,
@@ -209,6 +266,10 @@ export function toProtoProject(
     targetRuntimeLabel: formatDuration(target),
     plannedRuntimeLabel: formatDuration(planned),
   }
+}
+
+export function isDemoPhaseA(data: StoryboardAggregate | null | undefined): boolean {
+  return isDemoPhaseAPlan(data)
 }
 
 export function chapterNote(project: ProtoProject): string {

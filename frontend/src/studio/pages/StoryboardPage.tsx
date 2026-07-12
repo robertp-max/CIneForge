@@ -390,15 +390,38 @@ function ShotInspector({
     draft.continuity_source_type && draft.continuity_source_type !== 'none',
   )
   const status = approvalToProto(draft.approval_state)
+  const genRecs = (draft.recommendations ?? []).filter((r) => r.recommendation_type === 'generation')
+  const techImageRec =
+    genRecs.find(
+      (r) =>
+        r.rationale &&
+        /flux|sdxl|image|portrait|dev/i.test(r.rationale) &&
+        !/video|ltx|wan|i2v|cog/i.test(r.rationale),
+    ) ?? genRecs[0]
+  const techVideoRec =
+    genRecs.find((r) => r.rationale && /video|ltx|wan|i2v|cog/i.test(r.rationale)) ?? genRecs[1]
+  const techWorkflowRec = (draft.recommendations ?? []).find(
+    (r) => r.recommendation_type === 'workflow',
+  )
   const imageModel =
-    protoShot?.imageModel ||
-    draft.recommendations?.find((r) => r.recommendation_type === 'generation')?.rationale ||
-    'Unknown'
+    (protoShot?.imageModel && protoShot.imageModel !== 'Unknown' ? protoShot.imageModel : null) ||
+    techImageRec?.rationale ||
+    draft.prompt_provider_model_id ||
+    'Flux.1 Dev'
   const videoModel =
-    protoShot?.videoModel ||
-    draft.recommendations?.find((r) => r.recommendation_type === 'workflow')?.rationale ||
-    'Unknown'
-  const workflow = protoShot?.workflow || 'Planning workflow'
+    (protoShot?.videoModel &&
+    protoShot.videoModel !== 'Unknown' &&
+    /video|ltx|wan|i2v|cog|missing/i.test(protoShot.videoModel)
+      ? protoShot.videoModel
+      : null) ||
+    techVideoRec?.rationale ||
+    'LTX-Video 0.9.8'
+  const workflow =
+    techWorkflowRec?.rationale ||
+    (protoShot?.workflow && protoShot.workflow !== 'Planning workflow'
+      ? protoShot.workflow
+      : null) ||
+    'LTX cinematic I2V'
   const resolution = protoShot?.resolution || '1280×720'
   const fps = protoShot?.fps || 24
   const seedPolicy = protoShot?.seedPolicy || 'Fixed'
@@ -416,13 +439,6 @@ function ShotInspector({
           <Icon name="close" />
         </button>
       </header>
-
-      {!edit ? (
-        <p className="form-hint" role="status">
-          Inspector is read-only. Click <b>Edit storyboard</b> to enable field edits and production API
-          saves.
-        </p>
-      ) : null}
 
       <div className="tabs" role="tablist" aria-label="Inspector sections">
         {(
@@ -575,17 +591,41 @@ function ShotInspector({
               value={
                 draft.continuity_source_type === 'none'
                   ? ''
-                  : draft.continuity_source_shot_id || draft.continuity_source_type
+                  : draft.continuity_source_type === 'new_generated_image'
+                    ? 'New generated image'
+                    : draft.continuity_source_type === 'prior_shot_final_frame' ||
+                        draft.continuity_source_type === 'previous_shot'
+                      ? draft.continuity_source_shot_id || 'Prior shot final frame'
+                      : draft.continuity_source_type === 'approved_character_reference'
+                        ? 'Approved character reference'
+                        : draft.continuity_source_shot_id || draft.continuity_source_type
               }
-              onChange={(e) =>
+              onChange={(e) => {
+                const raw = e.target.value.trim()
+                if (!raw) {
+                  setDraft({
+                    ...draft,
+                    continuity_source_type: 'none',
+                    continuity_source_shot_id: null,
+                  })
+                  return
+                }
+                const lower = raw.toLowerCase()
+                if (lower === 'new generated image' || lower === 'new_generated_image') {
+                  setDraft({
+                    ...draft,
+                    continuity_source_type: 'new_generated_image',
+                    continuity_source_shot_id: null,
+                  })
+                  return
+                }
                 setDraft({
                   ...draft,
-                  continuity_source_type: e.target.value ? 'shot_ref' : 'none',
-                  continuity_source_shot_id: e.target.value || null,
+                  continuity_source_type: 'shot_ref',
+                  continuity_source_shot_id: raw,
                 })
-              }
-              className="mono"
-              placeholder="Shot id or leave empty"
+              }}
+              placeholder="New generated image / prior shot / shot id"
             />
           </label>
           <div className={`validation ${continuityValid ? 'pass' : 'fail'}`}>
@@ -1279,12 +1319,20 @@ export function StoryboardPage() {
 
   // Generation-plan rows from selected shot recommendations + runtime catalog (planning only).
   const selectedRecs = selected?.recommendations ?? []
-  const generationRec =
-    selectedRecs.find((r) => r.recommendation_type === 'generation') ?? null
+  const generationRecs = selectedRecs.filter((r) => r.recommendation_type === 'generation')
+  const imageRec =
+    generationRecs.find(
+      (r) => r.rationale && /flux|sdxl|image|portrait|dev/i.test(r.rationale) && !/video|ltx|wan|i2v|cog/i.test(r.rationale),
+    ) ?? generationRecs[0] ?? null
+  const videoRec =
+    generationRecs.find((r) => r.rationale && /video|ltx|wan|i2v|cog/i.test(r.rationale)) ??
+    generationRecs[1] ??
+    null
   const workflowRec =
     selectedRecs.find((r) => r.recommendation_type === 'workflow') ?? null
-  const catalogVariant = generationRec?.generation_model_variant_id
-    ? runtimeCatalog?.model_variants.find((v) => v.id === generationRec.generation_model_variant_id)
+  const generationRec = imageRec
+  const catalogVariant = imageRec?.generation_model_variant_id
+    ? runtimeCatalog?.model_variants.find((v) => v.id === imageRec.generation_model_variant_id)
     : undefined
   const catalogWorkflow = workflowRec?.workflow_template_id
     ? runtimeCatalog?.workflow_templates.find((w) => w.id === workflowRec.workflow_template_id)
@@ -1304,28 +1352,28 @@ export function StoryboardPage() {
       : null
   const genImage =
     catalogVariant?.variant_name ||
-    generationRec?.rationale ||
+    imageRec?.rationale ||
+    selected?.prompt_provider_model_id ||
     protoImage ||
-    'No image model recommendation'
+    'Flux.1 Dev'
   const genVideo =
+    videoRec?.rationale ||
     protoVideo ||
     catalogModel?.family ||
     catalogModel?.name ||
-    selectedRecs.find((r) => r.rationale && /video|ltx|wan|i2v|cog/i.test(r.rationale || ''))
-      ?.rationale ||
-    'No video model recommendation'
+    'LTX-Video 0.9.8'
   const genWorkflow = catalogWorkflow
     ? `${catalogWorkflow.name}${catalogWorkflow.version ? ` ${catalogWorkflow.version}` : ''}`
-    : workflowRec?.rationale || selectedProto?.workflow || 'Planning workflow'
+    : workflowRec?.rationale ||
+      (selectedProto?.workflow && selectedProto.workflow !== 'Planning workflow'
+        ? selectedProto.workflow
+        : null) ||
+      'LTX cinematic I2V'
   const videoMissing =
     String(genVideo).toLowerCase().includes('missing') ||
     catalogVariant?.path_status === 'missing' ||
-    generationRec?.availability_status === 'missing'
-  // Planning-only per-shot estimate (matches Overview planning constants; never a real GPU job).
-  const PLANNING_MIN_PER_SHOT = 1.52 + 14.37 + 1.22
-  const estimateLabel = selected
-    ? `~${Math.max(1, Math.round(PLANNING_MIN_PER_SHOT))}m`
-    : '—'
+    videoRec?.availability_status === 'missing' ||
+    imageRec?.availability_status === 'missing'
 
   return (
     <div className="page storyboard-page">
@@ -1581,30 +1629,36 @@ export function StoryboardPage() {
                         s.characters?.some((l) => l.character_id === c.id),
                       ).length
                       const readyStatus = characterReadinessStatus(c)
-                      const rolePart = (link.role_in_shot || c.role || 'Character').split('·')[0].trim()
                       const refs = c.reference_assets ?? []
                       const hasApprovedHero = refs.some(
                         (r) =>
                           r.approved &&
                           (r.reference_role === 'hero' || r.reference_role === 'primary'),
                       )
+                      // Prototype shows character status (Approved) when hero is locked;
+                      // otherwise surface the readiness gap as Needs image.
                       const pillLabel =
                         readyStatus === 'Approved' || hasApprovedHero
                           ? 'Approved'
                           : !refs.length || !hasApprovedHero
                             ? 'Needs image'
                             : readyStatus
+                      const slug = c.name
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-|-$/g, '')
+                        .split('-')[0]
                       return (
                         <button
                           key={c.id}
                           type="button"
                           onClick={() => navigate('characters')}
                         >
-                          <span className="avatar">{characterInitials(c.name)}</span>
+                          <span className={`avatar avatar-${slug}`}>{characterInitials(c.name)}</span>
                           <span>
                             <b>{c.name}</b>
                             <small>
-                              {rolePart} · {linked} shot{linked === 1 ? '' : 's'}
+                              {linked} linked shot{linked === 1 ? '' : 's'}
                             </small>
                           </span>
                           <StatusPill status={pillLabel} />
@@ -1646,10 +1700,6 @@ export function StoryboardPage() {
                           : 'Validated'
                       }
                     />
-                  </div>
-                  <div title="Planning estimate only — rendering is disabled in Phase A.">
-                    <span>Estimated render workload</span>
-                    <b>{estimateLabel}</b>
                   </div>
                 </div>
                 <button

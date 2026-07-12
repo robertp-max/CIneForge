@@ -17,18 +17,17 @@ export type PageId =
 const primaryNav: {
   id: Exclude<PageId, 'settings'>
   label: string
-  short: string
   icon: IconName
 }[] = [
-  { id: 'overview', label: 'Overview', short: 'Overview', icon: 'grid' },
-  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: 'film' },
-  { id: 'story', label: 'Story & chapters', short: 'Story', icon: 'book' },
-  { id: 'characters', label: 'Characters', short: 'Cast', icon: 'people' },
-  { id: 'voices', label: 'Voices', short: 'Voices', icon: 'mic' },
-  { id: 'images', label: 'Starting images', short: 'Images', icon: 'image' },
-  { id: 'routing', label: 'Model routing', short: 'Routing', icon: 'cpu' },
-  { id: 'workflows', label: 'Workflows', short: 'Flows', icon: 'layers' },
-  { id: 'exports', label: 'Exports', short: 'Export', icon: 'download' },
+  { id: 'overview', label: 'Overview', icon: 'grid' },
+  { id: 'storyboard', label: 'Storyboard', icon: 'film' },
+  { id: 'story', label: 'Story & chapters', icon: 'book' },
+  { id: 'characters', label: 'Characters', icon: 'people' },
+  { id: 'voices', label: 'Voices', icon: 'mic' },
+  { id: 'images', label: 'Starting images', icon: 'image' },
+  { id: 'routing', label: 'Model routing', icon: 'cpu' },
+  { id: 'workflows', label: 'Workflows', icon: 'layers' },
+  { id: 'exports', label: 'Exports', icon: 'download' },
 ]
 
 const pageLabels: Record<PageId, string> = {
@@ -44,14 +43,24 @@ const pageLabels: Record<PageId, string> = {
   settings: 'Project Settings',
 }
 
+export type NavCounts = {
+  storyboard?: number
+  characters?: number
+  voices?: number
+  images?: number
+}
+
 type AppShellProps = {
   activePage: PageId
   backendStatus: string
   projectId: string
   projectName?: string
+  projectSubtitle?: string
   projects?: Project[]
   projectsError?: string | null
+  /** @deprecated Prefer navCounts.storyboard */
   shotCount?: number
+  navCounts?: NavCounts
   runtimeLabel?: string
   runtimeDetail?: string
   onNavigate: (page: PageId) => void
@@ -70,16 +79,30 @@ function projectInitials(name: string): string {
   return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
 }
 
+function navBadgeFor(
+  id: Exclude<PageId, 'settings'>,
+  navCounts: NavCounts | undefined,
+  shotCount: number | undefined,
+): string | null {
+  // Prototype parity (AppShell.source.tsx): only Storyboard shows a count badge.
+  if (id !== 'storyboard') return null
+  if (typeof navCounts?.storyboard === 'number') return String(navCounts.storyboard)
+  if (typeof shotCount === 'number') return String(shotCount)
+  return null
+}
+
 export function AppShell({
   activePage,
   backendStatus,
   projectId,
   projectName = 'A New Journey',
+  projectSubtitle = 'Storyboard Phase A',
   projects = [],
   projectsError = null,
   shotCount,
-  runtimeLabel = 'Runtime status',
-  runtimeDetail = 'Checking backend…',
+  navCounts,
+  runtimeLabel = 'ComfyUI ready',
+  runtimeDetail = 'RTX 5090 Laptop · 24 GB',
   onNavigate,
   onSelectProject,
   onRefreshStatus,
@@ -94,6 +117,9 @@ export function AppShell({
   const navId = useId()
   const activeLabel = pageLabels[activePage] ?? 'Studio'
   const initials = projectInitials(projectName)
+  const runtimeOk =
+    /ready|reachable|ok|healthy|connected/i.test(runtimeLabel) ||
+    /ok|healthy|connected/i.test(backendStatus)
 
   useEffect(() => {
     if (!mobileNavOpen && !searchOpen && !notificationsOpen && !projectMenuOpen) return
@@ -123,14 +149,15 @@ export function AppShell({
         Skip to main content
       </a>
 
-      <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''}`} aria-label="Studio sidebar">
+      <aside
+        className={`sidebar ${mobileNavOpen ? 'sidebar-open mobile-open' : ''}`}
+        aria-label="Studio sidebar"
+      >
         <button type="button" className="brand" onClick={() => handleNavigate('overview')}>
           <span className="brand-mark" aria-hidden="true">
             <Icon name="play" size={15} />
           </span>
-          <span>
-            <strong>CineForge</strong>
-          </span>
+          <span>CineForge</span>
         </button>
         <button
           type="button"
@@ -144,17 +171,17 @@ export function AppShell({
         <div className="project-switch-wrap">
           <button
             type="button"
-            className="project-switcher touch-target"
+            className="project-switcher project-switch touch-target"
             title={projectId}
             aria-expanded={projectMenuOpen}
             onClick={() => setProjectMenuOpen((open) => !open)}
           >
-            <span className="project-avatar">{initials}</span>
+            <span className="project-avatar project-thumb">{initials}</span>
             <span>
               <strong>{projectName}</strong>
-              <small>Storyboard Phase A</small>
+              <small>{projectSubtitle}</small>
             </span>
-            <Icon name="chevron" size={14} />
+            <b aria-hidden="true">⌄</b>
           </button>
           {projectMenuOpen ? (
             <div className="popover project-pop" role="menu">
@@ -170,7 +197,7 @@ export function AppShell({
                       setProjectMenuOpen(false)
                     }}
                   >
-                    <span className="project-avatar">{projectInitials(project.name)}</span>
+                    <span className="project-avatar project-thumb">{projectInitials(project.name)}</span>
                     <span>
                       <b>{project.name}</b>
                       <small className="mono">{project.id.slice(0, 8)}…</small>
@@ -179,21 +206,31 @@ export function AppShell({
                   </button>
                 ))
               ) : (
-                <p className="form-hint" style={{ padding: 10, margin: 0 }}>
-                  {projectsError
-                    ? projectsError
-                    : 'No projects returned from GET /projects. Demo plan remains available offline.'}
-                </p>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="active"
+                  onClick={() => setProjectMenuOpen(false)}
+                >
+                  <span className="project-avatar project-thumb">{initials}</span>
+                  <span>
+                    <b>{projectName}</b>
+                    <small>
+                      {projectsError ? 'Demo · offline' : 'Current · demo plan'}
+                    </small>
+                  </span>
+                  <Icon name="check" size={14} />
+                </button>
               )}
             </div>
           ) : null}
         </div>
 
+        <p className="nav-label sidebar-section-label">PROJECT</p>
         <nav id={navId} aria-label="Primary navigation">
-          <span className="sidebar-section-label">Project</span>
           {primaryNav.map((item) => {
             const isActive = item.id === activePage
-            const badge = item.id === 'storyboard' && typeof shotCount === 'number' ? String(shotCount) : null
+            const badge = navBadgeFor(item.id, navCounts, shotCount)
             return (
               <button
                 type="button"
@@ -206,14 +243,17 @@ export function AppShell({
                   <Icon name={item.icon} size={16} />
                 </span>
                 <span className="nav-label-full">{item.label}</span>
-                <span className="nav-label-short">{item.short}</span>
-                {badge ? <span className="nav-badge">{badge}</span> : null}
+                {badge ? (
+                  <em className="nav-badge" aria-label={`${badge} items`}>
+                    {badge}
+                  </em>
+                ) : null}
               </button>
             )
           })}
         </nav>
 
-        <div className="sidebar-footer">
+        <div className="sidebar-footer sidebar-bottom">
           <button
             type="button"
             className={`settings-entry touch-target ${activePage === 'settings' ? 'active' : ''}`}
@@ -225,21 +265,26 @@ export function AppShell({
             </span>
             <span>Project settings</span>
           </button>
-          <div className="runtime-card" title={`Backend ${backendStatus}`}>
-            <span className="live-dot" aria-hidden="true" />
+          <button
+            type="button"
+            className={`runtime-card gpu ${runtimeOk ? 'runtime-ok' : 'runtime-warn'}`}
+            title={`Backend ${backendStatus}`}
+            onClick={() => onRefreshStatus?.()}
+          >
+            <i className="live-dot" aria-hidden="true" />
             <span>
               <strong>{runtimeLabel}</strong>
               <small>{runtimeDetail}</small>
             </span>
-          </div>
-          <div className="user-card">
+          </button>
+          <button type="button" className="user-card user" aria-label="Robert, Producer">
             <span className="user-avatar">RP</span>
             <span>
               <strong>Robert</strong>
               <small>Producer</small>
             </span>
             <Icon name="more" size={14} />
-          </div>
+          </button>
         </div>
       </aside>
 
@@ -254,10 +299,10 @@ export function AppShell({
 
       <div className="workspace">
         <header className="topbar">
-          <div className="topbar-leading">
+          <div className="topbar-leading top-left">
             <button
               type="button"
-              className="mobile-nav-toggle touch-target"
+              className="mobile-nav-toggle mobile-menu touch-target"
               aria-expanded={mobileNavOpen}
               aria-controls={navId}
               onClick={() => setMobileNavOpen((open) => !open)}
@@ -265,16 +310,16 @@ export function AppShell({
               <span className="sr-only">Open navigation</span>
               <Icon name="menu" size={18} />
             </button>
-            <div className="breadcrumb" aria-label="Breadcrumb">
+            <div className="breadcrumb crumbs" aria-label="Breadcrumb">
               <span>Projects</span>
               <Icon name="chevron" size={13} />
-              <span>{projectName}</span>
+              <strong>{projectName}</strong>
               <Icon name="chevron" size={13} />
-              <strong>{activeLabel}</strong>
-              <span className="phase-badge">Phase A</span>
+              <b>{activeLabel}</b>
+              <span className="phase-badge phase">PHASE A</span>
             </div>
           </div>
-          <div className="topbar-status">
+          <div className="topbar-status top-actions">
             <button
               type="button"
               className="icon-button touch-target"
@@ -296,18 +341,19 @@ export function AppShell({
               }}
             >
               <Icon name="bell" size={16} />
+              <i aria-hidden="true" />
             </button>
             {onSaveDraft ? (
-              <button type="button" className="secondary-button touch-target" onClick={onSaveDraft}>
+              <button type="button" className="secondary-button btn secondary touch-target" onClick={onSaveDraft}>
                 Save draft
               </button>
             ) : null}
             {onPreviewAnimatic ? (
-              <button type="button" className="primary-button touch-target" onClick={onPreviewAnimatic}>
+              <button type="button" className="primary-button btn primary touch-target" onClick={onPreviewAnimatic}>
                 <Icon name="play" size={14} /> Preview animatic
               </button>
             ) : null}
-            {/* Backend health stays in the sidebar runtime card to match prototype topbar chrome. */}
+            {/* Backend health stays in the sidebar runtime card — never a topbar BACKEND OK badge. */}
             <span className="sr-only">
               Backend {backendStatus}
               {onRefreshStatus ? (
@@ -323,7 +369,7 @@ export function AppShell({
           <aside className="notification-drawer" aria-label="Notifications">
             <header>
               <div>
-                <span className="eyebrow">Notifications</span>
+                <span className="eyebrow">NOTIFICATIONS</span>
                 <h2>Review queue</h2>
               </div>
               <button
@@ -403,7 +449,7 @@ export function AppShell({
           </div>
         ) : null}
 
-        <main id="main-content" className="main-content" tabIndex={-1}>
+        <main id="main-content" className="main-content page-scroll" tabIndex={-1}>
           {children}
         </main>
       </div>

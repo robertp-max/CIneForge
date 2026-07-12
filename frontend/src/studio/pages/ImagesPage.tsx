@@ -21,6 +21,11 @@ import {
   type Shot,
 } from '../../api/client'
 import { Button, Empty, Icon, PageTitle, StatusPill } from '../proto/ui'
+import {
+  buildDemoStartingImageAssets,
+  demoStartingImageCandidateCount,
+  isDemoPhaseAPlan,
+} from '../demoPhaseA'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
@@ -70,28 +75,48 @@ function approvalLabel(state: string | null | undefined): ImageStatus {
 
 /**
  * Proto startingImageStatus is never "Missing" — Missing is only a filter
- * (candidateCount === 0). Pill status comes from asset / shot approval.
+ * (candidateCount === 0). Pill status prefers managed asset approval, then shot.
+ * Never force Draft solely because the asset list has not loaded yet.
  */
 function startingImageStatus(
   shot: Shot,
   asset: PlanningMediaAsset | null | undefined,
 ): ImageStatus {
   if (asset?.approval_state) return approvalLabel(asset.approval_state)
-  if (shot.starting_image_asset_id) return 'Draft'
   return approvalLabel(shot.approval_state)
 }
 
-/** Factual candidate count: assigned asset ⇒ at least 1; otherwise 0 (IMAGE REQUIRED). */
-function candidateCountOf(shot: Shot): number {
+/**
+ * Candidate count for grid badges.
+ * Demo planning fixture: multi-candidate (2/3) like the ZIP proto.
+ * Live backend: assigned asset ⇒ at least 1; otherwise 0 (IMAGE REQUIRED).
+ */
+function candidateCountOf(
+  shot: Shot,
+  opts: { demoPlan: boolean; asset: PlanningMediaAsset | null | undefined },
+): number {
+  if (opts.demoPlan) {
+    return demoStartingImageCandidateCount(
+      shot.order_index,
+      Boolean(shot.starting_image_asset_id),
+    )
+  }
+  if (opts.asset?.metadata_json && typeof opts.asset.metadata_json.candidate_count === 'number') {
+    return Math.max(0, opts.asset.metadata_json.candidate_count as number)
+  }
   return shot.starting_image_asset_id ? 1 : 0
 }
 
 function modelLabel(shot: Shot): string {
-  return (
-    shot.recommendations?.find((item) => item.recommendation_type === 'generation')?.rationale ||
-    shot.prompt_provider_model_id ||
-    'Planning model'
+  // Prefer prompt package image model; fall back to first image-like generation rec.
+  if (shot.prompt_provider_model_id) return shot.prompt_provider_model_id
+  const imageRec = shot.recommendations?.find(
+    (item) =>
+      item.recommendation_type === 'generation' &&
+      typeof item.rationale === 'string' &&
+      /flux|sdxl|image|dev|portrait/i.test(item.rationale),
   )
+  return imageRec?.rationale || shot.recommendations?.[0]?.rationale || 'Planning model'
 }
 
 function dimensionsLabel(asset: PlanningMediaAsset | null | undefined, hasCandidate: boolean): string {
@@ -104,7 +129,11 @@ function dimensionsLabel(asset: PlanningMediaAsset | null | undefined, hasCandid
 
 function seedLabel(asset: PlanningMediaAsset | null | undefined, hasCandidate: boolean): string {
   if (!hasCandidate && !asset) return 'Not generated'
+  if (asset?.metadata_json && typeof asset.metadata_json.seed === 'string') {
+    return asset.metadata_json.seed
+  }
   if (asset?.source_type === 'user_upload') return 'Managed upload'
+  if (asset?.source_type === 'planning_fixture') return '418027'
   if (asset?.source_type) return asset.source_type
   // Proto seed placeholder when candidates exist without managed seed metadata.
   return hasCandidate ? '418027' : 'Not generated'
@@ -155,7 +184,12 @@ export function ImagesPage() {
   const [filter, setFilter] = useState<StatusFilter>('All')
   const [chapter, setChapter] = useState('All')
   const [compare, setCompare] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  /** Demo-only candidate count / status overrides after mock Generate candidate (planning fixture). */
+  const [demoCandidateOverrides, setDemoCandidateOverrides] = useState<Record<string, number>>({})
+  const [demoStatusOverrides, setDemoStatusOverrides] = useState<Record<string, ImageStatus>>({})
 
+  const demoPlan = isDemoPhaseAPlan(data)
   const actionsBusy = busy || saving || approvalSaving
   const busyReason = busy
     ? 'A studio save or reload is already in progress.'
@@ -164,9 +198,13 @@ export function ImagesPage() {
       : approvalSaving
         ? 'Approval is already in progress.'
         : null
-  const unavailableReason = !available
-    ? 'Managed assets API is unavailable on this backend; upload/assign/approve cannot run.'
-    : null
+  // Demo planning fixtures keep assign/upload disabled (no real managed store) but never hide the grid.
+  const unavailableReason =
+    !available && !demoPlan
+      ? 'Managed assets API is unavailable on this backend; upload/assign/approve cannot run.'
+      : demoPlan && !available
+        ? 'Planning demo fixture — managed upload API is not connected; status cards are local planning data only.'
+        : null
 
   const shotRows = useMemo<ShotRow[]>(() => {
     if (!data) return []
@@ -192,8 +230,15 @@ export function ImagesPage() {
 
   const load = useCallback(async () => {
     if (!data) return
-    setLoading(true)
     setError(null)
+    // Demo plan paints immediately from fixtures; never block the grid on assets API.
+    if (isDemoPhaseAPlan(data)) {
+      setItems(buildDemoStartingImageAssets(data.story.project_id))
+      setAvailable(false)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     try {
       const result = await api.listStartingImageAssets(data.story.project_id)
       if (result == null) {
@@ -220,13 +265,82 @@ export function ImagesPage() {
     [items],
   )
 
+  const assetOf = useCallback(
+    (shot: Shot) =>
+      shot.starting_image_asset_id ? (assetsById.get(shot.starting_image_asset_id) ?? null) : null,
+    [assetsById],
+  )
+
   const statusOf = useCallback(
     (shot: Shot) =>
-      startingImageStatus(
-        shot,
-        shot.starting_image_asset_id ? assetsById.get(shot.starting_image_asset_id) : null,
-      ),
-    [assetsById],
+      demoStatusOverrides[shot.id] ?? startingImageStatus(shot, assetOf(shot)),
+    [demoStatusOverrides, assetOf],
+  )
+
+  const candidatesOf = useCallback(
+    (shot: Shot) => {
+      if (demoPlan && demoCandidateOverrides[shot.id] != null) {
+        return demoCandidateOverrides[shot.id]
+      }
+      return candidateCountOf(shot, { demoPlan, asset: assetOf(shot) })
+    },
+    [demoPlan, demoCandidateOverrides, assetOf],
+  )
+
+  const onGenerateMockCandidate = useCallback(
+    (shotId?: string) => {
+      if (!demoPlan || generating) return
+      const id = shotId || selectedShotId || shotRows[0]?.shot.id
+      if (!id) return
+      const row = shotRows.find((entry) => entry.shot.id === id)
+      if (!row) return
+      const shot = row.shot
+      if (!selectedShotId) setSelectedShotId(shot.id)
+      setGenerating(true)
+      window.setTimeout(() => {
+        setDemoCandidateOverrides((prev) => {
+          const current =
+            prev[shot.id] ??
+            candidateCountOf(shot, { demoPlan: true, asset: assetOf(shot) })
+          return { ...prev, [shot.id]: current + 1 }
+        })
+        setDemoStatusOverrides((prev) => ({ ...prev, [shot.id]: 'Review' }))
+        // Planning-only: ensure a fixture asset exists and move it to in_review (proto mock).
+        setItems((current) => {
+          const list = current ? [...current] : []
+          const assetId = shot.starting_image_asset_id ?? `asset-start-mock-${shot.id}`
+          const existing = list.findIndex((asset) => asset.id === assetId)
+          if (existing >= 0) {
+            list[existing] = { ...list[existing], approval_state: 'in_review' }
+            return list
+          }
+          list.push({
+            id: assetId,
+            project_id: data?.story.project_id ?? 'demo',
+            kind: 'starting_image',
+            source_type: 'planning_fixture',
+            managed_uri: `demo://starting-image/${assetId}`,
+            sha256: null,
+            mime_type: 'image/png',
+            width: 1920,
+            height: 1080,
+            duration_sec: null,
+            approval_state: 'in_review',
+            metadata_json: { planning_only: true, shot_id: shot.id, seed: '418027' },
+            original_filename: `${shot.title}-mock.png`,
+            size_bytes: null,
+            archived_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_duplicate: false,
+          })
+          return list
+        })
+        setGenerating(false)
+        setMessage('New local mock candidate added (planning fixture only; no generation ran).')
+      }, 650)
+    },
+    [demoPlan, selectedShotId, generating, shotRows, assetOf, data?.story.project_id, setMessage],
   )
 
   /** Proto counts: Missing = candidateCount===0; status buckets use startingImageStatus. */
@@ -240,24 +354,24 @@ export function ImagesPage() {
       Blocked: 0,
     }
     for (const { shot } of shotRows) {
-      if (candidateCountOf(shot) === 0) counts.Missing += 1
+      if (candidatesOf(shot) === 0) counts.Missing += 1
       counts[statusOf(shot)] += 1
     }
     return counts
-  }, [shotRows, statusOf])
+  }, [shotRows, statusOf, candidatesOf])
 
   const filteredRows = useMemo(
     () =>
       shotRows.filter(({ shot, chapter: chapterItem }) => {
         const status = statusOf(shot)
-        const candidates = candidateCountOf(shot)
+        const candidates = candidatesOf(shot)
         const matchesFilter =
           filter === 'All' ||
           (filter === 'Missing' ? candidates === 0 : status === filter)
         const matchesChapter = chapter === 'All' || chapterItem.id === chapter
         return matchesFilter && matchesChapter
       }),
-    [shotRows, statusOf, filter, chapter],
+    [shotRows, statusOf, candidatesOf, filter, chapter],
   )
 
   const selectedRow =
@@ -271,19 +385,19 @@ export function ImagesPage() {
   const selectedShotCode = selectedRow
     ? shotCode(selectedRow.chapterIndex, selectedRow.sceneIndex, selectedRow.shotIndexInScene)
     : ''
+  const selectedAssignedAsset = selectedShot
+    ? selectedShot.starting_image_asset_id
+      ? (assetsById.get(selectedShot.starting_image_asset_id) ?? null)
+      : (assetsById.get(`asset-start-mock-${selectedShot.id}`) ?? null)
+    : null
   const selectedAssetId =
     selectedShot && assetDraft?.shotId === selectedShot.id
       ? assetDraft.assetId
-      : (selectedShot?.starting_image_asset_id ?? '')
-  const selectedAssignedAsset = selectedShot?.starting_image_asset_id
-    ? (assetsById.get(selectedShot.starting_image_asset_id) ?? null)
-    : null
+      : (selectedShot?.starting_image_asset_id ?? selectedAssignedAsset?.id ?? '')
   const selectedPreviewAsset =
-    selectedAssetId && assetsById.get(selectedAssetId)
-      ? (assetsById.get(selectedAssetId) ?? null)
-      : selectedAssignedAsset
+    (selectedAssetId ? assetsById.get(selectedAssetId) : null) || selectedAssignedAsset || null
   const selectedStatus = selectedShot ? statusOf(selectedShot) : 'Draft'
-  const selectedCandidateCount = selectedShot ? candidateCountOf(selectedShot) : 0
+  const selectedCandidateCount = selectedShot ? candidatesOf(selectedShot) : 0
   const selectedReadiness = selectedShot
     ? (readiness?.reasons.filter((reason) => reason.entity_id === selectedShot.id) ?? [])
     : []
@@ -295,10 +409,17 @@ export function ImagesPage() {
   const frameIndex = selectedRow ? selectedRow.index % 8 : 0
   const assignmentDirty =
     Boolean(selectedShot) && selectedAssetId !== (selectedShot?.starting_image_asset_id ?? '')
+  // Mutations require a live managed-assets API (not the planning demo fixture).
+  const mutationUnavailable =
+    !available
+      ? demoPlan
+        ? 'Planning demo fixture — upload/assign/approve require a connected managed assets API.'
+        : 'Managed assets API is unavailable on this backend; upload/assign/approve cannot run.'
+      : null
 
   const clearReason = firstReason(
     busyReason,
-    unavailableReason,
+    mutationUnavailable,
     !selectedShot && 'Select a shot first.',
     selectedShot &&
       !selectedShot.starting_image_asset_id &&
@@ -306,7 +427,7 @@ export function ImagesPage() {
   )
   const useSelectedReason = firstReason(
     busyReason,
-    unavailableReason,
+    mutationUnavailable,
     !selectedShot && 'Select a shot first.',
     selectedShot &&
       !selectedAssetId &&
@@ -318,7 +439,7 @@ export function ImagesPage() {
   )
   const approveReason = firstReason(
     busyReason,
-    unavailableReason,
+    mutationUnavailable,
     !selectedShot && 'Select a shot first.',
     selectedShot &&
       !selectedAssignedAsset &&
@@ -329,10 +450,11 @@ export function ImagesPage() {
       'Archived starting-image assets cannot be approved.',
     selectedAssignedAsset?.approval_state === 'approved' &&
       'This managed candidate is already approved.',
+    demoPlan && 'Planning demo fixture — approval is display-only (no generation).',
   )
   const uploadReason = firstReason(
     busyReason,
-    unavailableReason,
+    mutationUnavailable,
     !file && 'Choose an image file to upload as a managed starting-image candidate.',
   )
 
@@ -438,10 +560,17 @@ export function ImagesPage() {
   }
 
   // Proto: [1,2,3].slice(0, Math.max(2, candidateCount)) — at least 2 compare slots.
-  const compareSlotCount = Math.max(2, Math.min(3, Math.max(selectedCandidateCount, candidateAssets.length || 0)))
-  const compareSlots: Array<PlanningMediaAsset | null> = Array.from({ length: compareSlotCount }, (_, i) =>
-    candidateAssets[i] ?? null,
+  const compareSlotCount = Math.max(
+    2,
+    Math.min(3, Math.max(selectedCandidateCount, demoPlan ? selectedCandidateCount : candidateAssets.length || 0)),
   )
+  const compareSlots: Array<PlanningMediaAsset | null> = Array.from({ length: compareSlotCount }, (_, i) => {
+    if (demoPlan && selectedAssignedAsset) {
+      // Planning fixture: repeat selected shot asset as mock candidates (no real multi-upload store).
+      return i === 0 ? selectedAssignedAsset : { ...selectedAssignedAsset, id: `${selectedAssignedAsset.id}-c${i + 1}` }
+    }
+    return candidateAssets[i] ?? null
+  })
 
   return (
     <div className="page">
@@ -470,10 +599,19 @@ export function ImagesPage() {
               type="button"
               variant="primary"
               icon="wand"
-              disabled
-              title={GENERATION_DISABLED_REASON}
+              disabled={demoPlan ? generating || !selectedShot : true}
+              title={
+                demoPlan
+                  ? generating
+                    ? 'Adding a local planning mock candidate…'
+                    : !selectedShot
+                      ? 'Select a shot to add a local planning mock candidate.'
+                      : 'Add a local planning mock candidate (no generation / ComfyUI).'
+                  : GENERATION_DISABLED_REASON
+              }
+              onClick={() => onGenerateMockCandidate(selectedShot?.id)}
             >
-              Generate candidate
+              {generating ? 'Generating mock…' : 'Generate candidate'}
             </Button>
           </div>
         }
@@ -511,9 +649,12 @@ export function ImagesPage() {
             </select>
           </div>
 
-          {loading ? <LoadingState title="Loading managed starting images…" /> : null}
+          {/* Never block the shot grid with loading/unavailable chrome in demo planning mode. */}
+          {loading && !demoPlan ? (
+            <LoadingState title="Loading managed starting images…" />
+          ) : null}
           {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
-          {!available && !loading ? (
+          {!available && !loading && !demoPlan ? (
             <UnavailableState
               title="Managed assets API unavailable"
               detail="No local path, candidate, or generated-image claim is substituted."
@@ -526,7 +667,7 @@ export function ImagesPage() {
                 const { shot } = row
                 const status = statusOf(shot)
                 const selected = selectedShot?.id === shot.id
-                const candidates = candidateCountOf(shot)
+                const candidates = candidatesOf(shot)
                 const code = shotCode(row.chapterIndex, row.sceneIndex, row.shotIndexInScene)
                 return (
                   <button
@@ -603,7 +744,9 @@ export function ImagesPage() {
                 Managed preview image is layered under overlays when present (does not replace structure).
               */}
               <div className={`review-canvas frame-${frameIndex}`}>
-                {selectedPreviewAsset?.mime_type?.startsWith('image/') ? (
+                {selectedPreviewAsset?.mime_type?.startsWith('image/') &&
+                !demoPlan &&
+                !selectedPreviewAsset.managed_uri.startsWith('demo://') ? (
                   <img
                     src={planningAssetContentUrl(selectedPreviewAsset.id)}
                     alt=""

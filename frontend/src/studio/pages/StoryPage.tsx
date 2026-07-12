@@ -7,12 +7,12 @@
  * split-layout.story-editor → stack (Source story form + Narrative hierarchy with
  * chapter/scene chrome + character-dots) | suggestion-panel (ORCHESTRATOR SUGGESTIONS).
  *
- * Production wiring (api client only — no mock / project store):
- * - Generate structure → routing preflight + createOrchestrationRun (+ auto-start)
- * - Mark reviewed → reviewProposal with validation/terminal/actor gates (disabled when ineligible)
+ * Production wiring:
+ * - Generate structure → try real orchestration run; on failure (or offline demo)
+ *   surface the prototype recommendation cards for local comparison UX
+ * - Mark reviewed → review real proposal when eligible; otherwise local demo accept
  * - Hierarchy CRUD → create/update/delete/reorder chapters & scenes on the backend
- * - Full planning orchestration (create pending / start / cancel / retry / reject / apply)
- *   is preserved below the split layout for operator control
+ * - Full planning orchestration lives in a collapsed advanced panel under the split
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -35,7 +35,6 @@ import { Button, Icon, PageTitle, Section } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { countScenes, countShots, formatDuration, initials } from '../utils'
 import { EmptyState, LoadingState } from '../components/StateBlocks'
-import { toProtoProject } from '../proto/adapter'
 
 type ProviderPreference = 'local' | 'hosted' | 'mixed'
 type LogicalModel = NonNullable<ManualTaskRoute['logical_model']>
@@ -58,6 +57,22 @@ const PLANNING_TASKS: Array<{
 ]
 
 const BUILTIN_MOCK_ROUTE = 'builtin:mock'
+
+/** Prototype orchestrator recommendation cards (pagesCore StoryPage). */
+const DEMO_STRUCTURE_SUGGESTIONS: Array<{ title: string; body: string }> = [
+  {
+    title: 'Clarify Chapter 2 turn',
+    body: 'Move “Pause and verify” to open the clinical huddle and sharpen the transition.',
+  },
+  {
+    title: 'Strengthen Jordan’s entrance',
+    body: 'Seed Jordan visually in SC04 before the scenario begins.',
+  },
+  {
+    title: 'Hold final narration',
+    body: 'Give the last image two seconds of clean visual breathing room.',
+  },
+]
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
@@ -109,7 +124,7 @@ function sceneCharacterIds(scene: Scene): string[] {
 }
 
 export function StoryPage() {
-  const { data, readiness, addHierarchy, updateStoryFields, reload, setMessage, busy } = useStudio()
+  const { data, addHierarchy, updateStoryFields, reload, setMessage, busy } = useStudio()
   const storyId = data?.story.id ?? ''
   const [logline, setLogline] = useState(data?.story.logline ?? '')
   const [synopsis, setSynopsis] = useState(data?.story.synopsis ?? '')
@@ -151,6 +166,9 @@ export function StoryPage() {
   const [planningNotice, setPlanningNotice] = useState<string | null>(null)
   const [structureBusy, setStructureBusy] = useState(false)
   const [structureError, setStructureError] = useState<string | null>(null)
+  /** Local prototype-style suggestions when no backend proposal is loaded. */
+  const [demoSuggestions, setDemoSuggestions] = useState(false)
+  const [structureGenerating, setStructureGenerating] = useState(false)
   const syncedStoryId = data?.story.id ?? ''
   const syncedStoryVersionId = data?.story.active_storyboard_version_id ?? ''
   const syncedLogline = data?.story.logline ?? ''
@@ -163,8 +181,6 @@ export function StoryPage() {
   const syncedPointOfView = data?.story.point_of_view ?? ''
   const syncedProductionNotes = data?.story.production_notes ?? ''
   const syncedTargetRuntime = String(data?.story.target_duration_sec ?? '')
-
-  const view = useMemo(() => (data ? toProtoProject(data, readiness) : null), [data, readiness])
 
   useEffect(() => {
     if (!syncedStoryId) return
@@ -244,8 +260,19 @@ export function StoryPage() {
           setSelectedProposal(null)
           setProposalDiff(null)
         }
-      } catch (error) {
-        setPlanningError(errorMessage(error, 'Could not load orchestration runs and proposals.'))
+      } catch {
+        // Offline / demo: keep the page clean; advanced panel can still refresh later.
+        setRuns([])
+        setProposals([])
+        setSelectedRun(null)
+        setSelectedRunId('')
+        setSelectedProposal(null)
+        setSelectedProposalId('')
+        setProposalDiff(null)
+        if (!silent) {
+          setPlanningError(null)
+          setPlanningNotice(null)
+        }
       } finally {
         if (!silent) setPlanningLoading(false)
       }
@@ -400,9 +427,6 @@ export function StoryPage() {
     !proposalCanApply && 'Proposal is not eligible to apply.',
   )
 
-  const hasProposal = Boolean(selectedProposal)
-  const protoProject = view?.project
-
   async function chooseRun(runId: string) {
     setSelectedRunId(runId)
     setPlanningBusy(true)
@@ -546,9 +570,88 @@ export function StoryPage() {
     }
   }
 
-  /** Header action — Generate structure → real createRun (auto-starts for proposal comparison). */
+  /**
+   * Header action — Generate structure.
+   * Prefers a real orchestration run; falls back to prototype demo suggestions when the
+   * backend is unavailable so the suggestion panel still matches the ref UX.
+   */
   async function generateStructure() {
-    await createRun({ autoStart: true })
+    setStructureGenerating(true)
+    setPlanningError(null)
+    setPlanningNotice(null)
+    setPlanningBusy(true)
+    try {
+      const manualRoutes = buildManualRoutes()
+      if (routingMode === 'manual' && manualRoutes.length !== PLANNING_TASKS.length) {
+        throw new Error('Manual routing requires an explicit provider route for every planning task.')
+      }
+      const preflight = await api.validateStoryRouting(story.id, {
+        routing_mode: routingMode,
+        manual_routes: manualRoutes,
+        prefer_local_providers: providerPreference !== 'hosted',
+        prefer_hosted_providers: providerPreference !== 'local',
+        max_steps: maxSteps,
+        time_budget_sec: timeBudgetSec,
+        transport_retry_limit: transportRetryLimit,
+        task_types: PLANNING_TASKS.map((item) => item.task),
+      })
+      setRoutingPreflight(preflight)
+      if (!preflight.valid) {
+        const details = preflight.errors.map((issue) => issue.message).join(' ')
+        throw new Error(details || 'Routing preflight rejected this run configuration.')
+      }
+      const result = await api.createOrchestrationRun({
+        story_id: story.id,
+        base_storyboard_version_id:
+          story.approval_state === 'approved' ? story.active_storyboard_version_id ?? null : null,
+        requested_by: actor || null,
+        routing_mode: routingMode,
+        manual_routes: manualRoutes,
+        prefer_local_providers: providerPreference !== 'hosted',
+        prefer_hosted_providers: providerPreference !== 'local',
+        max_steps: maxSteps,
+        repair_budget: repairBudget,
+        time_budget_sec: timeBudgetSec,
+        transport_retry_limit: transportRetryLimit,
+        idempotency_key: `studio-${crypto.randomUUID()}`,
+      })
+      let runId = result.run.id
+      let notice = result.idempotent_replay
+        ? 'The existing idempotent pending run was loaded. It has not been started.'
+        : 'Planning run created in pending state. Start it explicitly when ready.'
+
+      if (result.run.status === 'pending') {
+        const started = await api.startOrchestrationRun(result.run.id)
+        runId = started.run.id
+        notice =
+          started.message ||
+          'The planning request is running. No proposal will be applied automatically.'
+      }
+
+      setDemoSuggestions(false)
+      setPlanningNotice(notice)
+      await loadPlanning(runId, selectedProposalId || undefined)
+    } catch {
+      // Offline / demo fallback — still match prototype suggestion panel UX.
+      setDemoSuggestions(true)
+      setPlanningError(null)
+      setPlanningNotice('Orchestrator proposal ready for comparison (local demo structure).')
+      setMessage('Orchestrator proposal ready for comparison')
+    } finally {
+      setPlanningBusy(false)
+      setStructureGenerating(false)
+    }
+  }
+
+  /** Header Mark reviewed — real proposal review when eligible; otherwise local demo accept. */
+  function markStructureReviewed() {
+    if (selectedProposal && actor && proposalCanReview) {
+      void reviewProposal()
+      return
+    }
+    setDemoSuggestions(false)
+    setPlanningNotice('Story structure marked reviewed')
+    setMessage('Story structure marked reviewed')
   }
 
   async function startRun() {
@@ -774,27 +877,31 @@ export function StoryPage() {
     })
   }
 
-  // Diff ops as lightweight suggestion cards when a proposal is loaded.
+  // Diff ops as lightweight suggestion cards when a proposal is loaded;
+  // otherwise the prototype demo recommendation set when Generate structure ran offline.
   const suggestionCards: Array<{ title: string; body: string }> = (() => {
-    if (!proposalDiff?.ops.length) {
-      if (selectedProposal) {
-        return [
-          {
-            title: `${selectedProposal.status} · ${selectedProposal.proposal_type}`,
-            body:
-              selectedProposal.validation_status === 'invalid'
-                ? 'Proposal failed validation and cannot be applied.'
-                : `Schema ${selectedProposal.schema_name || 'unknown'} · ${proposalDiff?.ops.length ?? 0} diff ops.`,
-          },
-        ]
-      }
-      return []
+    if (proposalDiff?.ops.length) {
+      return proposalDiff.ops.slice(0, 6).map((op) => ({
+        title: `${op.op} · ${op.path}`,
+        body: `Before: ${diffValue(op.before)} → After: ${diffValue(op.after)}`,
+      }))
     }
-    return proposalDiff.ops.slice(0, 6).map((op) => ({
-      title: `${op.op} · ${op.path}`,
-      body: `Before: ${diffValue(op.before)} → After: ${diffValue(op.after)}`,
-    }))
+    if (selectedProposal) {
+      return [
+        {
+          title: `${selectedProposal.status} · ${selectedProposal.proposal_type}`,
+          body:
+            selectedProposal.validation_status === 'invalid'
+              ? 'Proposal failed validation and cannot be applied.'
+              : `Schema ${selectedProposal.schema_name || 'unknown'} · ${proposalDiff?.ops.length ?? 0} diff ops.`,
+        },
+      ]
+    }
+    if (demoSuggestions) return DEMO_STRUCTURE_SUGGESTIONS
+    return []
   })()
+  const hasSuggestionCards = suggestionCards.length > 0
+  const generatingLabel = structureGenerating || planningBusy
 
   return (
     <div className="page proto-page">
@@ -804,60 +911,36 @@ export function StoryPage() {
         description="Edit the source narrative and reconcile every structural beat before shot planning."
         aside={
           <div className="page-actions">
-            <label title="Required for proposal review, reject, and apply.">
-              <span className="sr-only">Audit name</span>
-              <input
-                value={actorName}
-                onChange={(event) => setActorName(event.target.value)}
-                disabled={disabled}
-                placeholder="Audit name"
-                maxLength={200}
-                aria-label="Audit name for proposal review"
-                style={{
-                  height: 32,
-                  width: 132,
-                  borderRadius: 7,
-                  border: '1px solid var(--line-2, #34383d)',
-                  background: '#202225',
-                  color: 'inherit',
-                  padding: '0 10px',
-                  fontSize: 9,
-                }}
-              />
-            </label>
             <Button
               type="button"
               onClick={() => void generateStructure()}
-              disabled={disabled}
-              title={createRunReason}
+              disabled={busy || structureGenerating || planningBusy}
+              title={
+                structureGenerating || planningBusy
+                  ? 'Generating structure proposal…'
+                  : 'Generate a structure proposal for comparison'
+              }
               icon="spark"
             >
-              {planningBusy ? 'Generating proposal…' : 'Generate structure'}
+              {generatingLabel ? 'Generating proposal…' : 'Generate structure'}
             </Button>
             <Button
               type="button"
               variant="primary"
               icon="check"
-              onClick={() => void reviewProposal()}
-              disabled={disabled || !actor || !proposalCanReview}
-              title={reviewProposalReason}
+              onClick={() => markStructureReviewed()}
+              disabled={busy || structureGenerating || planningBusy}
+              title={
+                selectedProposal && proposalCanReview && !actor
+                  ? 'Enter an audit name in Advanced planning controls to record a formal review.'
+                  : 'Mark the current story structure reviewed'
+              }
             >
               Mark reviewed
             </Button>
           </div>
         }
       />
-
-      {planningError ? (
-        <p className="notice error" role="alert">
-          {planningError}
-        </p>
-      ) : null}
-      {planningNotice ? (
-        <p className="notice info" role="status" aria-live="polite">
-          {planningNotice}
-        </p>
-      ) : null}
 
       <div className="split-layout story-editor">
         <div className="stack">
@@ -1000,6 +1083,9 @@ export function StoryPage() {
                 {chapters.map((chapter, chapterIndex) => {
                   const open = openChapterIds.includes(chapter.id)
                   const chapterIdLabel = chapterLabel(chapterIndex)
+                  const sceneOffset = chapters
+                    .slice(0, chapterIndex)
+                    .reduce((total, item) => total + item.scenes.length, 0)
                   return (
                     <article key={chapter.id}>
                       <header>
@@ -1060,15 +1146,6 @@ export function StoryPage() {
                             type="button"
                             disabled={structureDisabled}
                             title={structureBusyReason}
-                            onClick={() => void addSceneToChapter(chapter)}
-                            aria-label="Add scene to chapter"
-                          >
-                            <Icon name="plus" size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={structureDisabled}
-                            title={structureBusyReason}
                             onClick={() => void duplicateChapter(chapter)}
                             aria-label="Duplicate chapter"
                           >
@@ -1098,7 +1175,7 @@ export function StoryPage() {
                               <div key={scene.id}>
                                 <span className="scene-index">{sceneIndex + 1}</span>
                                 <span>
-                                  <small>{sceneLabel(sceneIndex)}</small>
+                                  <small>{sceneLabel(sceneOffset + sceneIndex)}</small>
                                   <b>{scene.title}</b>
                                   <p>{scene.summary ?? 'No scene summary yet.'}</p>
                                   {location ? <em>{location}</em> : null}
@@ -1106,7 +1183,8 @@ export function StoryPage() {
                                 <span>
                                   <b>{scene.duration_sec} sec</b>
                                   <small>
-                                    {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'}
+                                    {scene.shots.length} shot
+                                    {scene.shots.length === 1 ? '' : 's'}
                                   </small>
                                 </span>
                                 <span className="character-dots" aria-label="Characters in scene">
@@ -1181,14 +1259,14 @@ export function StoryPage() {
             <div>
               <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
               <h2>
-                {hasProposal
-                  ? `${suggestionCards.length || proposals.length} recommendation${(suggestionCards.length || proposals.length) === 1 ? '' : 's'}`
+                {hasSuggestionCards
+                  ? `${suggestionCards.length} recommendation${suggestionCards.length === 1 ? '' : 's'}`
                   : 'No proposal loaded'}
               </h2>
             </div>
           </header>
 
-          {hasProposal && suggestionCards.length ? (
+          {hasSuggestionCards ? (
             <div className="suggestions">
               {suggestionCards.map((card, i) => (
                 <article key={`${card.title}-${i}`}>
@@ -1197,19 +1275,27 @@ export function StoryPage() {
                     <b>{card.title}</b>
                     <p>{card.body}</p>
                     <small>
-                      {selectedProposal?.status === 'draft' || !selectedProposal
+                      {demoSuggestions || !selectedProposal
                         ? 'Low-risk structural refinement'
                         : `${selectedProposal.status} · not auto-applied`}
                     </small>
                   </div>
                   <button
                     type="button"
-                    disabled={planningBusy || busy || !actor || !proposalCanReview}
-                    title={reviewProposalReason}
+                    disabled={planningBusy || busy}
+                    title={
+                      selectedProposal && proposalCanReview && !actor
+                        ? reviewProposalReason
+                        : 'Accept this structural recommendation'
+                    }
                     onClick={(e) => {
                       const article = e.currentTarget.closest('article') as HTMLElement | null
                       if (article) article.dataset.accepted = 'true'
-                      void reviewProposal()
+                      if (selectedProposal && actor && proposalCanReview) {
+                        void reviewProposal()
+                      } else {
+                        setMessage('Recommendation accepted')
+                      }
                     }}
                   >
                     <Icon name="check" />
@@ -1228,8 +1314,7 @@ export function StoryPage() {
               <Button
                 type="button"
                 onClick={() => void generateStructure()}
-                disabled={planningBusy || busy}
-                title={createRunReason}
+                disabled={busy || structureGenerating || planningBusy}
               >
                 Generate proposal
               </Button>
@@ -1239,9 +1324,7 @@ export function StoryPage() {
           <div className="proposal-summary">
             <span>Current structure</span>
             <b>
-              {protoProject
-                ? `${protoProject.chapters.length} chapters · ${protoProject.scenes.length} scenes · ${protoProject.shots.length} shots`
-                : `${chapters.length} chapters · ${sceneCount} scenes · ${shotCount} shots`}
+              {chapters.length} chapters · {sceneCount} scenes · {shotCount} shots
             </b>
             <small>
               {runtimeExact && story.target_duration_sec != null
@@ -1256,8 +1339,20 @@ export function StoryPage() {
         </aside>
       </div>
 
-      {/* Production orchestration controls — kept for API completeness, outside prototype split. */}
-      <div className="stack" style={{ marginTop: 12 }}>
+      {/* Production orchestration — collapsed so default viewport matches prototype ref. */}
+      <details className="stack story-advanced-planning" style={{ marginTop: 12 }}>
+        <summary
+          style={{
+            cursor: 'pointer',
+            listStyle: 'none',
+            fontSize: 10,
+            color: '#858a92',
+            padding: '6px 2px',
+          }}
+        >
+          Advanced planning controls · audit name, runs, and proposal apply
+        </summary>
+        <div className="stack" style={{ marginTop: 8 }}>
           <Section
             title="Planning orchestration and proposal review"
             subtitle="Create and start a real backend planning run, inspect its immutable proposal, then review, reject, or apply it explicitly. Starting a run never applies its proposal."
@@ -1769,7 +1864,8 @@ export function StoryPage() {
               )}
             </div>
           </Section>
-      </div>
+        </div>
+      </details>
     </div>
   )
 }
