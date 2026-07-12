@@ -33,9 +33,9 @@ def _digest_text(value: str) -> dict:
 
 
 class HeadlessController:
-    def __init__(self, state_root: Path, max_grok_workers: int = 31):
-        if not 1 <= max_grok_workers <= 31:
-            raise ValueError("max_grok_workers must reserve the 32nd model slot for final review")
+    def __init__(self, state_root: Path, max_grok_workers: int = 47):
+        if not 1 <= max_grok_workers <= 47:
+            raise ValueError("max_grok_workers must reserve the 48th model slot for final review")
         self.state_root = state_root
         self.state_root.mkdir(parents=True, exist_ok=True)
         self.max_grok_workers = max_grok_workers

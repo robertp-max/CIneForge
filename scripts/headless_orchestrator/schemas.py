@@ -85,8 +85,10 @@ def parse_implementation_result(envelope: object, expected_session_id: str) -> I
         raise ValueError("Grok envelope must be an object")
     allowed = {"text", "stopReason", "sessionId", "requestId", "thought"}
     required = {"text", "stopReason", "sessionId", "requestId"}
-    if set(envelope) - allowed or not required.issubset(envelope):
-        raise ValueError("Grok envelope has missing or unknown fields")
+    unknown = sorted(set(envelope) - allowed)
+    missing = sorted(required - set(envelope))
+    if unknown or missing:
+        raise ValueError(f"Grok envelope fields are invalid; unknown={unknown}; missing={missing}")
     if envelope["sessionId"] != expected_session_id:
         raise ValueError("Grok envelope session ID mismatch")
     if envelope["stopReason"] != "EndTurn":

@@ -121,9 +121,9 @@ class Ledger:
         )
         self.record_event(run_id, task_id, "task_transition", {"from": current, "to": target, **(details or {})})
 
-    def reserve_slot(self, task_id: str, lease_token: str, max_active: int = 31) -> None:
-        if not 1 <= max_active <= 31:
-            raise ValueError("max_active must be between 1 and 31")
+    def reserve_slot(self, task_id: str, lease_token: str, max_active: int = 47) -> None:
+        if not 1 <= max_active <= 47:
+            raise ValueError("max_active must be between 1 and 47")
         with self.immediate_transaction():
             active = self.connection.execute("SELECT COUNT(*) FROM process_leases").fetchone()[0]
             if active >= max_active:

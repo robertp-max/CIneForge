@@ -51,6 +51,7 @@ def preflight(worktree: Path, expected_head: str, expected_branch: str) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cineforge-headless-orch")
     parser.add_argument("--state-root", type=Path, default=DEFAULT_STATE_ROOT)
+    parser.add_argument("--max-grok-workers", type=int, default=47)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     preflight_parser = subparsers.add_parser("preflight")
@@ -103,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps({"status": "created", "prompt": str(output)}, indent=2))
         return 0
-    controller = HeadlessController(args.state_root)
+    controller = HeadlessController(args.state_root, max_grok_workers=args.max_grok_workers)
     try:
         if args.command == "status":
             print(json.dumps(controller.ledger.list_tasks(args.run_id), indent=2))
