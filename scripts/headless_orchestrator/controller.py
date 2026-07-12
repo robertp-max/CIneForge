@@ -65,7 +65,7 @@ class HeadlessController:
                     "timed_out": result.timed_out,
                     "error_type": error_type,
                     "error_detail": error_detail,
-                    "result": parsed.as_dict() if parsed is not None else None,
+                    "result": parsed.as_artifact_dict() if parsed is not None else None,
                     "stderr": _digest_text(result.stderr),
                     "tests": [
                         {
@@ -146,8 +146,9 @@ class HeadlessController:
             self.ledger.transition(spec.run_id, spec.task_id, TaskStatus.verifying)
             if spec.tool_profile is ToolProfile.read_only and parsed_result.patches:
                 raise RuntimeError("read-only worker returned file patches")
+            applied_paths: list[str] = []
             if spec.tool_profile is ToolProfile.edit_owned:
-                apply_file_patches(spec.worktree, parsed_result.patches, spec.owned_paths)
+                applied_paths = apply_file_patches(spec.worktree, parsed_result.patches, spec.owned_paths)
             after = capture_worktree_snapshot(spec.worktree)
             changed_paths = verify_worktree_changes(
                 before,
@@ -155,6 +156,8 @@ class HeadlessController:
                 spec.owned_paths,
                 read_only=spec.tool_profile is ToolProfile.read_only,
             )
+            if spec.tool_profile is ToolProfile.edit_owned and set(changed_paths) != set(applied_paths):
+                raise RuntimeError("observed worktree changes do not match controller-applied patch paths")
             self.ledger.record_event(
                 spec.run_id,
                 spec.task_id,

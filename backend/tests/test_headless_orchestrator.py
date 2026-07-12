@@ -47,7 +47,7 @@ def test_worker_args_pin_model_effort_and_disable_uncontrolled_tools(tmp_path):
     assert args[args.index("--reasoning-effort") + 1] == "high"
     assert "--no-subagents" in args
     assert "--no-memory" in args
-    assert args[args.index("--tools") + 1] == ""
+    assert args[args.index("--tools") + 1] == "todo_write"
     disallowed = args[args.index("--disallowed-tools") + 1]
     assert "run_terminal_cmd" in disallowed
     assert "read_file" in disallowed
@@ -148,6 +148,7 @@ def test_strict_grok_envelope_and_inner_result_validation():
             "stopReason": "EndTurn",
             "sessionId": session_id,
             "requestId": request_id,
+            "structuredOutput": payload,
         },
         session_id,
     )
@@ -159,16 +160,18 @@ def test_strict_grok_envelope_and_inner_result_validation():
                 "stopReason": "EndTurn",
                 "sessionId": request_id,
                 "requestId": request_id,
+                "structuredOutput": payload,
             },
             session_id,
         )
-    with pytest.raises(ValueError, match="not valid JSON"):
+    with pytest.raises(ValueError, match="must be an object"):
         parse_implementation_result(
             {
-                "text": "prose",
+                "text": "schema-constrained result",
                 "stopReason": "EndTurn",
                 "sessionId": session_id,
                 "requestId": request_id,
+                "structuredOutput": "not-an-object",
             },
             session_id,
         )
@@ -179,6 +182,7 @@ def test_strict_grok_envelope_and_inner_result_validation():
                 "stopReason": "EndTurn",
                 "sessionId": session_id,
                 "requestId": request_id,
+                "structuredOutput": {**payload, "unexpected": True},
             },
             session_id,
         )

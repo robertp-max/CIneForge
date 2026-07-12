@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import uuid
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -92,7 +93,7 @@ def build_worker_args(spec: TaskSpec, session_id: str, grok_exe: Path = DEFAULT_
         "--permission-mode",
         "default",
         "--tools",
-        "",
+        "todo_write",
         "--disallowed-tools",
         "Agent,task,todo_write,run_terminal_cmd,read_file,grep,list_dir,search_replace,web_search,web_fetch",
     ]
@@ -111,6 +112,8 @@ def run_worker(
         raise ValueError(f"not a Git worktree: {spec.worktree}")
     session_id = str(uuid.uuid4())
     args = build_worker_args(spec, session_id, grok_exe)
+    launcher = Path(__file__).with_name("launcher.py").resolve(strict=True)
+    launch_args = [sys.executable, str(launcher), *args]
     creationflags = 0
     if os.name == "nt":
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -138,10 +141,10 @@ def run_worker(
     with WindowsJob() as job:
         try:
             process = subprocess.Popen(
-                args,
+                launch_args,
                 cwd=spec.worktree,
                 env=build_child_environment(),
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=False,
@@ -157,6 +160,9 @@ def run_worker(
                 raise
             if on_started is not None:
                 on_started(process.pid)
+            process.stdin.write(b"1")
+            process.stdin.flush()
+            process.stdin.close()
             stdout_thread = threading.Thread(
                 target=capture,
                 args=(process.stdout, stdout_chunks, job),

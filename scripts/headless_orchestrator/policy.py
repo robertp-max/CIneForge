@@ -134,11 +134,27 @@ def _content_digest(path: Path) -> str:
 
 
 def capture_worktree_snapshot(worktree: Path) -> WorktreeSnapshot:
-    """Hash every Git-visible file so reports cannot substitute for verification."""
+    """Hash tracked, untracked, and ignored files without following reparse points."""
 
     root = worktree.resolve(strict=True)
-    listed = _git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    listed = _git(root, "ls-files", "-z", "--cached")
     relative_paths = {item for item in listed.split("\0") if item}
+    for directory, directory_names, file_names in os.walk(root, followlinks=False):
+        directory_path = Path(directory)
+        retained_directories: list[str] = []
+        for name in directory_names:
+            child = directory_path / name
+            if name == ".git":
+                continue
+            if _is_reparse_point(child):
+                raise ValueError(f"reparse points are forbidden in worker worktrees: {child}")
+            retained_directories.append(name)
+        directory_names[:] = retained_directories
+        for name in file_names:
+            child = directory_path / name
+            relative = child.relative_to(root).as_posix()
+            if relative != ".git":
+                relative_paths.add(relative)
     relative_paths.add(".git")
     files: dict[str, str] = {}
     for relative in sorted(relative_paths, key=str.casefold):
