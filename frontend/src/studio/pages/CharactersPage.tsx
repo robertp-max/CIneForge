@@ -1,3 +1,16 @@
+/**
+ * Exact structural port of prototype CharactersPage (pagesAssets.tsx / pagesAssets.source.tsx)
+ * adapted to production studio context + character CRUD / reference APIs.
+ *
+ * DOM hierarchy matches the ZIP prototype:
+ * page-title (CHARACTER BIBLE + Needs review / Create character) →
+ * character-layout → stack (segmented filter + character-grid cards) |
+ * entity-drawer (portrait, reference-strip, Identity / Linked shots / Continuity tabs,
+ * identity form fields, voice assignment).
+ *
+ * Production create/update/archive + managed reference upload/link/unlink + voice assign
+ * stay wired via api client only (no mock / project store).
+ */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   api,
@@ -8,22 +21,36 @@ import {
   type StoryboardAggregate,
   type Voice,
 } from '../../api/client'
-import { Button, Empty, Icon, PageTitle, StatusPill } from '../../components/ui'
+import { Button, Empty, Icon, PageTitle, StatusPill } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 import { initials } from '../utils'
 
 const REFERENCE_ROLES = ['primary', 'alternate', 'expression', 'costume', 'detail'] as const
 
-type ApprovalFilter = 'all' | 'draft' | 'review' | 'approved' | 'blocked'
+const GENERATION_DISABLED_REASON =
+  'Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets.'
+
+const APPROVE_EXISTING_LINK_REASON =
+  'The backend exposes approval only while creating a reference link; unlink and relink it as an approved hero reference.'
+
+type ApprovalFilter = 'All' | 'Draft' | 'Review' | 'Approved' | 'Blocked'
 type DrawerTab = 'identity' | 'linked' | 'continuity'
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-/** Map backend approval_state → display label for StatusPill. */
-function approvalLabel(state: string): string {
+/** First non-empty reason; used for factual disabled control titles. */
+function firstReason(...reasons: Array<string | false | null | undefined>): string | undefined {
+  for (const reason of reasons) {
+    if (typeof reason === 'string' && reason.trim()) return reason
+  }
+  return undefined
+}
+
+/** Map backend approval_state → display label for StatusPill / filters. */
+function approvalLabel(state: string): Exclude<ApprovalFilter, 'All'> {
   const normalized = state.toLowerCase()
   if (normalized === 'in_review' || normalized === 'review') return 'Review'
   if (normalized === 'approved') return 'Approved'
@@ -32,9 +59,8 @@ function approvalLabel(state: string): string {
 }
 
 function matchesApprovalFilter(state: string, filter: ApprovalFilter): boolean {
-  if (filter === 'all') return true
-  const label = approvalLabel(state).toLowerCase()
-  return label === filter
+  if (filter === 'All') return true
+  return approvalLabel(state) === filter
 }
 
 function characterShotLinks(characterId: string, chapters: StoryboardAggregate['chapters']) {
@@ -60,6 +86,17 @@ function characterVoiceName(character: Character, voices: Voice[]): string {
   return associated?.name ?? 'Voice missing'
 }
 
+/** Display-only outfit chips (no outfits API field) — short wardrobe phrases. */
+function outfitTokens(character: Character): string[] {
+  const wardrobe = character.wardrobe?.trim()
+  if (!wardrobe) return []
+  return wardrobe
+    .split(/[,;|]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && part.length <= 36)
+    .slice(0, 4)
+}
+
 function Portrait({
   name,
   role,
@@ -79,9 +116,9 @@ function Portrait({
 }
 
 export function CharactersPage() {
-  const { data, readiness, reload, setMessage, addCharacter, busy } = useStudio()
+  const { data, readiness, reload, setMessage, busy } = useStudio()
   const [selectedId, setSelectedId] = useState('')
-  const [filter, setFilter] = useState<ApprovalFilter>('all')
+  const [filter, setFilter] = useState<ApprovalFilter>('All')
   const [edit, setEdit] = useState(false)
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('identity')
   const [showCreate, setShowCreate] = useState(false)
@@ -101,22 +138,29 @@ export function CharactersPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const actionsBusy = busy || saving
+  const busyReason = busy
+    ? 'A studio save or reload is already in progress.'
+    : saving
+      ? 'A character action is already in progress.'
+      : null
+  const editReason = !edit
+    ? 'Turn on edit (pencil) to change identity fields and save via PATCH /storyboard/characters/{id}.'
+    : null
+  const fieldsDisabledReason = firstReason(busyReason, editReason)
+
   const characters = useMemo(() => data?.characters ?? [], [data?.characters])
 
   const filterCounts = useMemo(() => {
     const counts: Record<ApprovalFilter, number> = {
-      all: characters.length,
-      draft: 0,
-      review: 0,
-      approved: 0,
-      blocked: 0,
+      All: characters.length,
+      Draft: 0,
+      Review: 0,
+      Approved: 0,
+      Blocked: 0,
     }
     for (const character of characters) {
-      const key = approvalLabel(character.approval_state).toLowerCase() as Exclude<
-        ApprovalFilter,
-        'all'
-      >
-      if (key in counts) counts[key] += 1
+      counts[approvalLabel(character.approval_state)] += 1
     }
     return counts
   }, [characters])
@@ -194,33 +238,137 @@ export function CharactersPage() {
       (reference.reference_role === 'primary' || reference.reference_role === 'hero') &&
       reference.approved,
   )
+  /** Reference strip prefers live links; falls back to aggregate summaries before load. */
+  const displayReferences: Array<{
+    id: string
+    asset_id: string
+    reference_role: string
+    approved: boolean
+    label?: string | null
+  }> =
+    references.length > 0
+      ? references.map((reference) => ({
+          id: reference.id,
+          asset_id: reference.asset_id,
+          reference_role: reference.reference_role,
+          approved: reference.approved,
+          label: reference.asset?.original_filename ?? null,
+        }))
+      : (selectedCharacter?.reference_assets ?? []).map((ref) => ({
+          id: ref.id,
+          asset_id: ref.asset_id,
+          reference_role: ref.reference_role,
+          approved: ref.approved,
+          label: null,
+        }))
+  const selectedOutfits = selectedCharacter ? outfitTokens(selectedCharacter) : []
+
+  // Factual archive blockers mirror backend archive_character conflict checks.
+  const archiveConflictParts: string[] = []
+  if (selectedCharacter?.approval_state === 'approved') {
+    archiveConflictParts.push('character is approved')
+  }
+  if (linkedShots.length) {
+    archiveConflictParts.push(
+      `linked to ${linkedShots.length} active shot${linkedShots.length === 1 ? '' : 's'}`,
+    )
+  }
+  if (associatedVoices.length) {
+    archiveConflictParts.push(
+      `referenced by ${associatedVoices.length} active voice profile${associatedVoices.length === 1 ? '' : 's'}`,
+    )
+  }
+  if (references.length) {
+    archiveConflictParts.push(
+      `owns ${references.length} character reference link${references.length === 1 ? '' : 's'}`,
+    )
+  }
+  const archiveReason = firstReason(
+    busyReason,
+    archiveConflictParts.length > 0 &&
+      `Cannot archive: ${archiveConflictParts.join('; ')}. Unlink shots/voices/references or use a non-approved character.`,
+  )
+  const createNameReason = firstReason(
+    busyReason,
+    !newName.trim() &&
+      'Enter a character name before creating via POST /storyboard/stories/{id}/characters.',
+  )
+  const saveReason = firstReason(busyReason, editReason)
+  const uploadReason = firstReason(
+    busyReason,
+    !referenceApiAvailable && 'Character-reference upload API is unavailable.',
+    !referenceFile && 'Choose an image file before uploading a managed reference asset.',
+  )
+  const linkReason = firstReason(
+    busyReason,
+    !referenceApiAvailable && 'Character-reference link API is unavailable.',
+    !selectedAssetId && 'Select a managed asset before creating a character reference link.',
+  )
+  const assignVoiceReason = firstReason(
+    busyReason,
+    !selectedVoice &&
+      'Choose a mutable voice profile before assigning character_id via PATCH /voices/profiles/{id}.',
+    selectedVoice?.approval_state === 'approved' &&
+      'Approved voice profiles are immutable and cannot be reassigned.',
+  )
 
   const onAddCharacter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!newName.trim()) return
-    await addCharacter({
-      name: newName.trim(),
-      role: newRole.trim() || undefined,
-      physical_description: newDescription.trim() || undefined,
-    })
-    setNewName('')
-    setNewRole('')
+    if (!newName.trim() || actionsBusy) return
+    setSaving(true)
+    setError(null)
+    try {
+      const created = await api.createCharacter(data.story.id, {
+        name: newName.trim(),
+        role: newRole.trim() || undefined,
+        physical_description: newDescription.trim() || undefined,
+      })
+      await reload()
+      setSelectedId(created.id)
+      setEdit(true)
+      setDrawerTab('identity')
+      setNewName('')
+      setNewRole('')
+      setNewDescription('')
+      setShowCreate(false)
+      setMessage(`Character “${created.name}” saved. No image generation was started.`)
+    } catch (err) {
+      const text = errorText(err, 'Could not create the character.')
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onQuickCreate = () => {
+    if (showCreate) {
+      setShowCreate(false)
+      return
+    }
+    // Production needs a name; open the compact create form (proto creates a draft instantly).
+    setShowCreate(true)
+    setNewName('New character')
+    setNewRole('Unassigned role')
     setNewDescription('')
-    setShowCreate(false)
   }
 
   const onSaveCharacter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!selectedCharacter) return
+    if (!selectedCharacter || actionsBusy || !edit) return
     const form = new FormData(event.currentTarget)
-    const nextName = String(form.get('name') ?? '').trim()
+    const nextName =
+      String(form.get('name') ?? selectedCharacter.name).trim() || selectedCharacter.name
     if (!nextName) return
     setSaving(true)
     setError(null)
     try {
       const result = await api.updateCharacter(selectedCharacter.id, {
         name: nextName,
-        role: String(form.get('role') ?? '').trim() || null,
+        role:
+          String(form.get('role') ?? selectedCharacter.role ?? '').trim() ||
+          selectedCharacter.role ||
+          null,
         age_range: String(form.get('age_range') ?? '').trim() || null,
         physical_description: String(form.get('physical_description') ?? '').trim() || null,
         personality: String(form.get('personality') ?? '').trim() || null,
@@ -235,6 +383,7 @@ export function CharactersPage() {
         return
       }
       await reload()
+      setEdit(false)
       setMessage(`Character “${result.name}” updated on the server.`)
     } catch (err) {
       const text = errorText(err, 'Could not update the character.')
@@ -246,7 +395,7 @@ export function CharactersPage() {
   }
 
   const onArchiveCharacter = async () => {
-    if (!selectedCharacter) return
+    if (!selectedCharacter || archiveReason) return
     if (!window.confirm(`Archive character “${selectedCharacter.name}”?`)) return
     setSaving(true)
     setError(null)
@@ -261,6 +410,7 @@ export function CharactersPage() {
       }
       await reload()
       setSelectedId('')
+      setEdit(false)
       setMessage(`Character “${selectedCharacter.name}” archived on the server.`)
     } catch (err) {
       const text = errorText(err, 'Could not archive the character.')
@@ -273,7 +423,7 @@ export function CharactersPage() {
 
   const onUploadReference = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!referenceFile) return
+    if (!referenceFile || actionsBusy || !referenceApiAvailable) return
     setSaving(true)
     setError(null)
     try {
@@ -303,14 +453,15 @@ export function CharactersPage() {
 
   const onLinkReference = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!selectedCharacter || !selectedAssetId) return
+    if (!selectedCharacter || !selectedAssetId || actionsBusy || !referenceApiAvailable) return
+    const willApproveHero = approveHero
     setSaving(true)
     setError(null)
     try {
       const result = await api.linkCharacterReference(selectedCharacter.id, {
         asset_id: selectedAssetId,
-        reference_role: approveHero ? 'primary' : referenceRole,
-        approved: approveHero,
+        reference_role: willApproveHero ? 'primary' : referenceRole,
+        approved: willApproveHero,
         order_index: references.length,
       })
       if (result == null) {
@@ -321,7 +472,7 @@ export function CharactersPage() {
       setApproveHero(false)
       await Promise.all([loadReferences(), reload()])
       setMessage(
-        approveHero
+        willApproveHero
           ? `Approved ${result.asset?.original_filename ?? result.asset_id} as the character’s primary hero reference.`
           : `Linked ${result.asset?.original_filename ?? result.asset_id} as ${result.reference_role}.`,
       )
@@ -335,6 +486,7 @@ export function CharactersPage() {
   }
 
   const onUnlinkReference = async (reference: CharacterReferenceLink) => {
+    if (actionsBusy || !referenceApiAvailable) return
     setSaving(true)
     setError(null)
     try {
@@ -356,7 +508,7 @@ export function CharactersPage() {
   }
 
   const onAssignVoice = async () => {
-    if (!selectedCharacter || !selectedVoice) return
+    if (!selectedCharacter || !selectedVoice || assignVoiceReason) return
     setSaving(true)
     setError(null)
     try {
@@ -378,6 +530,8 @@ export function CharactersPage() {
   }
 
   const onUnassignVoice = async (voiceId: string) => {
+    const voice = data.voices.find((item) => item.id === voiceId)
+    if (actionsBusy || voice?.approval_state === 'approved') return
     setSaving(true)
     setError(null)
     try {
@@ -402,6 +556,7 @@ export function CharactersPage() {
     setSelectedVoiceId('')
     setEdit(false)
     setDrawerTab('identity')
+    setError(null)
   }
 
   return (
@@ -413,19 +568,23 @@ export function CharactersPage() {
         aside={
           <div className="page-actions">
             <Button
+              type="button"
               icon="filter"
-              onClick={() => setFilter(filter === 'all' ? 'review' : 'all')}
-              disabled={busy || saving}
+              onClick={() => setFilter(filter === 'All' ? 'Review' : 'All')}
+              disabled={actionsBusy}
+              title={busyReason ?? undefined}
             >
-              {filter === 'all' ? 'Needs review' : 'Show all'}
+              {filter === 'All' ? 'Needs review' : 'Show all'}
             </Button>
             <Button
+              type="button"
               variant="primary"
               icon="plus"
-              onClick={() => setShowCreate((open) => !open)}
-              disabled={busy || saving}
+              onClick={onQuickCreate}
+              disabled={actionsBusy}
+              title={busyReason ?? undefined}
             >
-              {showCreate ? 'Close create' : 'Create character'}
+              Create character
             </Button>
           </div>
         }
@@ -434,25 +593,17 @@ export function CharactersPage() {
       <div className="character-layout">
         <div className="stack">
           <div className="segmented" role="tablist" aria-label="Filter characters by approval state">
-            {(
-              [
-                ['all', 'All'],
-                ['draft', 'Draft'],
-                ['review', 'Review'],
-                ['approved', 'Approved'],
-                ['blocked', 'Blocked'],
-              ] as const
-            ).map(([id, label]) => (
+            {(['All', 'Draft', 'Review', 'Approved', 'Blocked'] as const).map((label) => (
               <button
-                key={id}
+                key={label}
                 type="button"
                 role="tab"
-                aria-selected={filter === id}
-                className={filter === id ? 'active' : ''}
-                onClick={() => setFilter(id)}
+                aria-selected={filter === label}
+                className={filter === label ? 'active' : ''}
+                onClick={() => setFilter(label)}
               >
                 {label}
-                <span>{filterCounts[id]}</span>
+                <span>{filterCounts[label]}</span>
               </button>
             ))}
           </div>
@@ -460,13 +611,18 @@ export function CharactersPage() {
           {showCreate ? (
             <form className="panel stack-form" onSubmit={(event) => void onAddCharacter(event)}>
               <h3>Create character</h3>
+              <p className="form-hint">
+                Persists via POST /storyboard/stories/{'{story_id}'}/characters. No image is
+                generated.
+              </p>
               <label>
                 Name
                 <input
                   required
                   value={newName}
                   onChange={(event) => setNewName(event.target.value)}
-                  disabled={busy || saving}
+                  disabled={actionsBusy}
+                  title={busyReason ?? undefined}
                 />
               </label>
               <label>
@@ -474,7 +630,8 @@ export function CharactersPage() {
                 <input
                   value={newRole}
                   onChange={(event) => setNewRole(event.target.value)}
-                  disabled={busy || saving}
+                  disabled={actionsBusy}
+                  title={busyReason ?? undefined}
                 />
               </label>
               <label>
@@ -482,25 +639,27 @@ export function CharactersPage() {
                 <textarea
                   value={newDescription}
                   onChange={(event) => setNewDescription(event.target.value)}
-                  disabled={busy || saving}
+                  disabled={actionsBusy}
+                  title={busyReason ?? undefined}
                 />
               </label>
               <div className="inline-actions">
-                <button
+                <Button
                   type="submit"
-                  className="primary-button touch-target"
-                  disabled={busy || saving || !newName.trim()}
+                  variant="primary"
+                  disabled={Boolean(createNameReason)}
+                  title={createNameReason}
                 >
-                  Add character
-                </button>
-                <button
+                  {saving ? 'Creating…' : 'Add character'}
+                </Button>
+                <Button
                   type="button"
-                  className="ghost-button touch-target"
                   onClick={() => setShowCreate(false)}
-                  disabled={busy || saving}
+                  disabled={actionsBusy}
+                  title={busyReason ?? undefined}
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           ) : null}
@@ -510,7 +669,14 @@ export function CharactersPage() {
               title="No characters yet"
               detail="Add a character to begin the production bible."
               action={
-                <Button variant="primary" icon="plus" onClick={() => setShowCreate(true)}>
+                <Button
+                  type="button"
+                  variant="primary"
+                  icon="plus"
+                  onClick={onQuickCreate}
+                  disabled={actionsBusy}
+                  title={busyReason ?? undefined}
+                >
                   Create character
                 </Button>
               }
@@ -519,7 +685,11 @@ export function CharactersPage() {
             <Empty
               title="No characters match"
               detail="Try another readiness filter."
-              action={<Button onClick={() => setFilter('all')}>Clear filter</Button>}
+              action={
+                <Button type="button" onClick={() => setFilter('All')}>
+                  Clear filter
+                </Button>
+              }
             />
           ) : (
             <div className="character-grid">
@@ -591,7 +761,7 @@ export function CharactersPage() {
         </div>
 
         {selectedCharacter ? (
-          <aside className="entity-drawer">
+          <aside className="entity-drawer" aria-label="Selected character drawer">
             <header>
               <div>
                 <span className="eyebrow">SELECTED CHARACTER</span>
@@ -602,7 +772,9 @@ export function CharactersPage() {
                 type="button"
                 className="icon-button"
                 onClick={() => setEdit((value) => !value)}
-                aria-label="Edit character"
+                aria-label={edit ? 'Exit edit mode' : 'Edit character'}
+                disabled={actionsBusy}
+                title={busyReason ?? (edit ? 'Exit edit mode' : 'Enable identity field edits')}
               >
                 <Icon name={edit ? 'check' : 'edit'} />
               </button>
@@ -614,23 +786,26 @@ export function CharactersPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setDrawerTab('identity')
-                  setEdit(true)
+                  setDrawerTab('continuity')
                   setMessage('Use managed reference upload below to add a real reference asset.')
                 }}
-                disabled={busy || saving}
+                disabled={actionsBusy}
+                title={
+                  busyReason ??
+                  'Open Continuity tab to upload or link a managed reference asset (no generation).'
+                }
               >
                 <Icon name="plus" />
                 <span>Add reference</span>
               </button>
-              {references.slice(0, 4).map((reference, index) => (
+              {displayReferences.slice(0, 4).map((reference, index) => (
                 <button
                   key={reference.id}
                   type="button"
                   className={`ref ref-${index}`}
                   onClick={() =>
                     setMessage(
-                      `Reference ${reference.asset?.original_filename ?? reference.asset_id} · ${reference.reference_role}`,
+                      `Reference ${reference.label ?? reference.asset_id} · ${reference.reference_role}`,
                     )
                   }
                 >
@@ -684,21 +859,37 @@ export function CharactersPage() {
                 className="form-stack compact"
                 onSubmit={(event) => void onSaveCharacter(event)}
               >
+                {edit ? (
+                  <>
+                    <label>
+                      Name
+                      <input
+                        name="name"
+                        required
+                        defaultValue={selectedCharacter.name}
+                        disabled={actionsBusy}
+                        title={busyReason ?? undefined}
+                      />
+                    </label>
+                    <label>
+                      Role
+                      <input
+                        name="role"
+                        defaultValue={selectedCharacter.role ?? ''}
+                        disabled={actionsBusy}
+                        title={busyReason ?? undefined}
+                      />
+                    </label>
+                  </>
+                ) : null}
+
                 <label>
-                  Name
-                  <input
-                    name="name"
-                    required
-                    defaultValue={selectedCharacter.name}
-                    disabled={busy || saving || !edit}
-                  />
-                </label>
-                <label>
-                  Role
-                  <input
-                    name="role"
-                    defaultValue={selectedCharacter.role ?? ''}
-                    disabled={busy || saving || !edit}
+                  Physical description
+                  <textarea
+                    name="physical_description"
+                    defaultValue={selectedCharacter.physical_description ?? ''}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   />
                 </label>
                 <div className="form-grid">
@@ -707,32 +898,30 @@ export function CharactersPage() {
                     <input
                       name="age_range"
                       defaultValue={selectedCharacter.age_range ?? ''}
-                      disabled={busy || saving || !edit}
+                      disabled={Boolean(fieldsDisabledReason)}
+                      title={fieldsDisabledReason}
                     />
                   </label>
                   <label>
                     Approval
-                    <input
+                    <select
                       value={approvalLabel(selectedCharacter.approval_state)}
                       disabled
-                      title="Approval state is managed by server readiness and proposal flow."
-                    />
+                      title="Approval state is managed by server readiness and proposal apply — not editable on this page."
+                    >
+                      {(['Draft', 'Review', 'Approved', 'Blocked'] as const).map((status) => (
+                        <option key={status}>{status}</option>
+                      ))}
+                    </select>
                   </label>
                 </div>
                 <label>
-                  Physical description
-                  <textarea
-                    name="physical_description"
-                    defaultValue={selectedCharacter.physical_description ?? ''}
-                    disabled={busy || saving || !edit}
-                  />
-                </label>
-                <label>
                   Personality
-                  <textarea
+                  <input
                     name="personality"
                     defaultValue={selectedCharacter.personality ?? ''}
-                    disabled={busy || saving || !edit}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   />
                 </label>
                 <label>
@@ -740,7 +929,8 @@ export function CharactersPage() {
                   <input
                     name="speaking_style"
                     defaultValue={selectedCharacter.speaking_style ?? ''}
-                    disabled={busy || saving || !edit}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   />
                 </label>
                 <label>
@@ -748,23 +938,27 @@ export function CharactersPage() {
                   <textarea
                     name="wardrobe"
                     defaultValue={selectedCharacter.wardrobe ?? ''}
-                    disabled={busy || saving || !edit}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   />
                 </label>
                 <label>
-                  Identity method
-                  <input
-                    name="identity_method"
-                    defaultValue={selectedCharacter.identity_method ?? ''}
-                    disabled={busy || saving || !edit}
-                  />
+                  Approved outfits
+                  <div className="token-field">
+                    {selectedOutfits.length ? (
+                      selectedOutfits.map((outfit) => <span key={outfit}>{outfit}</span>)
+                    ) : (
+                      <span>None recorded</span>
+                    )}
+                  </div>
                 </label>
                 <label>
-                  Consistency prompt
+                  Visual consistency prompt
                   <textarea
                     name="consistency_prompt"
                     defaultValue={selectedCharacter.consistency_prompt ?? ''}
-                    disabled={busy || saving || !edit}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   />
                 </label>
                 <label>
@@ -772,26 +966,68 @@ export function CharactersPage() {
                   <textarea
                     name="negative_identity_prompt"
                     defaultValue={selectedCharacter.negative_identity_prompt ?? ''}
-                    disabled={busy || saving || !edit}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   />
                 </label>
-                <div className="inline-actions">
-                  <Button type="submit" variant="primary" disabled={busy || saving || !edit}>
-                    {saving ? 'Saving…' : 'Save character bible'}
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={busy || saving || selectedCharacter.approval_state === 'approved'}
-                    title={
-                      selectedCharacter.approval_state === 'approved'
-                        ? 'Approved characters cannot be archived while locked into production identity.'
-                        : undefined
+                <label>
+                  Identity method
+                  <input
+                    name="identity_method"
+                    defaultValue={selectedCharacter.identity_method ?? ''}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
+                  />
+                </label>
+                <label>
+                  Voice assignment
+                  <select
+                    value={
+                      selectedVoiceId ||
+                      selectedCharacter.assigned_voice_profile_id ||
+                      associatedVoices[0]?.id ||
+                      ''
                     }
-                    onClick={() => void onArchiveCharacter()}
+                    onChange={(event) => setSelectedVoiceId(event.target.value)}
+                    disabled={Boolean(fieldsDisabledReason)}
+                    title={fieldsDisabledReason}
                   >
-                    Archive character
-                  </Button>
-                </div>
+                    <option value="">Unassigned</option>
+                    {data.voices.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.name} · {voice.approval_state}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {edit ? (
+                  <div className="inline-actions">
+                    <Button
+                      type="button"
+                      onClick={() => void onAssignVoice()}
+                      disabled={Boolean(assignVoiceReason)}
+                      title={assignVoiceReason}
+                    >
+                      Assign voice
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={Boolean(saveReason)}
+                      title={saveReason}
+                    >
+                      {saving ? 'Saving…' : 'Save character bible'}
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={Boolean(archiveReason)}
+                      title={archiveReason}
+                      onClick={() => void onArchiveCharacter()}
+                    >
+                      Archive character
+                    </Button>
+                  </div>
+                ) : null}
               </form>
             ) : null}
 
@@ -813,7 +1049,9 @@ export function CharactersPage() {
                   <li>
                     <span>Canonical voice</span>
                     <strong>
-                      {canonicalVoice?.name ?? 'Not assigned by an applied proposal'}
+                      {canonicalVoice?.name ??
+                        associatedVoices[0]?.name ??
+                        'Not assigned by an applied proposal'}
                     </strong>
                   </li>
                 </ul>
@@ -833,30 +1071,37 @@ export function CharactersPage() {
                 )}
                 <h3>Voice assignment</h3>
                 <p className="form-hint">
-                  Associates a mutable voice profile through its persisted character_id.
+                  Associates a mutable voice profile via PATCH /voices/profiles/{'{id}'} with
+                  character_id. Canonical assigned_voice_profile_id is set only by applied
+                  proposals.
                 </p>
                 {associatedVoices.length ? (
                   <ul className="kv-list">
-                    {associatedVoices.map((voice) => (
-                      <li key={voice.id}>
-                        <span>
-                          {voice.name} · {voice.setup_mode}
-                        </span>
-                        <button
-                          type="button"
-                          className="ghost-button touch-target"
-                          onClick={() => void onUnassignVoice(voice.id)}
-                          disabled={busy || saving || voice.approval_state === 'approved'}
-                          title={
-                            voice.approval_state === 'approved'
-                              ? 'Approved voice profiles are immutable; create a replacement profile to change this association.'
-                              : undefined
-                          }
-                        >
-                          {voice.approval_state === 'approved' ? 'Approved assignment' : 'Unassign'}
-                        </button>
-                      </li>
-                    ))}
+                    {associatedVoices.map((voice) => {
+                      const unassignReason = firstReason(
+                        busyReason,
+                        voice.approval_state === 'approved' &&
+                          'Approved voice profiles are immutable; create a replacement profile to change this association.',
+                      )
+                      return (
+                        <li key={voice.id}>
+                          <span>
+                            {voice.name} · {voice.setup_mode}
+                          </span>
+                          <button
+                            type="button"
+                            className="ghost-button touch-target"
+                            onClick={() => void onUnassignVoice(voice.id)}
+                            disabled={Boolean(unassignReason)}
+                            title={unassignReason}
+                          >
+                            {voice.approval_state === 'approved'
+                              ? 'Approved assignment'
+                              : 'Unassign'}
+                          </button>
+                        </li>
+                      )
+                    })}
                   </ul>
                 ) : (
                   <p className="form-hint">
@@ -868,7 +1113,8 @@ export function CharactersPage() {
                   <select
                     value={selectedVoiceId}
                     onChange={(event) => setSelectedVoiceId(event.target.value)}
-                    disabled={busy || saving}
+                    disabled={actionsBusy}
+                    title={busyReason ?? undefined}
                   >
                     <option value="">Choose a mutable profile</option>
                     {data.voices.map((voice) => (
@@ -881,14 +1127,8 @@ export function CharactersPage() {
                 <Button
                   type="button"
                   onClick={() => void onAssignVoice()}
-                  disabled={
-                    busy || saving || !selectedVoice || selectedVoice.approval_state === 'approved'
-                  }
-                  title={
-                    selectedVoice?.approval_state === 'approved'
-                      ? 'Approved voice profiles are immutable and cannot be reassigned.'
-                      : undefined
-                  }
+                  disabled={Boolean(assignVoiceReason)}
+                  title={assignVoiceReason}
                 >
                   Assign voice profile
                 </Button>
@@ -915,14 +1155,20 @@ export function CharactersPage() {
                     <h3>Managed reference assets</h3>
                     <p className="form-hint">
                       Upload, link, list, unlink, and approve a hero reference when the link is
-                      created.
+                      created. No mock store substitution.
                     </p>
                   </div>
                   <button
                     type="button"
                     className="ghost-button touch-target"
                     onClick={() => void loadReferences()}
-                    disabled={loadingReferences || saving}
+                    disabled={loadingReferences || actionsBusy}
+                    title={
+                      firstReason(
+                        loadingReferences && 'Reference list is already loading.',
+                        busyReason,
+                      ) ?? undefined
+                    }
                   >
                     Refresh
                   </button>
@@ -931,51 +1177,59 @@ export function CharactersPage() {
                 {!referenceApiAvailable && !loadingReferences ? (
                   <UnavailableState
                     title="Character-reference API unavailable"
-                    detail="No file or link operation was substituted."
+                    detail="No file or link operation was substituted with a mock store."
                   />
                 ) : null}
                 {references.length ? (
                   <div className="card-grid">
-                    {references.map((reference) => (
-                      <article key={reference.id}>
-                        {reference.asset?.mime_type?.startsWith('image/') ? (
-                          <img
-                            src={planningAssetContentUrl(reference.asset_id)}
-                            alt={`${selectedCharacter.name} ${reference.reference_role} reference`}
-                            width="200"
-                            height="140"
-                            loading="lazy"
-                          />
-                        ) : null}
-                        <b>{reference.asset?.original_filename ?? reference.asset_id}</b>
-                        <small>
-                          {reference.reference_role} ·{' '}
-                          {reference.approved ? 'approved' : 'not approved'}
-                        </small>
-                        <p>
-                          {reference.asset?.approval_state ?? 'Asset record unavailable'} ·{' '}
-                          {reference.asset?.mime_type ?? 'Unknown type'}
-                        </p>
-                        <button
-                          type="button"
-                          className="secondary-button touch-target"
-                          onClick={() => void onUnlinkReference(reference)}
-                          disabled={saving || busy}
-                        >
-                          Unlink
-                        </button>
-                        {!reference.approved ? (
+                    {references.map((reference) => {
+                      const unlinkReason = firstReason(
+                        busyReason,
+                        !referenceApiAvailable &&
+                          'Character-reference unlink API is unavailable; the link was not changed.',
+                      )
+                      return (
+                        <article key={reference.id}>
+                          {reference.asset?.mime_type?.startsWith('image/') ? (
+                            <img
+                              src={planningAssetContentUrl(reference.asset_id)}
+                              alt={`${selectedCharacter.name} ${reference.reference_role} reference`}
+                              width="200"
+                              height="140"
+                              loading="lazy"
+                            />
+                          ) : null}
+                          <b>{reference.asset?.original_filename ?? reference.asset_id}</b>
+                          <small>
+                            {reference.reference_role} ·{' '}
+                            {reference.approved ? 'approved' : 'not approved'}
+                          </small>
+                          <p>
+                            {reference.asset?.approval_state ?? 'Asset record unavailable'} ·{' '}
+                            {reference.asset?.mime_type ?? 'Unknown type'}
+                          </p>
                           <button
                             type="button"
-                            className="ghost-button touch-target"
-                            disabled
-                            title="The backend exposes approval only while creating a reference link; unlink and relink it as an approved hero reference."
+                            className="secondary-button touch-target"
+                            onClick={() => void onUnlinkReference(reference)}
+                            disabled={Boolean(unlinkReason)}
+                            title={unlinkReason}
                           >
-                            Approve existing link — unavailable
+                            Unlink
                           </button>
-                        ) : null}
-                      </article>
-                    ))}
+                          {!reference.approved ? (
+                            <button
+                              type="button"
+                              className="ghost-button touch-target"
+                              disabled
+                              title={APPROVE_EXISTING_LINK_REASON}
+                            >
+                              Approve existing link — unavailable
+                            </button>
+                          ) : null}
+                        </article>
+                      )
+                    })}
                   </div>
                 ) : !loadingReferences && referenceApiAvailable ? (
                   <EmptyState
@@ -984,7 +1238,10 @@ export function CharactersPage() {
                   />
                 ) : null}
 
-                <form className="form-stack compact" onSubmit={(event) => void onUploadReference(event)}>
+                <form
+                  className="form-stack compact"
+                  onSubmit={(event) => void onUploadReference(event)}
+                >
                   <label>
                     Reference image
                     <input
@@ -992,21 +1249,38 @@ export function CharactersPage() {
                       type="file"
                       accept="image/*"
                       onChange={(event) => setReferenceFile(event.target.files?.[0] ?? null)}
-                      disabled={saving || busy}
+                      disabled={actionsBusy || !referenceApiAvailable}
+                      title={
+                        firstReason(
+                          busyReason,
+                          !referenceApiAvailable && 'Character-reference upload API is unavailable.',
+                        ) ?? undefined
+                      }
                     />
                   </label>
-                  <Button type="submit" disabled={!referenceFile || saving || busy}>
+                  <Button type="submit" disabled={Boolean(uploadReason)} title={uploadReason}>
                     {saving ? 'Working…' : 'Upload managed reference'}
                   </Button>
                 </form>
 
-                <form className="form-stack compact" onSubmit={(event) => void onLinkReference(event)}>
+                <form
+                  className="form-stack compact"
+                  onSubmit={(event) => void onLinkReference(event)}
+                >
                   <label>
                     Managed asset
                     <select
                       value={selectedAssetId}
                       onChange={(event) => setSelectedAssetId(event.target.value)}
-                      disabled={saving || busy || !assets.length}
+                      disabled={actionsBusy || !assets.length || !referenceApiAvailable}
+                      title={
+                        firstReason(
+                          busyReason,
+                          !referenceApiAvailable && 'Character-reference link API is unavailable.',
+                          !assets.length &&
+                            'Upload a managed reference asset before linking it to this character.',
+                        ) ?? undefined
+                      }
                     >
                       {!assets.length ? (
                         <option value="">No managed reference assets</option>
@@ -1025,7 +1299,14 @@ export function CharactersPage() {
                       onChange={(event) =>
                         setReferenceRole(event.target.value as (typeof REFERENCE_ROLES)[number])
                       }
-                      disabled={saving || busy || approveHero}
+                      disabled={actionsBusy || approveHero}
+                      title={
+                        firstReason(
+                          busyReason,
+                          approveHero &&
+                            'Role is forced to primary while “Approve as primary hero reference” is checked.',
+                        ) ?? undefined
+                      }
                     >
                       {REFERENCE_ROLES.map((item) => (
                         <option key={item} value={item}>
@@ -1039,25 +1320,29 @@ export function CharactersPage() {
                       type="checkbox"
                       checked={approveHero}
                       onChange={(event) => setApproveHero(event.target.checked)}
-                      disabled={saving || busy}
+                      disabled={actionsBusy || !referenceApiAvailable}
+                      title={
+                        firstReason(
+                          busyReason,
+                          !referenceApiAvailable && 'Character-reference link API is unavailable.',
+                        ) ?? undefined
+                      }
                     />
                     Approve as primary hero reference
                   </label>
-                  <Button type="submit" variant="primary" disabled={!selectedAssetId || saving || busy}>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={Boolean(linkReason)}
+                    title={linkReason}
+                  >
                     Link reference
                   </Button>
                 </form>
-                <Button
-                  type="button"
-                  disabled
-                  title="Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets."
-                >
+                <Button type="button" disabled title={GENERATION_DISABLED_REASON}>
                   Generate reference image — disabled
                 </Button>
-                <p className="form-hint">
-                  Image generation is disabled in Phase 1 planning; this page only stores and links
-                  user-provided managed assets.
-                </p>
+                <p className="form-hint">{GENERATION_DISABLED_REASON}</p>
               </div>
             ) : null}
           </aside>
