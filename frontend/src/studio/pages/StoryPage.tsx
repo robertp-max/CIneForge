@@ -1,3 +1,7 @@
+/**
+ * Structural port of prototype StoryPage (pagesCore.tsx) adapted to
+ * production studio context + story save / hierarchy / orchestration APIs.
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   api,
@@ -15,10 +19,11 @@ import {
   type StoryboardProposal,
 } from '../../api/client'
 import { formatDate } from '../../components/formatDate'
-import { Button, Icon, PageTitle, StatusPill } from '../../components/ui'
+import { Button, Icon, PageTitle, Section, StatusPill } from '../../components/ui'
 import { useStudio } from '../StudioState'
 import { countScenes, countShots, formatDuration, initials } from '../utils'
 import { EmptyState, LoadingState } from '../components/StateBlocks'
+import { toProtoProject } from '../proto/adapter'
 
 type ProviderPreference = 'local' | 'hosted' | 'mixed'
 type LogicalModel = NonNullable<ManualTaskRoute['logical_model']>
@@ -84,7 +89,7 @@ function sceneCharacterIds(scene: Scene): string[] {
 }
 
 export function StoryPage() {
-  const { data, addHierarchy, updateStoryFields, reload, setMessage, busy } = useStudio()
+  const { data, readiness, addHierarchy, updateStoryFields, reload, setMessage, busy } = useStudio()
   const storyId = data?.story.id ?? ''
   const [logline, setLogline] = useState(data?.story.logline ?? '')
   const [synopsis, setSynopsis] = useState(data?.story.synopsis ?? '')
@@ -138,6 +143,8 @@ export function StoryPage() {
   const syncedPointOfView = data?.story.point_of_view ?? ''
   const syncedProductionNotes = data?.story.production_notes ?? ''
   const syncedTargetRuntime = String(data?.story.target_duration_sec ?? '')
+
+  const view = useMemo(() => (data ? toProtoProject(data, readiness) : null), [data, readiness])
 
   useEffect(() => {
     if (!syncedStoryId) return
@@ -300,6 +307,9 @@ export function StoryPage() {
     !selectedProposal.validation_errors.length &&
     proposalDiff?.proposal_id === selectedProposal.id
 
+  const hasProposal = Boolean(selectedProposal)
+  const protoProject = view?.project
+
   async function chooseRun(runId: string) {
     setSelectedRunId(runId)
     setPlanningBusy(true)
@@ -343,26 +353,30 @@ export function StoryPage() {
 
   function buildManualRoutes(): ManualTaskRoute[] {
     return PLANNING_TASKS.flatMap<ManualTaskRoute>(({ task, logicalModel }) => {
-        const selection = manualRouteSelections[task]
-        if (!selection) return []
-        if (selection === BUILTIN_MOCK_ROUTE) {
-          return [{
+      const selection = manualRouteSelections[task]
+      if (!selection) return []
+      if (selection === BUILTIN_MOCK_ROUTE) {
+        return [
+          {
             task_type: task,
             provider_identifier: 'mock',
             logical_model: logicalModel,
             rationale: 'Explicit Studio route to the deterministic local mock provider.',
-          }]
-        }
-        const profile = providerProfiles.find((item) => item.id === selection)
-        if (!profile) return []
-        return [{
+          },
+        ]
+      }
+      const profile = providerProfiles.find((item) => item.id === selection)
+      if (!profile) return []
+      return [
+        {
           task_type: task,
           provider_identifier: profile.provider_identifier,
           logical_model: logicalModel,
           resolved_model: profile.provider_model_id,
           rationale: `Explicit Studio route through provider profile ${profile.display_name}.`,
-        }]
-      })
+        },
+      ]
+    })
   }
 
   function changeRoutingMode(nextMode: OrchestrationRoutingMode) {
@@ -648,16 +662,42 @@ export function StoryPage() {
     })
   }
 
+  // Diff ops as lightweight suggestion cards when a proposal is loaded.
+  const suggestionCards: Array<{ title: string; body: string }> = (() => {
+    if (!proposalDiff?.ops.length) {
+      if (selectedProposal) {
+        return [
+          {
+            title: `${selectedProposal.status} · ${selectedProposal.proposal_type}`,
+            body:
+              selectedProposal.validation_status === 'invalid'
+                ? 'Proposal failed validation and cannot be applied.'
+                : `Schema ${selectedProposal.schema_name || 'unknown'} · ${proposalDiff?.ops.length ?? 0} diff ops.`,
+          },
+        ]
+      }
+      return []
+    }
+    return proposalDiff.ops.slice(0, 6).map((op) => ({
+      title: `${op.op} · ${op.path}`,
+      body: `Before: ${diffValue(op.before)} → After: ${diffValue(op.after)}`,
+    }))
+  })()
+
   return (
-    <div className="page">
+    <div className="page proto-page">
       <PageTitle
         eyebrow="STORY INTAKE & STRUCTURE"
         title="Story & chapters"
         description="Edit the source narrative and reconcile every structural beat before shot planning."
         aside={
           <div className="page-actions">
-            <Button icon="spark" onClick={() => void createRun()} disabled={disabled}>
-              Generate structure
+            <Button
+              onClick={() => void createRun()}
+              disabled={disabled}
+              icon="spark"
+            >
+              {planningBusy ? 'Generating proposal…' : 'Generate structure'}
             </Button>
             <Button
               variant="primary"
@@ -678,34 +718,30 @@ export function StoryPage() {
         }
       />
 
-      <div className="story-layout">
-        <div className="stack" style={{ display: 'grid', gap: 14, minWidth: 0, alignContent: 'start' }}>
-          <section className="panel" aria-labelledby="source-story-title">
-            <header className="panel-head">
-              <div>
-                <h2 id="source-story-title">Source story</h2>
-                <p>Production intent supplied to the selected orchestrator.</p>
-              </div>
-              <StatusPill status={story.approval_state || 'draft'} />
-            </header>
-
-            <div className="stack-form" style={{ maxWidth: '100%' }}>
-              <div className="split-2">
-                <label>
-                  Title
-                  <input value={story.title} readOnly aria-readonly="true" />
-                </label>
-                <label>
-                  Target runtime
-                  <input
-                    type="number"
-                    min={1}
-                    value={targetRuntime}
-                    onChange={(event) => setTargetRuntime(event.target.value)}
-                    disabled={busy}
-                  />
-                </label>
-              </div>
+      <div className="split-layout story-editor">
+        <div className="stack">
+          <Section
+            title="Source story"
+            subtitle="Production intent supplied to the selected orchestrator."
+            action={<StatusPill status={story.approval_state || 'draft'} />}
+          >
+            <div className="form-grid two">
+              <label>
+                Title
+                <input value={story.title} readOnly aria-readonly="true" />
+              </label>
+              <label>
+                Target runtime
+                <input
+                  type="number"
+                  min={1}
+                  value={targetRuntime}
+                  onChange={(event) => setTargetRuntime(event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+            </div>
+            <div className="form-stack">
               <label>
                 Logline
                 <textarea
@@ -719,6 +755,7 @@ export function StoryPage() {
               <label>
                 Full base story
                 <textarea
+                  className="story-textarea"
                   value={baseStory}
                   onChange={(event) => setBaseStory(event.target.value)}
                   disabled={busy}
@@ -735,7 +772,7 @@ export function StoryPage() {
                   rows={2}
                 />
               </label>
-              <div className="split-2">
+              <div className="form-grid three">
                 <label>
                   Audience
                   <input
@@ -748,8 +785,6 @@ export function StoryPage() {
                   Tone
                   <input value={tone} onChange={(event) => setTone(event.target.value)} disabled={busy} />
                 </label>
-              </div>
-              <div className="split-2">
                 <label>
                   Genre
                   <input
@@ -758,6 +793,8 @@ export function StoryPage() {
                     disabled={busy}
                   />
                 </label>
+              </div>
+              <div className="form-grid two">
                 <label>
                   Visual style
                   <input
@@ -766,15 +803,15 @@ export function StoryPage() {
                     disabled={busy}
                   />
                 </label>
+                <label>
+                  Narrative point of view
+                  <input
+                    value={pointOfView}
+                    onChange={(event) => setPointOfView(event.target.value)}
+                    disabled={busy}
+                  />
+                </label>
               </div>
-              <label>
-                Narrative point of view
-                <input
-                  value={pointOfView}
-                  onChange={(event) => setPointOfView(event.target.value)}
-                  disabled={busy}
-                />
-              </label>
               <label>
                 Production notes
                 <textarea
@@ -785,86 +822,58 @@ export function StoryPage() {
                 />
               </label>
               <div className="inline-actions">
-                <button
-                  type="button"
-                  className="primary-button touch-target"
-                  disabled={busy}
-                  onClick={saveStoryFields}
-                >
+                <Button variant="primary" disabled={busy} onClick={saveStoryFields}>
                   Save story fields
-                </button>
+                </Button>
               </div>
             </div>
-          </section>
+          </Section>
 
-          <section className="panel" aria-labelledby="narrative-hierarchy-title">
-            <header className="panel-head">
-              <div>
-                <h2 id="narrative-hierarchy-title">Narrative hierarchy</h2>
-                <p>{hierarchySummary}</p>
-              </div>
-              <div className="inline-actions">
-                <Button
-                  variant="quiet"
-                  icon="plus"
-                  disabled={structureDisabled}
-                  onClick={() => void addHierarchy('chapter')}
-                >
-                  Add chapter
-                </Button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={structureDisabled}
-                  onClick={() => void addHierarchy('scene')}
-                >
-                  Add scene
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={structureDisabled}
-                  onClick={() => void addHierarchy('shot')}
-                >
-                  Add shot
-                </button>
-              </div>
-            </header>
-
-            {structureError ? <p className="notice error" role="alert">{structureError}</p> : null}
+          <Section
+            title="Narrative hierarchy"
+            subtitle={hierarchySummary}
+            action={
+              <Button
+                variant="quiet"
+                icon="plus"
+                disabled={structureDisabled}
+                onClick={() => void addHierarchy('chapter')}
+              >
+                Add chapter
+              </Button>
+            }
+          >
+            {structureError ? (
+              <p className="notice error" role="alert">
+                {structureError}
+              </p>
+            ) : null}
             {!chapters.length ? (
               <EmptyState title="No chapters" detail="Create the first chapter to structure the story." />
             ) : (
-              <div>
+              <div className="hierarchy">
                 {chapters.map((chapter, chapterIndex) => {
                   const open = openChapterIds.includes(chapter.id)
                   const chapterIdLabel = chapterLabel(chapterIndex)
                   return (
-                    <article key={chapter.id} className="hierarchy-card">
+                    <article key={chapter.id}>
                       <header>
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => toggleChapter(chapter.id)}
-                          aria-expanded={open}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textAlign: 'left' }}
-                        >
-                          <Icon name="chevron" size={16} />
+                        <button type="button" onClick={() => toggleChapter(chapter.id)} aria-expanded={open}>
+                          <Icon name="chevron" />
                           <span>
-                            <small style={{ display: 'block', color: 'var(--muted)' }}>{chapterIdLabel}</small>
+                            <small>{chapterIdLabel}</small>
                             <b>{chapter.title}</b>
                           </span>
                         </button>
-                        <span style={{ textAlign: 'right' }}>
-                          <b style={{ display: 'block' }}>{formatDuration(chapter.duration_sec)}</b>
-                          <small style={{ color: 'var(--muted)' }}>
+                        <span>
+                          <b>{formatDuration(chapter.duration_sec)}</b>
+                          <small>
                             {chapter.scenes.length} scene{chapter.scenes.length === 1 ? '' : 's'}
                           </small>
                         </span>
-                        <div className="inline-actions" aria-label={`Chapter actions for ${chapter.title}`}>
+                        <div aria-label={`Chapter actions for ${chapter.title}`}>
                           <button
                             type="button"
-                            className="ghost-button"
                             disabled={structureDisabled || chapterIndex === 0}
                             aria-label={`Move ${chapter.title} up`}
                             onClick={() => void moveChapter(chapterIndex, -1)}
@@ -873,7 +882,6 @@ export function StoryPage() {
                           </button>
                           <button
                             type="button"
-                            className="ghost-button"
                             disabled={structureDisabled || chapterIndex === chapters.length - 1}
                             aria-label={`Move ${chapter.title} down`}
                             onClick={() => void moveChapter(chapterIndex, 1)}
@@ -882,7 +890,6 @@ export function StoryPage() {
                           </button>
                           <button
                             type="button"
-                            className="ghost-button"
                             disabled={structureDisabled}
                             onClick={() => void editChapter(chapter)}
                             aria-label={`Edit ${chapter.title}`}
@@ -891,7 +898,6 @@ export function StoryPage() {
                           </button>
                           <button
                             type="button"
-                            className="ghost-button"
                             disabled={structureDisabled}
                             onClick={() => void deleteChapter(chapter)}
                             aria-label={`Archive ${chapter.title}`}
@@ -900,13 +906,9 @@ export function StoryPage() {
                           </button>
                         </div>
                       </header>
-                      {chapter.summary ? (
-                        <p style={{ margin: '0 0 8px', color: 'var(--muted)', fontSize: '0.9rem' }}>
-                          {chapter.summary}
-                        </p>
-                      ) : null}
-                      {open
-                        ? chapter.scenes.map((scene, sceneIndex) => {
+                      {open ? (
+                        <div className="hierarchy-scenes">
+                          {chapter.scenes.map((scene, sceneIndex) => {
                             const sceneChars = sceneCharacterIds(scene).flatMap((id) => {
                               const character = characterById.get(id)
                               return character ? [character] : []
@@ -914,247 +916,145 @@ export function StoryPage() {
                             const location =
                               scene.shots.find((shot) => shot.location)?.location ?? null
                             return (
-                              <div key={scene.id} className="scene-card">
-                                <header
-                                  style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    gap: 10,
-                                    alignItems: 'flex-start',
-                                  }}
+                              <div key={scene.id}>
+                                <span className="scene-index">{sceneIndex + 1}</span>
+                                <span>
+                                  <small>{sceneLabel(sceneIndex)}</small>
+                                  <b>{scene.title}</b>
+                                  <p>{scene.summary ?? 'No scene summary yet.'}</p>
+                                  {location ? <em>{location}</em> : null}
+                                </span>
+                                <span>
+                                  <b>{scene.duration_sec} sec</b>
+                                  <small>
+                                    {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'}
+                                  </small>
+                                </span>
+                                <span className="character-dots" aria-label="Characters in scene">
+                                  {sceneChars.length
+                                    ? sceneChars.map((character) => (
+                                        <i key={character.id} title={character.name}>
+                                          {initials(character.name)}
+                                        </i>
+                                      ))
+                                    : (
+                                        <i title="No linked characters" style={{ opacity: 0.45 }}>
+                                          —
+                                        </i>
+                                      )}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={structureDisabled}
+                                  onClick={() => void editScene(scene)}
+                                  aria-label={`Edit ${scene.title}`}
                                 >
-                                  <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
-                                    <span
-                                      className="status-pill"
-                                      data-status="draft"
-                                      style={{ flexShrink: 0 }}
-                                    >
-                                      {sceneIndex + 1}
-                                    </span>
-                                    <div style={{ minWidth: 0 }}>
-                                      <small style={{ color: 'var(--muted)' }}>
-                                        {sceneLabel(sceneIndex)}
-                                      </small>
-                                      <b style={{ display: 'block' }}>{scene.title}</b>
-                                      <p
-                                        style={{
-                                          margin: '4px 0 0',
-                                          color: 'var(--muted)',
-                                          fontSize: '0.85rem',
-                                        }}
-                                      >
-                                        {scene.summary ?? 'No scene summary yet.'}
-                                      </p>
-                                      {location ? (
-                                        <em
-                                          style={{
-                                            display: 'block',
-                                            marginTop: 4,
-                                            color: 'var(--muted)',
-                                            fontSize: '0.8rem',
-                                            fontStyle: 'normal',
-                                          }}
-                                        >
-                                          {location}
-                                        </em>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                  <span style={{ textAlign: 'right', flexShrink: 0 }}>
-                                    <b style={{ display: 'block' }}>{scene.duration_sec} sec</b>
-                                    <small style={{ color: 'var(--muted)' }}>
-                                      {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'}
-                                    </small>
-                                  </span>
-                                </header>
+                                  <Icon name="edit" size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={structureDisabled}
+                                  onClick={() => void deleteScene(scene)}
+                                  aria-label={`Archive ${scene.title}`}
+                                >
+                                  <Icon name="trash" size={14} />
+                                </button>
                                 <div
-                                  style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    gap: 8,
-                                    marginTop: 10,
-                                    alignItems: 'center',
-                                    flexWrap: 'wrap',
-                                  }}
+                                  className="inline-actions"
+                                  style={{ gridColumn: '1 / -1', justifyContent: 'flex-end' }}
+                                  aria-label={`Reorder ${scene.title}`}
                                 >
-                                  <div className="character-dots" aria-label="Characters in scene">
-                                    {sceneChars.length
-                                      ? sceneChars.map((character) => (
-                                          <span key={character.id} title={character.name}>
-                                            {initials(character.name)}
-                                          </span>
-                                        ))
-                                      : (
-                                          <span title="No linked characters" style={{ opacity: 0.45 }}>
-                                            —
-                                          </span>
-                                        )}
-                                  </div>
-                                  <div
-                                    className="inline-actions"
-                                    aria-label={`Scene actions for ${scene.title}`}
+                                  <button
+                                    type="button"
+                                    className="ghost-button"
+                                    disabled={structureDisabled || sceneIndex === 0}
+                                    aria-label={`Move ${scene.title} up`}
+                                    onClick={() => void moveScene(chapter, sceneIndex, -1)}
                                   >
-                                    <button
-                                      type="button"
-                                      className="ghost-button"
-                                      disabled={structureDisabled || sceneIndex === 0}
-                                      aria-label={`Move ${scene.title} up`}
-                                      onClick={() => void moveScene(chapter, sceneIndex, -1)}
-                                    >
-                                      ↑
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="ghost-button"
-                                      disabled={
-                                        structureDisabled ||
-                                        sceneIndex === chapter.scenes.length - 1
-                                      }
-                                      aria-label={`Move ${scene.title} down`}
-                                      onClick={() => void moveScene(chapter, sceneIndex, 1)}
-                                    >
-                                      ↓
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="ghost-button"
-                                      disabled={structureDisabled}
-                                      onClick={() => void editScene(scene)}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="ghost-button"
-                                      disabled={structureDisabled}
-                                      onClick={() => void deleteScene(scene)}
-                                    >
-                                      Archive
-                                    </button>
-                                  </div>
+                                    ↑ Scene
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ghost-button"
+                                    disabled={
+                                      structureDisabled || sceneIndex === chapter.scenes.length - 1
+                                    }
+                                    aria-label={`Move ${scene.title} down`}
+                                    onClick={() => void moveScene(chapter, sceneIndex, 1)}
+                                  >
+                                    ↓ Scene
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ghost-button"
+                                    disabled={structureDisabled}
+                                    onClick={() => void addHierarchy('shot')}
+                                  >
+                                    + Shot
+                                  </button>
                                 </div>
-                                {scene.shots.length ? (
-                                  <ul
-                                    style={{
-                                      margin: '10px 0 0',
-                                      paddingLeft: 18,
-                                      color: 'var(--muted)',
-                                      fontSize: '0.82rem',
-                                    }}
-                                  >
-                                    {scene.shots.map((shot) => (
-                                      <li key={shot.id}>
-                                        {shot.display_label} · {shot.title} ({shot.duration_sec}s) ·{' '}
-                                        {shot.approval_state}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : null}
                               </div>
                             )
-                          })
-                        : null}
+                          })}
+                          {!chapter.scenes.length ? (
+                            <div>
+                              <span className="scene-index">—</span>
+                              <span>
+                                <b>No scenes</b>
+                                <p>Add a scene under this chapter.</p>
+                              </span>
+                              <span />
+                              <span />
+                              <button
+                                type="button"
+                                disabled={structureDisabled}
+                                onClick={() => void addHierarchy('scene')}
+                              >
+                                <Icon name="plus" size={14} />
+                              </button>
+                              <span />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </article>
                   )
                 })}
               </div>
             )}
-          </section>
-        </div>
-
-        <div style={{ display: 'grid', gap: 14, minWidth: 0, alignContent: 'start' }}>
-          <section className="panel" aria-labelledby="orchestrator-suggestions-title">
-            <header className="panel-head">
-              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    display: 'grid',
-                    placeItems: 'center',
-                    background: 'rgba(88, 221, 161, 0.12)',
-                    color: 'var(--mint)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Icon name="spark" size={18} />
-                </span>
-                <div>
-                  <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
-                  <h2 id="orchestrator-suggestions-title" style={{ margin: '4px 0 0' }}>
-                    {selectedProposal
-                      ? `${selectedProposal.status} · ${selectedProposal.proposal_type}`
-                      : 'No proposal loaded'}
-                  </h2>
-                </div>
-              </div>
-              <div className="inline-actions">
-                <span className="truth-pill">
-                  {runs.length} run{runs.length === 1 ? '' : 's'}
-                </span>
-                <span className="truth-pill">
-                  {proposals.length} proposal{proposals.length === 1 ? '' : 's'}
-                </span>
-              </div>
-            </header>
-
-            {!selectedProposal && !planningLoading ? (
-              <div style={{ textAlign: 'center', padding: '18px 8px 8px' }}>
-                <Icon name="spark" size={28} />
-                <p style={{ color: 'var(--muted)', maxWidth: '36ch', margin: '10px auto' }}>
-                  Run Generate Structure to compare a new orchestrator proposal against the current
-                  hierarchy.
-                </p>
-                <Button onClick={() => void createRun()} disabled={disabled}>
-                  Generate proposal
-                </Button>
-              </div>
-            ) : null}
-
-            <div className="proposal-summary" style={{ marginTop: 12 }}>
-              <span style={{ display: 'block', color: 'var(--muted)', fontSize: '0.78rem' }}>
-                Current structure
-              </span>
-              <b>
-                {chapters.length} chapter{chapters.length === 1 ? '' : 's'} · {sceneCount} scene
-                {sceneCount === 1 ? '' : 's'} · {shotCount} shot{shotCount === 1 ? '' : 's'}
-              </b>
-              <small style={{ display: 'block', color: 'var(--muted)', marginTop: 4 }}>
-                Planned duration {formatDuration(plannedDuration)}
-                {story.target_duration_sec
-                  ? ` · target ${formatDuration(story.target_duration_sec)}`
-                  : ''}
-                .
-              </small>
+            <div className="inline-actions" style={{ marginTop: 10 }}>
+              <Button
+                variant="quiet"
+                disabled={structureDisabled}
+                onClick={() => void addHierarchy('scene')}
+              >
+                Add scene
+              </Button>
+              <Button
+                variant="quiet"
+                disabled={structureDisabled}
+                onClick={() => void addHierarchy('shot')}
+              >
+                Add shot
+              </Button>
             </div>
-          </section>
+          </Section>
 
-          <section
-            className="panel"
-            aria-labelledby="planning-orchestration-title"
-          >
-            <header className="panel-head">
-              <div>
-                <h2 id="planning-orchestration-title">Planning orchestration and proposal review</h2>
-                <p>
-                  Create and start a real backend planning run, inspect its immutable proposal, then
-                  review, reject, or apply it explicitly. Starting a run never applies its proposal.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="ghost-button touch-target"
+          <Section
+            title="Planning orchestration and proposal review"
+            subtitle="Create and start a real backend planning run, inspect its immutable proposal, then review, reject, or apply it explicitly. Starting a run never applies its proposal."
+            action={
+              <Button
+                variant="quiet"
                 disabled={disabled}
                 onClick={() =>
                   void loadPlanning(selectedRunId || undefined, selectedProposalId || undefined)
                 }
               >
                 Refresh status
-              </button>
-            </header>
-
+              </Button>
+            }
+          >
             {planningLoading ? <LoadingState title="Loading planning history…" /> : null}
             {planningError ? (
               <p className="notice error" role="alert">
@@ -1167,7 +1067,7 @@ export function StoryPage() {
               </p>
             ) : null}
 
-            <div className="stack-form" style={{ maxWidth: '100%' }}>
+            <div className="form-stack">
               <h3>1. Configure and run</h3>
               <label>
                 Audit name
@@ -1179,7 +1079,7 @@ export function StoryPage() {
                   maxLength={200}
                 />
               </label>
-              <div className="split-2">
+              <div className="form-grid two">
                 <label>
                   Routing mode
                   <select
@@ -1213,7 +1113,7 @@ export function StoryPage() {
                 Provider preferences are recorded with the run. This page does not install models,
                 submit render jobs, or generate media.
               </p>
-              <div className="split-2">
+              <div className="form-grid two">
                 <label>
                   Max steps
                   <input
@@ -1338,38 +1238,18 @@ export function StoryPage() {
                 </p>
               ) : null}
               <div className="inline-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={disabled}
-                  onClick={() => void createRun()}
-                >
+                <Button disabled={disabled} onClick={() => void createRun()}>
                   Create pending run
-                </button>
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={disabled || !runCanStart}
-                  onClick={() => void startRun()}
-                >
+                </Button>
+                <Button variant="primary" disabled={disabled || !runCanStart} onClick={() => void startRun()}>
                   Start selected run
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={disabled || !runCanCancel}
-                  onClick={() => void cancelRun()}
-                >
+                </Button>
+                <Button variant="quiet" disabled={disabled || !runCanCancel} onClick={() => void cancelRun()}>
                   Cancel selected run
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={disabled || !runCanRetry}
-                  onClick={() => void retryRun()}
-                >
+                </Button>
+                <Button disabled={disabled || !runCanRetry} onClick={() => void retryRun()}>
                   Create retry run
-                </button>
+                </Button>
               </div>
 
               <label>
@@ -1604,32 +1484,28 @@ export function StoryPage() {
                   </label>
 
                   <div className="inline-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
+                    <Button
                       disabled={disabled || !actor || !proposalCanReview}
                       onClick={() => void reviewProposal()}
                     >
                       Mark reviewed
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
+                    </Button>
+                    <Button
+                      variant="quiet"
                       disabled={
                         disabled || !actor || !rejectionReason.trim() || proposalIsTerminal
                       }
                       onClick={() => void rejectProposal()}
                     >
                       Reject proposal
-                    </button>
-                    <button
-                      type="button"
-                      className="primary-button"
+                    </Button>
+                    <Button
+                      variant="primary"
                       disabled={disabled || !actor || !proposalCanApply}
                       onClick={() => void applyProposal()}
                     >
                       Apply reviewed proposal
-                    </button>
+                    </Button>
                   </div>
                   <p className="form-hint">
                     Apply checks the proposal&apos;s recorded base version and content hash, then
@@ -1643,8 +1519,79 @@ export function StoryPage() {
                 />
               )}
             </div>
-          </section>
+          </Section>
         </div>
+
+        <aside className="suggestion-panel">
+          <header>
+            <span className="orchestrator-mark">
+              <Icon name="spark" />
+            </span>
+            <div>
+              <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
+              <h2>
+                {hasProposal
+                  ? `${suggestionCards.length || proposals.length} recommendation${(suggestionCards.length || proposals.length) === 1 ? '' : 's'}`
+                  : 'No proposal loaded'}
+              </h2>
+            </div>
+          </header>
+
+          {hasProposal && suggestionCards.length ? (
+            <div className="suggestions">
+              {suggestionCards.map((card, i) => (
+                <article key={`${card.title}-${i}`}>
+                  <span>{i + 1}</span>
+                  <div>
+                    <b>{card.title}</b>
+                    <p>{card.body}</p>
+                    <small>
+                      {selectedProposal?.status || 'Proposal'} · not auto-applied
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={disabled || !actor || !proposalCanReview}
+                    onClick={(e) => {
+                      ;(e.currentTarget.closest('article') as HTMLElement).dataset.accepted = 'true'
+                      void reviewProposal()
+                    }}
+                  >
+                    <Icon name="check" />
+                    Accept
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="suggestion-empty">
+              <Icon name="spark" size={28} />
+              <p>
+                Run Generate Structure to compare a new orchestrator proposal against the current
+                hierarchy.
+              </p>
+              <Button onClick={() => void createRun()} disabled={disabled}>
+                Generate proposal
+              </Button>
+            </div>
+          )}
+
+          <div className="proposal-summary">
+            <span>Current structure</span>
+            <b>
+              {protoProject
+                ? `${protoProject.chapters.length} chapters · ${protoProject.scenes.length} scenes · ${protoProject.shots.length} shots`
+                : `${chapters.length} chapters · ${sceneCount} scenes · ${shotCount} shots`}
+            </b>
+            <small>
+              Planned duration {formatDuration(plannedDuration)}
+              {story.target_duration_sec
+                ? ` · target ${formatDuration(story.target_duration_sec)}`
+                : ''}
+              .
+            </small>
+          </div>
+        </aside>
       </div>
     </div>
   )

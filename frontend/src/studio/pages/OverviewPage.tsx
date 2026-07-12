@@ -1,422 +1,541 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+/**
+ * Exact structural port of CineForge-Storyboard-Studio-v2 OverviewPage
+ * (components/pagesCore.tsx) — visual/DOM hierarchy preserved.
+ * Production API wiring: useStudio aggregate + readiness; approvePlan gated.
+ */
+import { useMemo, useState } from 'react'
+import type { PageId } from '../../components/AppShell'
 import {
-  api,
-  type OrchestrationRunDetail,
-  type StoryboardProposal,
-} from '../../api/client'
+  Button,
+  Icon,
+  Metric,
+  Modal,
+  PageTitle,
+  Progress,
+  Section,
+  StatusPill,
+} from '../proto/ui'
 import { useStudio } from '../StudioState'
-import { countScenes, countShots, formatDuration } from '../utils'
+import {
+  chapterNote,
+  coverageNote,
+  toProtoProject,
+  type ProtoStatus,
+} from '../proto/adapter'
 
-const PIPELINE: Array<{ label: string; view: 'story' | 'characters' | 'storyboard' | 'images' | 'overview' | 'settings'; getValue: (ctx: OverviewCounts) => number }> = [
-  { label: 'Story Intake', view: 'story', getValue: (c) => (c.hasStory ? 100 : 20) },
-  { label: 'Character Bible', view: 'characters', getValue: (c) => c.characterPct },
-  { label: 'Story Structure', view: 'story', getValue: (c) => (c.chapters > 0 ? 100 : 0) },
-  { label: 'Shot Planning', view: 'storyboard', getValue: (c) => c.shotPct },
-  { label: 'Starting Images', view: 'images', getValue: (c) => c.imagePct },
-  { label: 'Review', view: 'overview', getValue: (c) => c.reviewPct },
-  { label: 'Approval', view: 'settings', getValue: (c) => (c.approved ? 100 : 0) },
-]
+/** Rough planning-only minutes-per-shot (not measured GPU time). */
+const PLANNING_MIN_PER_SHOT = {
+  startingImages: 1.52,
+  video: 14.37,
+  upscale: 1.22,
+} as const
 
-type OverviewCounts = {
-  hasStory: boolean
-  chapters: number
-  characterPct: number
-  shotPct: number
-  imagePct: number
-  reviewPct: number
-  approved: boolean
+function formatPlanningEstimate(totalMinutes: number): string {
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return '0m'
+  const rounded = Math.round(totalMinutes)
+  const hours = Math.floor(rounded / 60)
+  const minutes = rounded % 60
+  if (hours <= 0) return `~${minutes}m`
+  return `~${hours}h ${String(minutes).padStart(2, '0')}m`
+}
+
+/** Map server gate text to the most relevant studio page (no mock destinations). */
+function issueNav(label: string, reason: string): PageId {
+  const hay = `${label} ${reason}`.toLowerCase()
+  if (/voice|narration|tts|audio/.test(hay)) return 'voices'
+  if (/character|cast|bible/.test(hay)) return 'characters'
+  if (/starting.?image|image.?required|image|reference|hero/.test(hay)) return 'images'
+  if (/workflow/.test(hay)) return 'workflows'
+  if (/model|checkpoint|routing|provider|recommendation/.test(hay)) return 'routing'
+  if (/duration|runtime|chapter|scene|story|structure|synopsis|hierarchy/.test(hay)) return 'story'
+  if (/prompt/.test(hay)) return 'storyboard'
+  return 'storyboard'
+}
+
+function approveDisabledReason(args: {
+  approving: boolean
+  busy: boolean
+  alreadyApproved: boolean
+  failingCount: number
+  serverReady: boolean
+}): string {
+  if (args.approving) return 'Approval in progress'
+  if (args.busy) return 'Another studio operation is in progress'
+  if (args.alreadyApproved) return 'Plan already approved for this revision'
+  if (args.failingCount > 0) return 'Blocked by readiness gates — open gate modal for details'
+  if (!args.serverReady) return 'Server has not marked this plan ready'
+  return 'Ready to approve'
 }
 
 export function OverviewPage() {
-  const { data, readiness, approvePlan, busy, backendStatus, navigate } = useStudio()
-  const [approver, setApprover] = useState('Producer')
-  const [currentRun, setCurrentRun] = useState<OrchestrationRunDetail | null>(null)
-  const [currentProposal, setCurrentProposal] = useState<StoryboardProposal | null>(null)
-  const [planningError, setPlanningError] = useState<string | null>(null)
+  const { data, readiness, approvePlan, busy, navigate, setMessage } = useStudio()
+  const [gateModal, setGateModal] = useState(false)
+  const [approving, setApproving] = useState(false)
 
-  const loadPlanningSummary = useCallback(async () => {
-    if (!data) return
-    setPlanningError(null)
-    try {
-      const [runs, proposals] = await Promise.all([
-        api.listOrchestrationRuns(data.story.id),
-        api.listStoryProposals(data.story.id),
-      ])
-      setCurrentRun(runs[0] ? await api.getOrchestrationRun(runs[0].id) : null)
-      setCurrentProposal(proposals[0] ?? null)
-    } catch (error) {
-      setPlanningError(
-        backendStatus === 'ok'
-          ? 'Planning summary API is unavailable for this local demo story. Backend health is OK.'
-          : error instanceof Error
-            ? error.message
-            : 'Planning status is unavailable.',
-      )
-    }
-  }, [backendStatus, data])
+  const view = useMemo(() => (data ? toProtoProject(data, readiness) : null), [data, readiness])
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadPlanningSummary(), 0)
-    return () => window.clearTimeout(timer)
-  }, [loadPlanningSummary])
+  if (!data || !view) return null
 
-  const counts = useMemo(() => {
-    if (!data) return null
-    const shots = countShots(data.chapters)
-    const scenes = countScenes(data.chapters)
-    const approvedShots = data.chapters.reduce(
-      (n, chapter) =>
-        n +
-        chapter.scenes.reduce(
-          (s, scene) => s + scene.shots.filter((shot) => shot.approval_state === 'approved').length,
-          0,
-        ),
-      0,
-    )
-    const heroApproved = data.characters.filter((c) => c.approval_state === 'approved').length
-    const voices = data.voices.length
-    const imageReady = data.chapters.reduce(
-      (n, chapter) =>
-        n +
-        chapter.scenes.reduce(
-          (s, scene) => s + scene.shots.filter((shot) => Boolean(shot.starting_image_asset_id)).length,
-          0,
-        ),
-      0,
-    )
+  const { project, plannedRuntime, readinessPct, gates, targetRuntimeLabel, plannedRuntimeLabel } =
+    view
+  const shotCount = project.shots.length
+  const approved = project.shots.filter((s) => s.status === 'Approved').length
+  const images = project.shots.filter((s) => s.startingImageStatus === 'Approved').length
+  const continuity = project.shots.filter((s) => s.continuityValid).length
+  const voices = project.shots.filter((s) => s.voiceId).length
+  const failing = gates.filter((g) => !g.pass)
+  const serverReady = Boolean(readiness?.ready)
+  const alreadyApproved = project.approvedPlan
+  const canApprove = serverReady && failing.length === 0 && !alreadyApproved
+  const reconciled =
+    Math.abs((plannedRuntime || 0) - (data.story.target_duration_sec || 0)) <= 1
 
-    return {
-      chapters: data.chapters.length,
-      scenes,
-      shots,
-      characters: data.characters.length,
-      voices,
-      approvedShots,
-      heroApproved,
-      imageReady,
-      voiceTarget: Math.max(shots, 1),
-      imageTarget: Math.max(shots, 1),
-    }
-  }, [data])
+  const pct = (have: number) => (shotCount === 0 ? 0 : Math.round((have / shotCount) * 100))
+  const heroApproved = project.characters.filter((c) => c.heroApproved).length
+  const characterBiblePct = project.characters.length
+    ? Math.round((heroApproved / project.characters.length) * 100)
+    : 0
 
-  if (!data || !counts) return null
-
-  const planned = readiness?.planned_duration_sec ?? 0
-  const target = readiness?.target_duration_sec ?? data.story.target_duration_sec
-  const blocking = readiness?.reasons.filter((reason) => reason.blocking) ?? []
-  const canApprove = Boolean(readiness?.ready) && !busy
-  const readinessPct = readiness?.ready
-    ? 100
-    : Math.max(8, Math.min(92, 100 - blocking.length * 12))
-
-  const pipelineCtx: OverviewCounts = {
-    hasStory: Boolean(data.story.base_story || data.story.title),
-    chapters: counts.chapters,
-    characterPct: counts.characters ? Math.round((counts.heroApproved / counts.characters) * 100) : 0,
-    shotPct: counts.shots ? Math.round((counts.approvedShots / counts.shots) * 100) : 0,
-    imagePct: counts.shots ? Math.round((counts.imageReady / counts.shots) * 100) : 0,
-    reviewPct: readinessPct,
-    approved: data.story.approval_state === 'approved',
-  }
-
-  const metricCards: Array<{
-    label: string
-    value: string | number
-    note: string
-    status: string
-    onClick: () => void
-  }> = [
-    {
-      label: 'Chapters',
-      value: counts.chapters,
-      note: 'Duration-linked structure',
-      status: counts.chapters ? 'Ready' : 'Open',
-      onClick: () => navigate('story'),
-    },
-    {
-      label: 'Scenes',
-      value: counts.scenes,
-      note: 'All duration-linked',
-      status: counts.scenes ? 'Ready' : 'Open',
-      onClick: () => navigate('story'),
-    },
-    {
-      label: 'Shots',
-      value: counts.shots,
-      note: `${counts.approvedShots} approved`,
-      status: counts.approvedShots === counts.shots && counts.shots > 0 ? 'Ready' : 'Review',
-      onClick: () => navigate('storyboard'),
-    },
-    {
-      label: 'Characters',
-      value: counts.characters,
-      note: `${counts.heroApproved} hero images approved`,
-      status: counts.heroApproved === counts.characters && counts.characters > 0 ? 'Ready' : 'Review',
-      onClick: () => navigate('characters'),
-    },
-    {
-      label: 'Voice coverage',
-      value: `${counts.voices}/${counts.voiceTarget}`,
-      note: `${Math.max(0, counts.voiceTarget - counts.voices)} assignments open`,
-      status: counts.voices >= counts.voiceTarget ? 'Ready' : 'Review',
-      onClick: () => navigate('voices'),
-    },
-    {
-      label: 'Starting images',
-      value: `${counts.imageReady}/${counts.imageTarget}`,
-      note: `${Math.max(0, counts.imageTarget - counts.imageReady)} require approval`,
-      status: counts.imageReady >= counts.imageTarget ? 'Ready' : 'Review',
-      onClick: () => navigate('images'),
-    },
-    {
-      label: 'Readiness',
-      value: readiness ? (readiness.ready ? 'Ready' : 'Review') : 'Unknown',
-      note: `${blocking.length} blocking gates`,
-      status: readiness?.ready ? 'Ready' : 'Blocked',
-      onClick: () => navigate('overview'),
-    },
-    {
-      label: 'Model / workflow gaps',
-      value: blocking.filter((r) => /model|workflow|checkpoint/i.test(r.code + r.message)).length || '—',
-      note: 'Factual server gates only',
-      status: blocking.length ? 'Blocked' : 'Ready',
-      onClick: () => navigate('routing'),
-    },
+  const pipeline: ReadonlyArray<readonly [string, number, PageId]> = [
+    ['Story Intake', data.story.base_story || data.story.title ? 100 : 0, 'story'],
+    ['Character Bible', characterBiblePct, 'characters'],
+    ['Story Structure', project.chapters.length ? 100 : 0, 'story'],
+    ['Shot Planning', pct(approved), 'storyboard'],
+    ['Starting Images', pct(images), 'images'],
+    ['Review', readinessPct, 'overview'],
+    ['Approval', project.approvedPlan ? 100 : 0, 'overview'],
   ]
 
-  const currentStep =
-    currentRun?.steps.find((step) => step.status === 'running') ??
-    currentRun?.steps.find((step) => step.sequence_index === currentRun.current_step) ??
-    currentRun?.steps.at(-1)
-  const completedSteps = currentRun?.steps.filter((step) => step.status === 'completed').length ?? 0
+  const shotStatus: ProtoStatus = project.shots.some((s) => s.status === 'Blocked')
+    ? 'Blocked'
+    : approved === shotCount && shotCount > 0
+      ? 'Ready'
+      : shotCount === 0
+        ? 'Draft'
+        : 'Review'
+
+  // Factual server gates only — never invent Connected/Installed provider claims.
+  const modelGaps = gates.filter((g) =>
+    /model|workflow|checkpoint|recommendation|provider/i.test(`${g.label} ${g.reason}`),
+  ).length
+
+  // Planning estimate only — scaled by real shot count; honest zeros when empty.
+  const workloadStarting = shotCount * PLANNING_MIN_PER_SHOT.startingImages
+  const workloadVideo = shotCount * PLANNING_MIN_PER_SHOT.video
+  const workloadUpscale = shotCount * PLANNING_MIN_PER_SHOT.upscale
+  const workloadTotal = formatPlanningEstimate(
+    workloadStarting + workloadVideo + workloadUpscale,
+  )
+  const workloadStartingLabel = formatPlanningEstimate(workloadStarting)
+  const workloadVideoLabel = formatPlanningEstimate(workloadVideo)
+  const workloadUpscaleLabel = formatPlanningEstimate(workloadUpscale)
+
+  const approveTitle = approveDisabledReason({
+    approving,
+    busy,
+    alreadyApproved,
+    failingCount: failing.length,
+    serverReady,
+  })
+
+  const onApprove = async () => {
+    if (alreadyApproved) {
+      setMessage('Production plan is already approved for this revision. No render was started.')
+      return
+    }
+    // approvePlan only when readiness.ready; else gate modal / lock.
+    if (!canApprove) {
+      setGateModal(true)
+      return
+    }
+    setApproving(true)
+    try {
+      await approvePlan('Producer')
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  const explain = (title: string, body: string) => {
+    setMessage(`${title}: ${body}`)
+  }
 
   return (
-    <>
-      <div className="overview-readiness" aria-label="Storyboard readiness">
-        <div>
-          <span className="eyebrow">Storyboard readiness</span>
-          <strong>{readinessPct}%</strong>
-        </div>
-        <div className="progress-bar" aria-hidden="true">
-          <span style={{ width: `${readinessPct}%` }} />
-        </div>
-        <small>
-          {blocking.length
-            ? `${blocking.length} required gates remain`
-            : readiness?.ready
-              ? 'All required gates passed'
-              : 'Awaiting server readiness'}
-        </small>
-      </div>
+    <div className="page proto-page">
+      {/* 1. PageTitle: PRODUCTION PHASE A + project title + synopsis + readiness % */}
+      <PageTitle
+        eyebrow="PRODUCTION PHASE A"
+        title={project.name}
+        description={project.synopsis}
+        aside={
+          <div className="readiness-block">
+            <span>
+              <b>{readinessPct}%</b> storyboard readiness
+            </span>
+            <Progress value={readinessPct} />
+            <small>
+              {failing.length
+                ? `${failing.length} required gates remain`
+                : serverReady
+                  ? 'All required gates passed'
+                  : 'Awaiting server readiness'}
+            </small>
+          </div>
+        }
+      />
 
-      <div className="overview-strip" aria-label="Runtime alignment">
+      {/* 2. overview-strip */}
+      <div className="overview-strip">
         <div>
           <span>Target runtime</span>
-          <b>{formatDuration(target)}</b>
+          <b>{targetRuntimeLabel}</b>
         </div>
-        <span className="overview-arrow" aria-hidden="true">
-          →
-        </span>
+        <Icon name="arrow" />
         <div>
           <span>Planned runtime</span>
-          <b>{formatDuration(planned)}</b>
+          <b>{plannedRuntimeLabel}</b>
         </div>
         <div className="runtime-match">
-          <span>{Math.abs((planned || 0) - (target || 0)) <= 1 ? 'Runtime reconciled' : 'Duration drift'}</span>
+          <Icon name={reconciled ? 'check' : 'warning'} />
+          <span>{reconciled ? 'Runtime reconciled' : 'Duration drift'}</span>
         </div>
         <div className="overview-actions">
-          <button type="button" className="secondary-button touch-target" onClick={() => navigate('storyboard')}>
+          <Button type="button" onClick={() => navigate('storyboard')} icon="arrow">
             Continue review
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="primary-button touch-target"
-            disabled={!canApprove || !approver.trim()}
-            title={
-              readiness?.ready
-                ? 'Approve production plan on the server'
-                : blocking.length
-                  ? `Blocked by ${blocking.length} readiness gate(s)`
-                  : 'Server has not marked this plan ready'
-            }
-            onClick={() => void approvePlan(approver.trim())}
+            variant="primary"
+            onClick={() => void onApprove()}
+            disabled={approving || busy || alreadyApproved}
+            icon={!canApprove || alreadyApproved ? 'lock' : 'check'}
+            title={approveTitle}
           >
-            Approve production plan
-          </button>
-          <button type="button" className="ghost-button touch-target" onClick={() => navigate('settings')}>
-            {blocking.length ? `View ${blocking.length} blockers` : 'All gates passed'}
+            {approving
+              ? 'Approving…'
+              : alreadyApproved
+                ? 'Plan approved'
+                : 'Approve production plan'}
+          </Button>
+          <button type="button" className="why-disabled" onClick={() => setGateModal(true)}>
+            {failing.length
+              ? `View ${failing.length} blockers`
+              : serverReady
+                ? 'All gates passed'
+                : 'View readiness'}
           </button>
         </div>
       </div>
 
-      <div className="metric-grid eight" aria-label="Planning metrics">
-        {metricCards.map((card) => (
-          <button key={card.label} type="button" className="metric-card" onClick={card.onClick}>
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
-            <small>{card.note}</small>
-            <span className={`truth-pill ${card.status.toLowerCase()}`}>{card.status}</span>
-          </button>
-        ))}
+      {/* 3. metric-grid eight — 8 Metric cards with status chips */}
+      <div className="metric-grid eight">
+        <Metric
+          label="Chapters"
+          value={project.chapters.length}
+          note={chapterNote(project)}
+          status={project.chapters.length ? 'Ready' : 'Draft'}
+          onClick={() => navigate('story')}
+        />
+        <Metric
+          label="Scenes"
+          value={project.scenes.length}
+          note={project.scenes.length ? `${project.scenes.length} in hierarchy` : 'No scenes yet'}
+          status={project.scenes.length ? 'Ready' : 'Draft'}
+          onClick={() => navigate('story')}
+        />
+        <Metric
+          label="Shots"
+          value={shotCount}
+          note={`${approved} approved`}
+          status={shotStatus}
+          onClick={() => navigate('storyboard')}
+        />
+        <Metric
+          label="Characters"
+          value={project.characters.length}
+          note={`${heroApproved} hero images approved`}
+          status={
+            project.characters.length === 0
+              ? 'Draft'
+              : heroApproved === project.characters.length
+                ? 'Ready'
+                : 'Review'
+          }
+          onClick={() => navigate('characters')}
+        />
+        <Metric
+          label="Voice coverage"
+          value={`${voices}/${shotCount}`}
+          note={shotCount ? coverageNote(voices, shotCount, 'assignments open') : 'No shots'}
+          status={shotCount === 0 ? 'Draft' : voices >= shotCount ? 'Ready' : 'Review'}
+          onClick={() => navigate('voices')}
+        />
+        <Metric
+          label="Starting images"
+          value={`${images}/${shotCount}`}
+          note={shotCount ? coverageNote(images, shotCount, 'require approval') : 'No shots'}
+          status={shotCount === 0 ? 'Draft' : images >= shotCount ? 'Ready' : 'Review'}
+          onClick={() => navigate('images')}
+        />
+        <Metric
+          label="Continuity"
+          value={`${continuity}/${shotCount}`}
+          note={shotCount ? coverageNote(continuity, shotCount, 'invalid link') : 'No shots'}
+          status={shotCount === 0 ? 'Draft' : continuity >= shotCount ? 'Ready' : 'Review'}
+          onClick={() => navigate('storyboard')}
+        />
+        <Metric
+          label="Model / workflow gaps"
+          value={modelGaps}
+          note={
+            modelGaps
+              ? `${modelGaps} server gate(s)`
+              : failing.length
+                ? 'Other readiness blockers'
+                : 'No model gates reported'
+          }
+          status={modelGaps ? 'Blocked' : failing.length ? 'Review' : 'Ready'}
+          onClick={() => navigate('routing')}
+        />
       </div>
 
-      <section className="panel" aria-labelledby="pipeline-title">
-        <div className="panel-title">
-          <div>
-            <h2 id="pipeline-title">Production-plan pipeline</h2>
-            <p>Phase A stops at an approved, editable plan—before rendering.</p>
-          </div>
-        </div>
+      {/* 4. Production-plan pipeline — 7 stages */}
+      <Section
+        title="Production-plan pipeline"
+        subtitle="Phase A stops at an approved, editable plan—before rendering."
+      >
         <div className="pipeline">
-          {PIPELINE.map((step, index) => {
-            const value = step.getValue(pipelineCtx)
-            return (
-              <button key={step.label} type="button" onClick={() => navigate(step.view)}>
-                <span className="pipeline-node" data-complete={value === 100}>
-                  {value === 100 ? '✓' : index + 1}
-                </span>
-                <b>{step.label}</b>
-                <small>{value}%</small>
-                <div className="progress-bar" aria-hidden="true">
-                  <span style={{ width: `${value}%` }} />
-                </div>
-              </button>
-            )
-          })}
+          {pipeline.map(([label, value, page], i) => (
+            <button key={label} type="button" onClick={() => navigate(page)}>
+              <span className="pipeline-node" data-complete={value === 100}>
+                {value === 100 ? <Icon name="check" size={14} /> : i + 1}
+              </span>
+              <b>{label}</b>
+              <small>{value}%</small>
+              <Progress value={value} />
+            </button>
+          ))}
         </div>
-      </section>
+      </Section>
 
+      {/* 5. overview-columns: Readiness gates | Unresolved + Orchestrator | Workload + Activity */}
       <div className="overview-columns">
-        <div className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>Backend readiness gates</h2>
-              <p>
-                Gate truth is returned by <span className="mono">/storyboard/stories/:id/readiness</span>.
-              </p>
-            </div>
-            <span className={`truth-pill ${readiness?.ready ? 'verified' : 'unknown'}`}>
-              {readiness ? (readiness.ready ? 'Server: ready' : 'Server: not ready') : 'Server: unknown'}
-            </span>
+        <Section
+          title="Readiness gates"
+          subtitle="Approval uses these exact shared rules."
+          action={
+            <button type="button" className="text-action" onClick={() => setGateModal(true)}>
+              View all
+            </button>
+          }
+        >
+          <div className="gate-list">
+            {gates.map((g) => (
+              <button
+                key={`${g.label}-${g.reason}`}
+                type="button"
+                onClick={() => {
+                  if (!g.pass) {
+                    explain(g.label, g.reason)
+                    navigate(issueNav(g.label, g.reason))
+                  }
+                }}
+              >
+                <span className={g.pass ? 'gate-pass' : 'gate-fail'}>
+                  <Icon name={g.pass ? 'check' : 'warning'} size={14} />
+                </span>
+                <span>
+                  <b>{g.label}</b>
+                  <small>{g.pass ? 'Passed' : g.reason}</small>
+                </span>
+                <StatusPill status={g.pass ? 'Ready' : 'Open'} />
+              </button>
+            ))}
           </div>
-          <ul className="gate-list">
-            {readiness?.reasons?.length ? (
-              readiness.reasons.map((reason) => (
-                <li key={`${reason.code}-${reason.entity_id ?? 'none'}-${reason.message}`}>
-                  <b>{reason.code}</b>
-                  <span>{reason.message}</span>
-                  <span className={reason.blocking ? 'gate-blocking' : 'gate-info'}>
-                    {reason.blocking ? 'Blocking' : 'Info'}
-                  </span>
-                </li>
-              ))
-            ) : readiness?.ready ? (
-              <li>
-                <b>ready</b>
-                <span>All current backend readiness checks pass.</span>
-                <span className="gate-info">Pass</span>
-              </li>
-            ) : (
-              <li>
-                <b>pending</b>
-                <span>Readiness reasons have not been returned yet.</span>
-                <span className="gate-blocking">Unknown</span>
-              </li>
-            )}
-          </ul>
-          <div className="stack-form" style={{ maxWidth: 420 }}>
-            <label>
-              Approved by
-              <input
-                value={approver}
-                onChange={(event) => setApprover(event.target.value)}
-                disabled={busy}
-                autoComplete="name"
-              />
-            </label>
-          </div>
-        </div>
+        </Section>
 
         <div className="stack">
-          <section className="panel">
-            <div className="panel-title">
-              <div>
-                <h2>Unresolved issues</h2>
-                <p>Highest-impact items first.</p>
-              </div>
-            </div>
+          <Section title="Unresolved issues" subtitle="Highest-impact items first.">
             <div className="issue-list">
-              {blocking.length ? (
-                blocking.slice(0, 5).map((reason, index) => (
+              {failing.length ? (
+                failing.slice(0, 5).map((g, index) => (
                   <button
-                    key={`${reason.code}-${index}`}
+                    key={`${g.label}-${index}`}
                     type="button"
-                    onClick={() => navigate(index % 2 === 0 ? 'storyboard' : 'routing')}
+                    onClick={() => navigate(issueNav(g.label, g.reason))}
                   >
-                    <span className="severity red">P{index === 0 ? '0' : '1'}</span>
-                    <span>
-                      <b>{reason.code}</b>
-                      <small>{reason.message}</small>
+                    <span className={`priority ${index === 0 ? 'red' : 'amber'}`}>
+                      P{index === 0 ? '0' : '1'}
                     </span>
-                    <span aria-hidden="true">→</span>
+                    <span>
+                      <b>{g.label}</b>
+                      <small>{g.reason}</small>
+                    </span>
+                    <Icon name="arrow" />
                   </button>
                 ))
               ) : (
                 <p className="form-hint">No blocking readiness issues returned by the server.</p>
               )}
             </div>
-          </section>
+          </Section>
 
-          <section className="panel" aria-labelledby="overview-planning-status">
-            <div className="panel-title">
-              <div>
-                <h2 id="overview-planning-status">Orchestrator run</h2>
-                <p>Latest structured proposal / planning run.</p>
+          <Section title="Orchestrator run" subtitle="Latest structured proposal · planning run">
+            <div className="run-summary">
+              <div className="orchestrator-mark">
+                <Icon name="spark" />
               </div>
-              <button type="button" className="primary-button touch-target" onClick={() => navigate('story')}>
-                {currentProposal ? 'Review proposal' : currentRun ? 'Open run details' : 'Start planning run'}
-              </button>
+              <div>
+                <b>{project.orchestratorModel}</b>
+                <small>
+                  {shotCount} shots in hierarchy · proposal review on Story page
+                </small>
+              </div>
+              <StatusPill status={project.approvedPlan ? 'Complete' : 'Review'} />
             </div>
-            {planningError ? <p className="notice warning">{planningError}</p> : null}
-            <ul className="kv-list">
-              <li>
-                <span>Current run</span>
-                <strong>{currentRun?.status ?? 'No run'}</strong>
-              </li>
-              <li>
-                <span>Current step</span>
-                <strong>{currentStep?.task_type ?? '—'}</strong>
-              </li>
-              <li>
-                <span>Progress</span>
-                <strong>{currentRun ? `${completedSteps}/${currentRun.steps.length} steps` : '—'}</strong>
-              </li>
-              <li>
-                <span>Latest proposal</span>
-                <strong>{currentProposal?.status ?? 'None'}</strong>
-              </li>
-            </ul>
-            {currentRun?.failure_message ? <p className="notice error">{currentRun.failure_message}</p> : null}
-          </section>
+            <button type="button" className="full-row-action" onClick={() => navigate('story')}>
+              Compare proposal with current structure <Icon name="arrow" />
+            </button>
+          </Section>
+        </div>
 
-          <section className="panel">
-            <div className="panel-title">
+        <div className="stack">
+          <Section
+            title="Render workload estimate"
+            subtitle="Planning estimate only—rendering is disabled."
+          >
+            <div className="workload">
+              <strong>{workloadTotal}</strong>
+              <span>
+                {shotCount} serialized GPU jobs (planning estimate only — not measured)
+              </span>
               <div>
-                <h2>Safety posture</h2>
-                <p>Approval creates an immutable storyboard version only.</p>
+                <span>Starting images</span>
+                <b>{workloadStartingLabel}</b>
+              </div>
+              <div>
+                <span>Video generation</span>
+                <b>{workloadVideoLabel}</b>
+              </div>
+              <div>
+                <span>Upscale & interpolation</span>
+                <b>{workloadUpscaleLabel}</b>
               </div>
             </div>
-            <ul className="feature-list">
-              <li>No Timeline Slot</li>
-              <li>No Clip Iteration</li>
-              <li>No queue job</li>
-              <li>No ComfyUI submission</li>
-              <li>No FFmpeg job</li>
-              <li>No voice clone / TTS batch</li>
-            </ul>
-          </section>
+            <Button type="button" variant="quiet" onClick={() => navigate('workflows')}>
+              Review workflow assumptions
+            </Button>
+          </Section>
+
+          <Section title="Recent activity" subtitle="Current browser session">
+            <ol className="activity">
+              <li>
+                <i />
+                <span>
+                  <b>Planning data loaded</b>
+                  <small>This session</small>
+                </span>
+              </li>
+              <li>
+                <i />
+                <span>
+                  <b>{shotCount} shots in hierarchy</b>
+                  <small>From aggregate snapshot</small>
+                </span>
+              </li>
+              <li>
+                <i />
+                <span>
+                  <b>
+                    {failing.length} open readiness gate{failing.length === 1 ? '' : 's'}
+                  </b>
+                  <small>From server readiness payload</small>
+                </span>
+              </li>
+            </ol>
+          </Section>
         </div>
       </div>
-    </>
+
+      {/* 6. Gate modal */}
+      {gateModal ? (
+        <Modal
+          title={
+            failing.length || !serverReady
+              ? 'Production plan is not ready'
+              : alreadyApproved
+                ? 'Production plan already approved'
+                : 'Production plan approval'
+          }
+          onClose={() => setGateModal(false)}
+        >
+          <div className="gate-modal">
+            <div className="gate-score">
+              <strong>{readinessPct}%</strong>
+              <Progress value={readinessPct} />
+              <span>
+                {gates.filter((g) => g.pass).length} of {gates.length} gates passed
+              </span>
+            </div>
+            {failing.length ? (
+              <div className="gate-blockers">
+                {failing.map((g) => (
+                  <button
+                    key={g.label + g.reason}
+                    type="button"
+                    onClick={() => {
+                      setGateModal(false)
+                      setMessage(g.reason)
+                      navigate(issueNav(g.label, g.reason))
+                    }}
+                  >
+                    <Icon name="warning" />
+                    <span>
+                      <b>{g.label}</b>
+                      <small>{g.reason}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : !serverReady ? (
+              <p>
+                Local gate reasons are clear, but the server has not set{' '}
+                <code>readiness.ready</code>. Approval is locked until the backend reports ready.
+              </p>
+            ) : alreadyApproved ? (
+              <p>
+                This production plan is already approved for the current revision. Approval does
+                not create render, queue, ComfyUI, or FFmpeg jobs.
+              </p>
+            ) : (
+              <p>
+                All required planning gates have passed. Approval will lock this Phase A version
+                while keeping it editable through a new revision. No render or queue job will be
+                created.
+              </p>
+            )}
+            <div className="modal-actions">
+              <Button type="button" onClick={() => setGateModal(false)}>
+                Close
+              </Button>
+              {canApprove ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={approving || busy}
+                  title={approveTitle}
+                  onClick={() => {
+                    setGateModal(false)
+                    void onApprove()
+                  }}
+                >
+                  {approving ? 'Approving…' : 'Approve plan'}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+    </div>
   )
 }

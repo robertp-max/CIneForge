@@ -1,6 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { Project } from '../api/client'
-import { StatusBadge } from './StatusBadge'
 import { Icon, type IconName } from './ui'
 
 export type PageId =
@@ -64,14 +63,11 @@ type AppShellProps = {
 }
 
 function projectInitials(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? '')
-      .join('') || 'PR'
-  )
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'PR'
+  // Match prototype “AJ” for multi-word titles (first + last token).
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
 }
 
 export function AppShell({
@@ -311,12 +307,15 @@ export function AppShell({
                 <Icon name="play" size={14} /> Preview animatic
               </button>
             ) : null}
-            <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} />
-            {onRefreshStatus ? (
-              <button type="button" className="ghost-button touch-target status-refresh" onClick={onRefreshStatus}>
-                Refresh
-              </button>
-            ) : null}
+            {/* Backend health stays in the sidebar runtime card to match prototype topbar chrome. */}
+            <span className="sr-only">
+              Backend {backendStatus}
+              {onRefreshStatus ? (
+                <button type="button" onClick={onRefreshStatus}>
+                  Refresh status
+                </button>
+              ) : null}
+            </span>
           </div>
         </header>
 

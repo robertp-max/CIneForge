@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+"use client";
+
+import type { ReactNode } from "react";
 
 export type IconName = "grid"|"film"|"book"|"people"|"mic"|"spark"|"cpu"|"layers"|"download"|"settings"|"play"|"check"|"chevron"|"plus"|"image"|"clock"|"link"|"camera"|"wand"|"search"|"bell"|"close"|"menu"|"filter"|"edit"|"trash"|"copy"|"upload"|"eye"|"warning"|"lock"|"folder"|"arrow"|"more";
 
@@ -15,4 +17,3 @@ export function Button({children,variant="secondary",icon,onClick,disabled,title
 export function Metric({label,value,note,status,onClick}:{label:string;value:string|number;note:string;status?:string;onClick?:()=>void}){return <button type="button" className="metric-card" onClick={onClick}><span>{label}</span><strong>{value}</strong><small>{note}</small>{status&&<StatusPill status={status}/>}</button>}
 export function Modal({title,children,onClose,wide=false}:{title:string;children:ReactNode;onClose:()=>void;wide?:boolean}){return <div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><div className={`modal ${wide?"wide":""}`} role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button type="button" className="icon-button" onClick={onClose} aria-label="Close dialog"><Icon name="close"/></button></header><div className="modal-body">{children}</div></div></div>}
 export function Empty({title,detail,action}:{title:string;detail:string;action?:ReactNode}){return <div className="empty"><Icon name="folder" size={28}/><h3>{title}</h3><p>{detail}</p>{action}</div>}
-

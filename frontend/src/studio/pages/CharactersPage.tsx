@@ -16,6 +16,7 @@ import { initials } from '../utils'
 const REFERENCE_ROLES = ['primary', 'alternate', 'expression', 'costume', 'detail'] as const
 
 type ApprovalFilter = 'all' | 'draft' | 'review' | 'approved' | 'blocked'
+type DrawerTab = 'identity' | 'linked' | 'continuity'
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
@@ -59,10 +60,30 @@ function characterVoiceName(character: Character, voices: Voice[]): string {
   return associated?.name ?? 'Voice missing'
 }
 
+function Portrait({
+  name,
+  role,
+  large = false,
+}: {
+  name: string
+  role?: string | null
+  large?: boolean
+}) {
+  const roleLabel = (role ?? 'Character').split('·')[0]?.trim() || 'Character'
+  return (
+    <div className={`portrait${large ? ' large' : ''}`} aria-hidden="true">
+      <span>{initials(name)}</span>
+      <i>{roleLabel}</i>
+    </div>
+  )
+}
+
 export function CharactersPage() {
   const { data, readiness, reload, setMessage, addCharacter, busy } = useStudio()
   const [selectedId, setSelectedId] = useState('')
   const [filter, setFilter] = useState<ApprovalFilter>('all')
+  const [edit, setEdit] = useState(false)
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>('identity')
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
   const [newRole, setNewRole] = useState('')
@@ -379,6 +400,8 @@ export function CharactersPage() {
   const selectCharacter = (id: string) => {
     setSelectedId(id)
     setSelectedVoiceId('')
+    setEdit(false)
+    setDrawerTab('identity')
   }
 
   return (
@@ -429,7 +452,7 @@ export function CharactersPage() {
                 onClick={() => setFilter(id)}
               >
                 {label}
-                <em>{filterCounts[id]}</em>
+                <span>{filterCounts[id]}</span>
               </button>
             ))}
           </div>
@@ -523,9 +546,7 @@ export function CharactersPage() {
                     aria-pressed={isSelected}
                     onClick={() => selectCharacter(character.id)}
                   >
-                    <div className="portrait" aria-hidden="true">
-                      <span>{initials(character.name)}</span>
-                    </div>
+                    <Portrait name={character.name} role={character.role} />
                     <div className="character-card-copy">
                       <div>
                         <span className="eyebrow">{character.role ?? 'Role not specified'}</span>
@@ -577,415 +598,468 @@ export function CharactersPage() {
                 <h2>{selectedCharacter.name}</h2>
               </div>
               <StatusPill status={approvalLabel(selectedCharacter.approval_state)} />
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setEdit((value) => !value)}
+                aria-label="Edit character"
+              >
+                <Icon name={edit ? 'check' : 'edit'} />
+              </button>
             </header>
 
-            <div className="portrait large" aria-hidden="true">
-              <span>{initials(selectedCharacter.name)}</span>
+            <Portrait name={selectedCharacter.name} role={selectedCharacter.role} large />
+
+            <div className="reference-strip">
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawerTab('identity')
+                  setEdit(true)
+                  setMessage('Use managed reference upload below to add a real reference asset.')
+                }}
+                disabled={busy || saving}
+              >
+                <Icon name="plus" />
+                <span>Add reference</span>
+              </button>
+              {references.slice(0, 4).map((reference, index) => (
+                <button
+                  key={reference.id}
+                  type="button"
+                  className={`ref ref-${index}`}
+                  onClick={() =>
+                    setMessage(
+                      `Reference ${reference.asset?.original_filename ?? reference.asset_id} · ${reference.reference_role}`,
+                    )
+                  }
+                >
+                  <span>
+                    {index === 0 &&
+                    (reference.approved ||
+                      reference.reference_role === 'primary' ||
+                      reference.reference_role === 'hero')
+                      ? 'HERO'
+                      : `REF ${index + 1}`}
+                  </span>
+                </button>
+              ))}
             </div>
 
-            <div className="summary-strip" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-              <div>
-                <span>Scenes</span>
-                <b>{linkedScenes.length}</b>
-              </div>
-              <div>
-                <span>Shots</span>
-                <b>{linkedShots.length}</b>
-              </div>
-              <div>
-                <span>Hero ref</span>
-                <b>{heroReference ? 'Ready' : 'Missing'}</b>
-              </div>
-              <div>
-                <span>Voice</span>
-                <b>{canonicalVoice?.name ?? associatedVoices[0]?.name ?? '—'}</b>
-              </div>
+            <div className="tabs small-tabs" role="tablist" aria-label="Character drawer sections">
+              <button
+                type="button"
+                className={drawerTab === 'identity' ? 'active' : ''}
+                role="tab"
+                aria-selected={drawerTab === 'identity'}
+                onClick={() => setDrawerTab('identity')}
+              >
+                Identity
+              </button>
+              <button
+                type="button"
+                className={drawerTab === 'linked' ? 'active' : ''}
+                role="tab"
+                aria-selected={drawerTab === 'linked'}
+                onClick={() => setDrawerTab('linked')}
+              >
+                Linked shots
+              </button>
+              <button
+                type="button"
+                className={drawerTab === 'continuity' ? 'active' : ''}
+                role="tab"
+                aria-selected={drawerTab === 'continuity'}
+                onClick={() => setDrawerTab('continuity')}
+              >
+                Continuity
+              </button>
             </div>
 
             {error ? <ErrorState detail={error} /> : null}
 
-            <form
-              key={selectedCharacter.id}
-              className="stack-form"
-              onSubmit={(event) => void onSaveCharacter(event)}
-            >
-              <h3>Identity</h3>
-              <label>
-                Name
-                <input
-                  name="name"
-                  required
-                  defaultValue={selectedCharacter.name}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Role
-                <input
-                  name="role"
-                  defaultValue={selectedCharacter.role ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Age range
-                <input
-                  name="age_range"
-                  defaultValue={selectedCharacter.age_range ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Physical description
-                <textarea
-                  name="physical_description"
-                  defaultValue={selectedCharacter.physical_description ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Personality
-                <textarea
-                  name="personality"
-                  defaultValue={selectedCharacter.personality ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Speaking style
-                <input
-                  name="speaking_style"
-                  defaultValue={selectedCharacter.speaking_style ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Wardrobe
-                <textarea
-                  name="wardrobe"
-                  defaultValue={selectedCharacter.wardrobe ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Identity method
-                <input
-                  name="identity_method"
-                  defaultValue={selectedCharacter.identity_method ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Consistency prompt
-                <textarea
-                  name="consistency_prompt"
-                  defaultValue={selectedCharacter.consistency_prompt ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <label>
-                Negative identity prompt
-                <textarea
-                  name="negative_identity_prompt"
-                  defaultValue={selectedCharacter.negative_identity_prompt ?? ''}
-                  disabled={busy || saving}
-                />
-              </label>
-              <div className="inline-actions">
-                <button
-                  type="submit"
-                  className="primary-button touch-target"
-                  disabled={busy || saving}
-                >
-                  {saving ? 'Saving…' : 'Save character bible'}
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button touch-target"
-                  disabled={busy || saving || selectedCharacter.approval_state === 'approved'}
-                  title={
-                    selectedCharacter.approval_state === 'approved'
-                      ? 'Approved characters cannot be archived while locked into production identity.'
-                      : undefined
-                  }
-                  onClick={() => void onArchiveCharacter()}
-                >
-                  Archive character
-                </button>
-              </div>
-            </form>
-
-            <section className="stack-form" style={{ marginTop: 16 }}>
-              <h3>Coverage and readiness</h3>
-              <ul className="kv-list">
-                <li>
-                  <span>Scenes</span>
-                  <strong>{linkedScenes.length}</strong>
-                </li>
-                <li>
-                  <span>Shots</span>
-                  <strong>{linkedShots.length}</strong>
-                </li>
-                <li>
-                  <span>Approved hero</span>
-                  <strong>{heroReference ? 'Ready' : 'Missing'}</strong>
-                </li>
-                <li>
-                  <span>Canonical voice</span>
-                  <strong>
-                    {canonicalVoice?.name ?? 'Not assigned by an applied proposal'}
-                  </strong>
-                </li>
-              </ul>
-              {linkedScenes.length ? (
-                <p className="form-hint">
-                  Scenes: {linkedScenes.map((scene) => scene.title).join(', ')}
-                </p>
-              ) : null}
-              {linkedShots.length ? (
-                <p className="form-hint">
-                  Shots: {linkedShots.map((shot) => shot.title).join(', ')}
-                </p>
-              ) : null}
-              {characterReadiness.length ? (
-                characterReadiness.map((reason) => (
-                  <p className="notice warning" key={`${reason.code}-${reason.entity_id}`}>
-                    {reason.message}
-                  </p>
-                ))
-              ) : (
-                <p className="notice success">
-                  No character-specific blocking reason is currently reported.
-                </p>
-              )}
-            </section>
-
-            <section className="stack-form" style={{ marginTop: 16 }}>
-              <h3>Voice assignment</h3>
-              <p className="form-hint">
-                Associates a mutable voice profile through its persisted character_id.
-              </p>
-              {associatedVoices.length ? (
-                <ul className="kv-list">
-                  {associatedVoices.map((voice) => (
-                    <li key={voice.id}>
-                      <span>
-                        {voice.name} · {voice.setup_mode}
-                      </span>
-                      <button
-                        type="button"
-                        className="ghost-button touch-target"
-                        onClick={() => void onUnassignVoice(voice.id)}
-                        disabled={busy || saving || voice.approval_state === 'approved'}
-                        title={
-                          voice.approval_state === 'approved'
-                            ? 'Approved voice profiles are immutable; create a replacement profile to change this association.'
-                            : undefined
-                        }
-                      >
-                        {voice.approval_state === 'approved' ? 'Approved assignment' : 'Unassign'}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="form-hint">
-                  No voice profile is associated through the voice-profile API.
-                </p>
-              )}
-              <label>
-                Voice profile
-                <select
-                  value={selectedVoiceId}
-                  onChange={(event) => setSelectedVoiceId(event.target.value)}
-                  disabled={busy || saving}
-                >
-                  <option value="">Choose a mutable profile</option>
-                  {data.voices.map((voice) => (
-                    <option key={voice.id} value={voice.id}>
-                      {voice.name} · {voice.approval_state}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="secondary-button touch-target"
-                onClick={() => void onAssignVoice()}
-                disabled={
-                  busy || saving || !selectedVoice || selectedVoice.approval_state === 'approved'
-                }
-                title={
-                  selectedVoice?.approval_state === 'approved'
-                    ? 'Approved voice profiles are immutable and cannot be reassigned.'
-                    : undefined
-                }
+            {drawerTab === 'identity' ? (
+              <form
+                key={selectedCharacter.id}
+                className="form-stack compact"
+                onSubmit={(event) => void onSaveCharacter(event)}
               >
-                Assign voice profile
-              </button>
-              <p className="form-hint">
-                Direct mutation of character.assigned_voice_profile_id is not exposed; that
-                canonical field is applied through reviewed proposals.
-              </p>
-            </section>
-
-            <section className="stack-form" style={{ marginTop: 16 }}>
-              <div className="panel-title" style={{ marginBottom: 8 }}>
-                <div>
-                  <h3>Managed reference assets</h3>
-                  <p className="form-hint">
-                    Upload, link, list, unlink, and approve a hero reference when the link is
-                    created.
-                  </p>
+                <label>
+                  Name
+                  <input
+                    name="name"
+                    required
+                    defaultValue={selectedCharacter.name}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Role
+                  <input
+                    name="role"
+                    defaultValue={selectedCharacter.role ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <div className="form-grid">
+                  <label>
+                    Age range
+                    <input
+                      name="age_range"
+                      defaultValue={selectedCharacter.age_range ?? ''}
+                      disabled={busy || saving || !edit}
+                    />
+                  </label>
+                  <label>
+                    Approval
+                    <input
+                      value={approvalLabel(selectedCharacter.approval_state)}
+                      disabled
+                      title="Approval state is managed by server readiness and proposal flow."
+                    />
+                  </label>
                 </div>
-                <button
-                  type="button"
-                  className="ghost-button touch-target"
-                  onClick={() => void loadReferences()}
-                  disabled={loadingReferences || saving}
-                >
-                  Refresh
-                </button>
-              </div>
-              {loadingReferences ? <LoadingState title="Loading character references…" /> : null}
-              {!referenceApiAvailable && !loadingReferences ? (
-                <UnavailableState
-                  title="Character-reference API unavailable"
-                  detail="No file or link operation was substituted."
-                />
-              ) : null}
-              {references.length ? (
-                <div className="card-grid">
-                  {references.map((reference) => (
-                    <article key={reference.id}>
-                      {reference.asset?.mime_type?.startsWith('image/') ? (
-                        <img
-                          src={planningAssetContentUrl(reference.asset_id)}
-                          alt={`${selectedCharacter.name} ${reference.reference_role} reference`}
-                          width="200"
-                          height="140"
-                          loading="lazy"
-                        />
-                      ) : null}
-                      <b>{reference.asset?.original_filename ?? reference.asset_id}</b>
-                      <small>
-                        {reference.reference_role} ·{' '}
-                        {reference.approved ? 'approved' : 'not approved'}
-                      </small>
-                      <p>
-                        {reference.asset?.approval_state ?? 'Asset record unavailable'} ·{' '}
-                        {reference.asset?.mime_type ?? 'Unknown type'}
-                      </p>
-                      <button
-                        type="button"
-                        className="secondary-button touch-target"
-                        onClick={() => void onUnlinkReference(reference)}
-                        disabled={saving || busy}
-                      >
-                        Unlink
-                      </button>
-                      {!reference.approved ? (
+                <label>
+                  Physical description
+                  <textarea
+                    name="physical_description"
+                    defaultValue={selectedCharacter.physical_description ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Personality
+                  <textarea
+                    name="personality"
+                    defaultValue={selectedCharacter.personality ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Speaking style
+                  <input
+                    name="speaking_style"
+                    defaultValue={selectedCharacter.speaking_style ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Wardrobe
+                  <textarea
+                    name="wardrobe"
+                    defaultValue={selectedCharacter.wardrobe ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Identity method
+                  <input
+                    name="identity_method"
+                    defaultValue={selectedCharacter.identity_method ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Consistency prompt
+                  <textarea
+                    name="consistency_prompt"
+                    defaultValue={selectedCharacter.consistency_prompt ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <label>
+                  Negative identity prompt
+                  <textarea
+                    name="negative_identity_prompt"
+                    defaultValue={selectedCharacter.negative_identity_prompt ?? ''}
+                    disabled={busy || saving || !edit}
+                  />
+                </label>
+                <div className="inline-actions">
+                  <Button type="submit" variant="primary" disabled={busy || saving || !edit}>
+                    {saving ? 'Saving…' : 'Save character bible'}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={busy || saving || selectedCharacter.approval_state === 'approved'}
+                    title={
+                      selectedCharacter.approval_state === 'approved'
+                        ? 'Approved characters cannot be archived while locked into production identity.'
+                        : undefined
+                    }
+                    onClick={() => void onArchiveCharacter()}
+                  >
+                    Archive character
+                  </Button>
+                </div>
+              </form>
+            ) : null}
+
+            {drawerTab === 'linked' ? (
+              <div className="form-stack compact">
+                <ul className="kv-list">
+                  <li>
+                    <span>Scenes</span>
+                    <strong>{linkedScenes.length}</strong>
+                  </li>
+                  <li>
+                    <span>Shots</span>
+                    <strong>{linkedShots.length}</strong>
+                  </li>
+                  <li>
+                    <span>Approved hero</span>
+                    <strong>{heroReference ? 'Ready' : 'Missing'}</strong>
+                  </li>
+                  <li>
+                    <span>Canonical voice</span>
+                    <strong>
+                      {canonicalVoice?.name ?? 'Not assigned by an applied proposal'}
+                    </strong>
+                  </li>
+                </ul>
+                {linkedScenes.length ? (
+                  <p className="form-hint">
+                    Scenes: {linkedScenes.map((scene) => scene.title).join(', ')}
+                  </p>
+                ) : (
+                  <p className="form-hint">No scenes currently link this character.</p>
+                )}
+                {linkedShots.length ? (
+                  <p className="form-hint">
+                    Shots: {linkedShots.map((shot) => shot.title).join(', ')}
+                  </p>
+                ) : (
+                  <p className="form-hint">No shots currently link this character.</p>
+                )}
+                <h3>Voice assignment</h3>
+                <p className="form-hint">
+                  Associates a mutable voice profile through its persisted character_id.
+                </p>
+                {associatedVoices.length ? (
+                  <ul className="kv-list">
+                    {associatedVoices.map((voice) => (
+                      <li key={voice.id}>
+                        <span>
+                          {voice.name} · {voice.setup_mode}
+                        </span>
                         <button
                           type="button"
                           className="ghost-button touch-target"
-                          disabled
-                          title="The backend exposes approval only while creating a reference link; unlink and relink it as an approved hero reference."
+                          onClick={() => void onUnassignVoice(voice.id)}
+                          disabled={busy || saving || voice.approval_state === 'approved'}
+                          title={
+                            voice.approval_state === 'approved'
+                              ? 'Approved voice profiles are immutable; create a replacement profile to change this association.'
+                              : undefined
+                          }
                         >
-                          Approve existing link — unavailable
+                          {voice.approval_state === 'approved' ? 'Approved assignment' : 'Unassign'}
                         </button>
-                      ) : null}
-                    </article>
-                  ))}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="form-hint">
+                    No voice profile is associated through the voice-profile API.
+                  </p>
+                )}
+                <label>
+                  Voice profile
+                  <select
+                    value={selectedVoiceId}
+                    onChange={(event) => setSelectedVoiceId(event.target.value)}
+                    disabled={busy || saving}
+                  >
+                    <option value="">Choose a mutable profile</option>
+                    {data.voices.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.name} · {voice.approval_state}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  type="button"
+                  onClick={() => void onAssignVoice()}
+                  disabled={
+                    busy || saving || !selectedVoice || selectedVoice.approval_state === 'approved'
+                  }
+                  title={
+                    selectedVoice?.approval_state === 'approved'
+                      ? 'Approved voice profiles are immutable and cannot be reassigned.'
+                      : undefined
+                  }
+                >
+                  Assign voice profile
+                </Button>
+              </div>
+            ) : null}
+
+            {drawerTab === 'continuity' ? (
+              <div className="form-stack compact">
+                <h3>Readiness</h3>
+                {characterReadiness.length ? (
+                  characterReadiness.map((reason) => (
+                    <p className="notice warning" key={`${reason.code}-${reason.entity_id}`}>
+                      {reason.message}
+                    </p>
+                  ))
+                ) : (
+                  <p className="notice success">
+                    No character-specific blocking reason is currently reported.
+                  </p>
+                )}
+
+                <div className="panel-title" style={{ marginBottom: 8 }}>
+                  <div>
+                    <h3>Managed reference assets</h3>
+                    <p className="form-hint">
+                      Upload, link, list, unlink, and approve a hero reference when the link is
+                      created.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost-button touch-target"
+                    onClick={() => void loadReferences()}
+                    disabled={loadingReferences || saving}
+                  >
+                    Refresh
+                  </button>
                 </div>
-              ) : !loadingReferences && referenceApiAvailable ? (
-                <EmptyState
-                  title="No linked references"
-                  detail="Upload or select a managed asset, then create a character link."
-                />
-              ) : null}
-
-              <form className="stack-form" onSubmit={(event) => void onUploadReference(event)}>
-                <label>
-                  Reference image
-                  <input
-                    key={fileInputKey}
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => setReferenceFile(event.target.files?.[0] ?? null)}
-                    disabled={saving || busy}
+                {loadingReferences ? <LoadingState title="Loading character references…" /> : null}
+                {!referenceApiAvailable && !loadingReferences ? (
+                  <UnavailableState
+                    title="Character-reference API unavailable"
+                    detail="No file or link operation was substituted."
                   />
-                </label>
-                <button
-                  type="submit"
-                  className="secondary-button touch-target"
-                  disabled={!referenceFile || saving || busy}
-                >
-                  {saving ? 'Working…' : 'Upload managed reference'}
-                </button>
-              </form>
-
-              <form className="stack-form" onSubmit={(event) => void onLinkReference(event)}>
-                <label>
-                  Managed asset
-                  <select
-                    value={selectedAssetId}
-                    onChange={(event) => setSelectedAssetId(event.target.value)}
-                    disabled={saving || busy || !assets.length}
-                  >
-                    {!assets.length ? <option value="">No managed reference assets</option> : null}
-                    {assets.map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.original_filename ?? asset.id} · {asset.approval_state}
-                      </option>
+                ) : null}
+                {references.length ? (
+                  <div className="card-grid">
+                    {references.map((reference) => (
+                      <article key={reference.id}>
+                        {reference.asset?.mime_type?.startsWith('image/') ? (
+                          <img
+                            src={planningAssetContentUrl(reference.asset_id)}
+                            alt={`${selectedCharacter.name} ${reference.reference_role} reference`}
+                            width="200"
+                            height="140"
+                            loading="lazy"
+                          />
+                        ) : null}
+                        <b>{reference.asset?.original_filename ?? reference.asset_id}</b>
+                        <small>
+                          {reference.reference_role} ·{' '}
+                          {reference.approved ? 'approved' : 'not approved'}
+                        </small>
+                        <p>
+                          {reference.asset?.approval_state ?? 'Asset record unavailable'} ·{' '}
+                          {reference.asset?.mime_type ?? 'Unknown type'}
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary-button touch-target"
+                          onClick={() => void onUnlinkReference(reference)}
+                          disabled={saving || busy}
+                        >
+                          Unlink
+                        </button>
+                        {!reference.approved ? (
+                          <button
+                            type="button"
+                            className="ghost-button touch-target"
+                            disabled
+                            title="The backend exposes approval only while creating a reference link; unlink and relink it as an approved hero reference."
+                          >
+                            Approve existing link — unavailable
+                          </button>
+                        ) : null}
+                      </article>
                     ))}
-                  </select>
-                </label>
-                <label>
-                  Reference role
-                  <select
-                    value={referenceRole}
-                    onChange={(event) =>
-                      setReferenceRole(event.target.value as (typeof REFERENCE_ROLES)[number])
-                    }
-                    disabled={saving || busy || approveHero}
-                  >
-                    {REFERENCE_ROLES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={approveHero}
-                    onChange={(event) => setApproveHero(event.target.checked)}
-                    disabled={saving || busy}
+                  </div>
+                ) : !loadingReferences && referenceApiAvailable ? (
+                  <EmptyState
+                    title="No linked references"
+                    detail="Upload or select a managed asset, then create a character link."
                   />
-                  Approve as primary hero reference
-                </label>
-                <button
-                  type="submit"
-                  className="primary-button touch-target"
-                  disabled={!selectedAssetId || saving || busy}
+                ) : null}
+
+                <form className="form-stack compact" onSubmit={(event) => void onUploadReference(event)}>
+                  <label>
+                    Reference image
+                    <input
+                      key={fileInputKey}
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => setReferenceFile(event.target.files?.[0] ?? null)}
+                      disabled={saving || busy}
+                    />
+                  </label>
+                  <Button type="submit" disabled={!referenceFile || saving || busy}>
+                    {saving ? 'Working…' : 'Upload managed reference'}
+                  </Button>
+                </form>
+
+                <form className="form-stack compact" onSubmit={(event) => void onLinkReference(event)}>
+                  <label>
+                    Managed asset
+                    <select
+                      value={selectedAssetId}
+                      onChange={(event) => setSelectedAssetId(event.target.value)}
+                      disabled={saving || busy || !assets.length}
+                    >
+                      {!assets.length ? (
+                        <option value="">No managed reference assets</option>
+                      ) : null}
+                      {assets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.original_filename ?? asset.id} · {asset.approval_state}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Reference role
+                    <select
+                      value={referenceRole}
+                      onChange={(event) =>
+                        setReferenceRole(event.target.value as (typeof REFERENCE_ROLES)[number])
+                      }
+                      disabled={saving || busy || approveHero}
+                    >
+                      {REFERENCE_ROLES.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={approveHero}
+                      onChange={(event) => setApproveHero(event.target.checked)}
+                      disabled={saving || busy}
+                    />
+                    Approve as primary hero reference
+                  </label>
+                  <Button type="submit" variant="primary" disabled={!selectedAssetId || saving || busy}>
+                    Link reference
+                  </Button>
+                </form>
+                <Button
+                  type="button"
+                  disabled
+                  title="Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets."
                 >
-                  Link reference
-                </button>
-              </form>
-              <button
-                type="button"
-                className="secondary-button touch-target"
-                disabled
-                title="Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets."
-              >
-                Generate reference image — disabled
-              </button>
-              <p className="form-hint">
-                Image generation is disabled in Phase 1 planning; this page only stores and links
-                user-provided managed assets.
-              </p>
-            </section>
+                  Generate reference image — disabled
+                </Button>
+                <p className="form-hint">
+                  Image generation is disabled in Phase 1 planning; this page only stores and links
+                  user-provided managed assets.
+                </p>
+              </div>
+            ) : null}
           </aside>
         ) : null}
       </div>

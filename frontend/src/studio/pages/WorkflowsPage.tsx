@@ -1,3 +1,7 @@
+/**
+ * Structural port of CineForge-Storyboard-Studio-v2 WorkflowsPage (pagesOps.tsx)
+ * adapted to production runtime catalog evidence APIs.
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type RuntimeCatalogWorkflowTemplate, type RuntimeStatus } from '../../api/client'
 import { formatDate } from '../../components/formatDate'
@@ -33,14 +37,22 @@ function shortSha(sha: string): string {
   return `${sha.slice(0, 8)}…${sha.slice(-4)}`
 }
 
+function filterCategory(wf: RuntimeCatalogWorkflowTemplate): string {
+  if (wf.claims.installed === true) return 'Installed claim'
+  if (wf.claims.validated === true) return 'Validated claim'
+  if (wf.claims.benchmarked === true) return 'Benchmarked claim'
+  return humanizeStatus(wf.registration_status)
+}
+
 export function WorkflowsPage() {
-  const { data, busy, backendStatus, setMessage } = useStudio()
+  const { data, busy, setMessage } = useStudio()
   const [workflows, setWorkflows] = useState<RuntimeCatalogWorkflowTemplate[] | null>(null)
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [available, setAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState('')
+  const [filter, setFilter] = useState('All')
 
   const load = useCallback(async () => {
     if (!data) return
@@ -71,25 +83,49 @@ export function WorkflowsPage() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  const list = useMemo(() => workflows ?? [], [workflows])
+  const listAll = useMemo(() => workflows ?? [], [workflows])
 
-  const selected =
-    list.find((wf) => wf.id === selectedId) ?? list[0] ?? null
+  const categories = useMemo(() => {
+    const set = new Set(listAll.map((wf) => filterCategory(wf)))
+    return ['All', ...Array.from(set)]
+  }, [listAll])
+
+  const list = useMemo(
+    () => (filter === 'All' ? listAll : listAll.filter((wf) => filterCategory(wf) === filter)),
+    [filter, listAll],
+  )
+
+  const selected = list.find((wf) => wf.id === selectedId) ?? list[0] ?? listAll[0] ?? null
 
   const summary = useMemo(() => {
-    const templates = list.length
+    const templates = listAll.length
     let installedClaims = 0
     let validatedClaims = 0
-    let benchmarkedClaims = 0
-    for (const wf of list) {
+    let needsBenchmark = 0
+    for (const wf of listAll) {
       if (wf.claims.installed === true) installedClaims += 1
       if (wf.claims.validated === true) validatedClaims += 1
-      if (wf.claims.benchmarked === true) benchmarkedClaims += 1
+      const bench = (wf.benchmark_status || '').toLowerCase()
+      if (!wf.claims.benchmarked && (bench.includes('need') || bench === 'unknown' || !bench)) {
+        needsBenchmark += 1
+      }
     }
-    return { templates, installedClaims, validatedClaims, benchmarkedClaims }
-  }, [list])
+    return { templates, installedClaims, validatedClaims, needsBenchmark }
+  }, [listAll])
 
   if (!data) return null
+
+  const runtimeNote = runtime
+    ? `ComfyUI ${String(runtime.comfyui.status ?? 'unknown')}${
+        runtime.object_info?.available
+          ? ` · object_info available${
+              runtime.object_info.class_count != null
+                ? ` (${runtime.object_info.class_count} classes)`
+                : ''
+            }`
+          : ' · object_info unavailable'
+      }`
+    : 'Runtime status unavailable'
 
   return (
     <div className="page">
@@ -121,43 +157,30 @@ export function WorkflowsPage() {
         }
       />
 
-      <div className="summary-strip" aria-label="Workflow registry summary">
+      <div className="workflow-summary">
         <div>
           <span>Templates</span>
           <b>{summary.templates}</b>
         </div>
         <div>
-          <span>Installed claims</span>
+          <span>Installed</span>
           <b>{summary.installedClaims}</b>
         </div>
         <div>
-          <span>Validated claims</span>
+          <span>Valid manifests</span>
           <b>{summary.validatedClaims}</b>
         </div>
         <div>
-          <span>Benchmarked claims</span>
-          <b>{summary.benchmarkedClaims}</b>
+          <span>Needs benchmark</span>
+          <b>{summary.needsBenchmark}</b>
         </div>
+        <p>
+          <i /> {runtimeNote}
+        </p>
       </div>
-      <p className="form-hint" style={{ marginTop: -6, marginBottom: 14 }}>
-        Claim flags mean recorded evidence only — false is “not claimed,” not a negative runtime probe.
-        {runtime ? (
-          <>
-            {' '}
-            ComfyUI {String(runtime.comfyui.status ?? 'unknown')}
-            {runtime.object_info?.available
-              ? ` · object_info available${
-                  runtime.object_info.class_count != null
-                    ? ` (${runtime.object_info.class_count} classes)`
-                    : ''
-                }`
-              : ' · object_info unavailable'}
-          </>
-        ) : null}
-      </p>
 
       <div className="workflow-layout">
-        <div style={{ minWidth: 0, display: 'grid', gap: 12, alignContent: 'start' }}>
+        <div className="stack">
           {loading ? <LoadingState title="Loading workflow registry…" /> : null}
           {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
 
@@ -168,207 +191,189 @@ export function WorkflowsPage() {
             />
           ) : null}
 
-          {!loading && available && list.length === 0 ? (
+          {!loading && available && listAll.length === 0 ? (
             <EmptyState title="No workflows registered" detail="Registry returned an empty list." />
           ) : null}
 
-          {list.length ? (
-            <div className="data-table workflow-table" role="table" aria-label="Workflow templates">
-              <div className="table-head" role="row">
-                <span role="columnheader">Workflow</span>
-                <span role="columnheader">Registration</span>
-                <span role="columnheader">Manifest</span>
-                <span role="columnheader">Benchmark</span>
-                <span role="columnheader">Installed</span>
-              </div>
-              {list.map((wf) => {
-                const isSelected = selected?.id === wf.id
-                return (
+          {listAll.length ? (
+            <>
+              <div className="filter-row">
+                {categories.map((category) => (
                   <button
-                    key={wf.id}
+                    key={category}
                     type="button"
-                    role="row"
-                    className={isSelected ? 'data-row selected' : 'data-row'}
-                    onClick={() => setSelectedId(wf.id)}
-                    aria-pressed={isSelected}
+                    className={filter === category ? 'active' : ''}
+                    onClick={() => setFilter(category)}
                   >
-                    <span role="cell">
-                      <b style={{ display: 'block' }}>{wf.name}</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', marginTop: 2 }}>
-                        v{wf.version} · {shortSha(wf.sha256)}
-                      </small>
-                    </span>
-                    <span role="cell">
-                      <b style={{ display: 'block' }}>{humanizeStatus(wf.registration_status)}</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', marginTop: 2 }}>
-                        API {wf.has_workflow_api ? 'recorded' : 'unknown'}
-                      </small>
-                    </span>
-                    <span role="cell">
-                      <StatusPill status={wf.has_manifest ? 'Recorded' : 'Unknown'} />
-                      <small style={{ display: 'block', color: 'var(--muted)', marginTop: 4 }}>
-                        {wf.has_manifest ? 'manifest present' : 'manifest not recorded'}
-                      </small>
-                    </span>
-                    <span role="cell">
-                      <b style={{ display: 'block' }}>{humanizeStatus(wf.benchmark_status)}</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', marginTop: 2 }}>
-                        {wf.benchmark_run_count} run{wf.benchmark_run_count === 1 ? '' : 's'}
-                      </small>
-                    </span>
-                    <span role="cell">
-                      <StatusPill status={claimLabel(wf.claims.installed, 'Installed')} />
-                    </span>
+                    {category}
                   </button>
-                )
-              })}
-            </div>
+                ))}
+              </div>
+              <div className="data-table workflow-table" role="table" aria-label="Workflow templates">
+                <div className="table-head" role="row">
+                  <span role="columnheader">Workflow</span>
+                  <span role="columnheader">Type / family</span>
+                  <span role="columnheader">Manifest</span>
+                  <span role="columnheader">Resolution</span>
+                  <span role="columnheader">Benchmark</span>
+                  <span role="columnheader">VRAM</span>
+                  <span role="columnheader">Validated</span>
+                </div>
+                {list.map((wf) => {
+                  const isSelected = selected?.id === wf.id
+                  return (
+                    <button
+                      key={wf.id}
+                      type="button"
+                      role="row"
+                      className={isSelected ? 'selected' : ''}
+                      onClick={() => setSelectedId(wf.id)}
+                      aria-pressed={isSelected}
+                    >
+                      <span role="cell">
+                        <b>{wf.name}</b>
+                        <small>
+                          v{wf.version} · {shortSha(wf.sha256)}
+                        </small>
+                      </span>
+                      <span role="cell">
+                        <b>{humanizeStatus(wf.registration_status)}</b>
+                        <small>API {wf.has_workflow_api ? 'recorded' : 'unknown'}</small>
+                      </span>
+                      <span role="cell">
+                        <StatusPill status={wf.has_manifest ? 'Installed' : 'Missing'} />
+                        <small>
+                          {wf.has_manifest ? 'manifest present' : 'manifest not recorded'}
+                        </small>
+                      </span>
+                      <span role="cell">
+                        Not recorded
+                        <small>frames not recorded</small>
+                      </span>
+                      <span role="cell">{humanizeStatus(wf.benchmark_status)}</span>
+                      <span role="cell">
+                        <StatusPill status="Not recorded" />
+                      </span>
+                      <span role="cell">
+                        {claimLabel(wf.claims.validated, 'Validated')}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
           ) : null}
         </div>
 
-        <aside className="entity-drawer" aria-label="Workflow template detail">
+        <aside className="entity-drawer workflow-drawer" aria-label="Workflow template detail">
           {selected ? (
             <>
               <header>
                 <div>
                   <span className="eyebrow">WORKFLOW MANIFEST</span>
-                  <h2 style={{ marginBottom: 0 }}>{selected.name}</h2>
+                  <h2>{selected.name}</h2>
                 </div>
                 <StatusPill status={humanizeStatus(selected.registration_status)} />
               </header>
 
-              <div
-                style={{
-                  border: '1px solid var(--line)',
-                  background: '#1c1e20',
-                  borderRadius: 12,
-                  padding: 12,
-                  display: 'grid',
-                  gridTemplateColumns: '40px 1fr auto',
-                  gap: 10,
-                  alignItems: 'center',
-                  marginBottom: 12,
-                }}
-              >
-                <span
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    display: 'grid',
-                    placeItems: 'center',
-                    background: '#222d3d',
-                    color: '#79a7e5',
-                  }}
-                  aria-hidden="true"
-                >
-                  <Icon name="layers" size={18} />
+              <div className="workflow-hero">
+                <span className="art-icon">
+                  <Icon name="layers" size={24} />
                 </span>
                 <div>
-                  <b style={{ display: 'block' }}>v{selected.version}</b>
-                  <small style={{ display: 'block', color: 'var(--muted)', marginTop: 2 }}>
+                  <b>v{selected.version}</b>
+                  <small>
                     {shortSha(selected.sha256)}
+                    {selected.comfyui_commit?.trim()
+                      ? ` · Comfy ${selected.comfyui_commit.slice(0, 8)}`
+                      : ''}
                   </small>
                 </div>
                 <StatusPill status={claimLabel(selected.claims.installed, 'Installed')} />
               </div>
 
-              <ul className="kv-list">
-                <li>
-                  <span>Version</span>
-                  <strong>{selected.version}</strong>
-                </li>
-                <li>
-                  <span>SHA-256</span>
-                  <strong className="mono" title={selected.sha256}>
+              <dl className="detail-list">
+                <div>
+                  <dt>Purpose</dt>
+                  <dd>Runtime catalog production template</dd>
+                </div>
+                <div>
+                  <dt>Version</dt>
+                  <dd>{selected.version}</dd>
+                </div>
+                <div>
+                  <dt>SHA-256</dt>
+                  <dd className="mono" title={selected.sha256}>
                     {shortSha(selected.sha256)}
-                  </strong>
-                </li>
-                <li>
-                  <span>ComfyUI commit</span>
-                  <strong className="mono">
+                  </dd>
+                </div>
+                <div>
+                  <dt>ComfyUI commit</dt>
+                  <dd className="mono">
                     {selected.comfyui_commit?.trim() ? selected.comfyui_commit : 'Not recorded'}
-                  </strong>
-                </li>
-                <li>
-                  <span>Registered</span>
-                  <strong>{formatDate(selected.created_at)}</strong>
-                </li>
-                <li>
-                  <span>Registration</span>
-                  <strong>{humanizeStatus(selected.registration_status)}</strong>
-                </li>
-                <li>
-                  <span>Manifest JSON</span>
-                  <strong>{selected.has_manifest ? 'Recorded' : 'Not recorded'}</strong>
-                </li>
-                <li>
-                  <span>Workflow API JSON</span>
-                  <strong>{selected.has_workflow_api ? 'Recorded' : 'Not recorded'}</strong>
-                </li>
-                <li>
-                  <span>Benchmark status</span>
-                  <strong>{humanizeStatus(selected.benchmark_status)}</strong>
-                </li>
-                <li>
-                  <span>Benchmark runs</span>
-                  <strong>{selected.benchmark_run_count}</strong>
-                </li>
-                <li>
-                  <span>Installed claim</span>
-                  <strong>
-                    <StatusPill status={claimLabel(selected.claims.installed, 'Installed')} />
-                  </strong>
-                </li>
-                <li>
-                  <span>Validated claim</span>
-                  <strong>
-                    <StatusPill status={claimLabel(selected.claims.validated, 'Validated')} />
-                  </strong>
-                </li>
-                <li>
-                  <span>Benchmarked claim</span>
-                  <strong>
-                    <StatusPill
-                      status={claimLabel(selected.claims.benchmarked, 'Verified')}
-                    />
-                  </strong>
-                </li>
-                <li>
-                  <span>Comfy reachable claim</span>
-                  <strong>
-                    <StatusPill
-                      status={claimLabel(selected.claims.comfy_reachable, 'Connected')}
-                    />
-                  </strong>
-                </li>
-              </ul>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Registered</dt>
+                  <dd>{formatDate(selected.created_at)}</dd>
+                </div>
+                <div>
+                  <dt>Manifest JSON</dt>
+                  <dd>{selected.has_manifest ? 'Recorded' : 'Not recorded'}</dd>
+                </div>
+                <div>
+                  <dt>Workflow API JSON</dt>
+                  <dd>{selected.has_workflow_api ? 'Recorded' : 'Not recorded'}</dd>
+                </div>
+                <div>
+                  <dt>Benchmark tier</dt>
+                  <dd>
+                    {humanizeStatus(selected.benchmark_status)}
+                    {selected.benchmark_run_count
+                      ? ` · ${selected.benchmark_run_count} run(s)`
+                      : ''}
+                  </dd>
+                </div>
+                <div>
+                  <dt>VRAM status</dt>
+                  <dd>
+                    <StatusPill status="Not recorded" />
+                  </dd>
+                </div>
+              </dl>
 
-              <div
-                style={{
-                  marginTop: 14,
-                  border: '1px solid var(--line)',
-                  borderRadius: 12,
-                  padding: 12,
-                  display: 'grid',
-                  gridTemplateColumns: 'auto 1fr',
-                  gap: 10,
-                  alignItems: 'start',
-                  background: '#171a1d',
-                }}
-              >
-                <Icon
-                  name={selected.claims.validated === true ? 'check' : 'warning'}
-                  size={18}
-                />
+              <div className="dependency-block">
+                <h3>Evidence claims</h3>
                 <span>
-                  <b style={{ display: 'block' }}>
-                    {claimLabel(
-                      selected.claims.validated,
-                      'Validation claim recorded',
-                    )}
+                  <Icon name={selected.claims.installed === true ? 'check' : 'warning'} />
+                  Installed: {claimLabel(selected.claims.installed, 'Claimed')}
+                </span>
+                <span>
+                  <Icon name={selected.claims.validated === true ? 'check' : 'warning'} />
+                  Validated: {claimLabel(selected.claims.validated, 'Claimed')}
+                </span>
+                <span>
+                  <Icon name={selected.claims.benchmarked === true ? 'check' : 'warning'} />
+                  Benchmarked: {claimLabel(selected.claims.benchmarked, 'Claimed')}
+                </span>
+                <span>
+                  <Icon name={selected.claims.comfy_reachable === true ? 'check' : 'warning'} />
+                  Comfy reachable: {claimLabel(selected.claims.comfy_reachable, 'Claimed')}
+                </span>
+                <p>
+                  Claim flags mean recorded evidence only — false is “not claimed,” not a negative
+                  runtime probe. Model, LoRA, and custom-node inventories are not returned by the
+                  workflow-template list endpoint.
+                </p>
+              </div>
+
+              <div className="validation-results">
+                <Icon name={selected.claims.validated === true ? 'check' : 'warning'} />
+                <span>
+                  <b>
+                    {claimLabel(selected.claims.validated, 'Validation claim recorded')}
                   </b>
-                  <small style={{ display: 'block', color: 'var(--muted)', marginTop: 4 }}>
+                  <small>
                     {selected.claims.validated === true
                       ? 'A validation claim is present in catalog evidence.'
                       : VALIDATE_DISABLED_REASON}
@@ -376,14 +381,7 @@ export function WorkflowsPage() {
                 </span>
               </div>
 
-              <footer
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 8,
-                  marginTop: 14,
-                }}
-              >
+              <footer>
                 <Button disabled title={INSTALL_DISABLED_REASON} icon="download">
                   Install
                 </Button>
@@ -411,60 +409,6 @@ export function WorkflowsPage() {
             />
           )}
         </aside>
-      </div>
-
-      <div className="panel" style={{ marginTop: 14 }}>
-        <div className="panel-title">
-          <div>
-            <h2>Runtime posture</h2>
-            <p>Read-only snapshot from runtime status. Planning screens never start workers.</p>
-          </div>
-          <span className="truth-pill">{backendStatus}</span>
-        </div>
-        {runtime ? (
-          <ul className="kv-list">
-            <li>
-              <span>Environment</span>
-              <strong>{runtime.environment}</strong>
-            </li>
-            <li>
-              <span>Phase</span>
-              <strong>{runtime.current_phase}</strong>
-            </li>
-            <li>
-              <span>Queue worker</span>
-              <strong>{runtime.queue.worker_enabled ? 'Enabled' : 'Disabled'}</strong>
-            </li>
-            <li>
-              <span>Submission</span>
-              <strong>{runtime.queue.submission_enabled ? 'Enabled' : 'Disabled'}</strong>
-            </li>
-            <li>
-              <span>ComfyUI</span>
-              <strong>{String(runtime.comfyui.status ?? 'unknown')}</strong>
-            </li>
-            <li>
-              <span>FFmpeg</span>
-              <strong>{String(runtime.ffmpeg.status ?? 'unknown')}</strong>
-            </li>
-          </ul>
-        ) : (
-          <p className="form-hint">Runtime status unavailable for this session.</p>
-        )}
-
-        {runtime && Object.keys(runtime.disabled_actions).length ? (
-          <div className="disabled-action-grid" style={{ marginTop: 14 }}>
-            {Object.entries(runtime.disabled_actions).map(([action, reason]) => (
-              <div className="disabled-action" key={action}>
-                <div>
-                  <strong className="mono">{action}</strong>
-                  <p>{reason}</p>
-                </div>
-                <span className="truth-pill blocked">Disabled</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
       </div>
     </div>
   )

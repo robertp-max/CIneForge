@@ -1,4 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
+/**
+ * Structural port of prototype StoryboardPage (pagesCore.tsx) adapted to
+ * production studio context + shot save / narration / prompt APIs.
+ */
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   api,
   type Character,
@@ -10,19 +14,46 @@ import {
   type ShotUpdatePayload,
   type Voice,
 } from '../../api/client'
+import { Button, Icon, PageTitle, Progress, Section, StatusPill } from '../../components/ui'
 import { useStudio } from '../StudioState'
 import { formatDuration } from '../utils'
 import { EmptyState } from '../components/StateBlocks'
+import { toProtoProject, type ProtoStatus } from '../proto/adapter'
 
-type InspectorTab = 'details' | 'prompts' | 'cast' | 'technical'
+type InspectorTab = 'details' | 'prompts' | 'technical' | 'cast'
+type StatusFilter = 'All' | 'Draft' | 'Review' | 'Approved' | 'Blocked'
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+function approvalToProto(state: string): ProtoStatus {
+  const v = (state ?? 'draft').toLowerCase()
+  if (v === 'approved') return 'Approved'
+  if (v === 'blocked') return 'Blocked'
+  if (v === 'in_review' || v === 'review') return 'Review'
+  return 'Draft'
+}
+
+function protoToApproval(status: ProtoStatus): 'draft' | 'in_review' | 'approved' | 'blocked' {
+  if (status === 'Approved') return 'approved'
+  if (status === 'Blocked') return 'blocked'
+  if (status === 'Review') return 'in_review'
+  return 'draft'
+}
+
+function chapterLabel(index: number): string {
+  return `CH${String(index + 1).padStart(2, '0')}`
+}
+
+function sceneLabel(index: number): string {
+  return `SC${String(index + 1).padStart(2, '0')}`
+}
+
 function ShotInspector({
   shot,
   busy,
+  edit,
   onSave,
   onSaveNarration,
   onSavePromptPackage,
@@ -31,9 +62,12 @@ function ShotInspector({
   runtimeCatalog,
   onRefresh,
   onMessage,
+  onApprove,
+  onRequestChanges,
 }: {
   shot: Shot
   busy: boolean
+  edit: boolean
   onSave: (shotId: string, payload: ShotUpdatePayload) => Promise<void>
   onSaveNarration: (shotId: string, payload: ShotNarrationPayload) => Promise<void>
   onSavePromptPackage: (shotId: string, payload: ShotPromptPackagePayload) => Promise<void>
@@ -42,6 +76,8 @@ function ShotInspector({
   runtimeCatalog: RuntimeCatalog | null
   onRefresh: () => Promise<void>
   onMessage: (message: string) => void
+  onApprove: () => void
+  onRequestChanges: () => void
 }) {
   const [tab, setTab] = useState<InspectorTab>('details')
   const [draft, setDraft] = useState(shot)
@@ -51,7 +87,14 @@ function ShotInspector({
   const [recommendationRationale, setRecommendationRationale] = useState('')
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const disabled = busy || actionBusy
+  const disabled = busy || actionBusy || !edit
+
+  useEffect(() => {
+    setDraft(shot)
+    setCharacterLinks(shot.characters ?? [])
+    setTab('details')
+    setActionError(null)
+  }, [shot])
 
   const save = () => {
     void onSave(draft.id, {
@@ -81,7 +124,6 @@ function ShotInspector({
       start_offset_sec: draft.narration_start_offset_sec ?? 0,
       expected_duration_sec: draft.narration_expected_duration_sec ?? null,
       narration_exception_reason: exceptionReason,
-      // Editing narration returns it to draft for explicit review.
       approval_state: 'draft',
     })
   }
@@ -154,8 +196,7 @@ function ShotInspector({
         recommendation_type: recommendationKind,
         generation_model_variant_id:
           recommendationKind === 'generation' ? recommendationTargetId : null,
-        workflow_template_id:
-          recommendationKind === 'workflow' ? recommendationTargetId : null,
+        workflow_template_id: recommendationKind === 'workflow' ? recommendationTargetId : null,
         rationale: recommendationRationale.trim() || null,
         availability_status:
           selectedVariant?.path_status ?? selectedWorkflow?.registration_status ?? 'unknown',
@@ -207,23 +248,35 @@ function ShotInspector({
     }
   }
 
+  const continuityValid = Boolean(
+    draft.continuity_source_type && draft.continuity_source_type !== 'none',
+  )
+  const status = approvalToProto(draft.approval_state)
+
   return (
     <>
-      <p className="eyebrow mono">{draft.id}</p>
+      <header>
+        <div>
+          <span className="eyebrow">SHOT {draft.display_label || 'A'}</span>
+          <h2>{draft.id}</h2>
+        </div>
+        <StatusPill status={status} />
+      </header>
 
-      <div className="inspector-tabs" role="tablist" aria-label="Inspector sections">
+      <div className="tabs" role="tablist" aria-label="Inspector sections">
         {(
           [
-            ['details', 'Details'],
+            ['details', 'Shot details'],
             ['prompts', 'Prompts'],
-            ['cast', 'Cast & routing'],
             ['technical', 'Technical'],
+            ['cast', 'Cast & routing'],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             type="button"
             role="tab"
+            className={tab === id ? 'active' : ''}
             aria-selected={tab === id}
             onClick={() => setTab(id)}
           >
@@ -233,327 +286,240 @@ function ShotInspector({
       </div>
 
       {tab === 'details' ? (
-        <div role="tabpanel">
-          <label>
-            Title
-            <input
-              value={draft.title}
-              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-              disabled={busy}
-            />
-          </label>
-          <label>
-            Duration (sec)
-            <input
-              type="number"
-              min={0.1}
-              step={0.1}
-              value={draft.duration_sec}
-              onChange={(event) => setDraft({ ...draft, duration_sec: Number(event.target.value) })}
-              disabled={busy}
-            />
-          </label>
-          <label>
-            Override reason
-            <input
-              value={draft.duration_override_reason ?? ''}
-              onChange={(event) => setDraft({ ...draft, duration_override_reason: event.target.value || null })}
-              disabled={busy}
-            />
-          </label>
+        <div className="form-stack" role="tabpanel">
           <label>
             Story purpose
             <textarea
+              disabled={disabled}
               value={draft.story_purpose ?? ''}
-              onChange={(event) => setDraft({ ...draft, story_purpose: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, story_purpose: e.target.value || null })}
             />
           </label>
           <label>
             Visual description
             <textarea
+              className="tall"
+              disabled={disabled}
               value={draft.visual_description ?? ''}
-              onChange={(event) => setDraft({ ...draft, visual_description: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, visual_description: e.target.value || null })}
             />
+          </label>
+          <div className="form-grid">
+            <label>
+              Duration
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                disabled={disabled}
+                value={draft.duration_sec}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    duration_sec: Number(e.target.value),
+                    approval_state:
+                      draft.approval_state === 'approved' ? 'in_review' : draft.approval_state,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Approval
+              <select
+                disabled={disabled}
+                value={status}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    approval_state: protoToApproval(e.target.value as ProtoStatus),
+                  })
+                }
+              >
+                {(['Draft', 'Review', 'Approved', 'Blocked'] as const).map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label>
+            Characters present
+            <div className="token-field">
+              {(draft.characters ?? []).length
+                ? (draft.characters ?? []).map((link) => {
+                    const c = characters.find((x) => x.id === link.character_id)
+                    return <span key={link.character_id}>{c?.name ?? link.character_id}</span>
+                  })
+                : <span>None assigned</span>}
+            </div>
           </label>
           <label>
             Location
             <input
+              disabled={disabled}
               value={draft.location ?? ''}
-              onChange={(event) => setDraft({ ...draft, location: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, location: e.target.value || null })}
             />
           </label>
           <label>
             Narration
             <textarea
+              disabled={disabled}
               value={draft.narration ?? ''}
-              onChange={(event) => setDraft({ ...draft, narration: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, narration: e.target.value || null })}
             />
           </label>
           <label>
             Narration exception reason
             <textarea
+              disabled={disabled}
               value={draft.narration_exception_reason ?? ''}
-              onChange={(event) => setDraft({ ...draft, narration_exception_reason: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) =>
+                setDraft({ ...draft, narration_exception_reason: e.target.value || null })
+              }
             />
           </label>
           <label>
-            Narration voice profile
+            Voice profile
             <select
+              disabled={disabled}
               value={draft.narration_voice_profile_id ?? ''}
-              onChange={(event) => setDraft({ ...draft, narration_voice_profile_id: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) =>
+                setDraft({ ...draft, narration_voice_profile_id: e.target.value || null })
+              }
             >
-              <option value="">No voice assigned</option>
-              {voices.map((voice) => (
-                <option key={voice.id} value={voice.id}>{voice.name} · {voice.approval_state}</option>
+              <option value="">Unassigned / exception needed</option>
+              {voices.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
               ))}
             </select>
           </label>
-          <div className="split-2">
-            <label>
-              Start offset (sec)
-              <input
-                type="number"
-                min={0}
-                step={0.1}
-                value={draft.narration_start_offset_sec ?? 0}
-                onChange={(event) => setDraft({ ...draft, narration_start_offset_sec: Number(event.target.value) })}
-                disabled={busy}
-              />
-            </label>
-            <label>
-              Expected duration (sec)
-              <input
-                type="number"
-                min={0.1}
-                step={0.1}
-                value={draft.narration_expected_duration_sec ?? ''}
-                onChange={(event) => setDraft({
+          <label>
+            Continuity source
+            <input
+              disabled={disabled}
+              value={
+                draft.continuity_source_type === 'none'
+                  ? ''
+                  : draft.continuity_source_shot_id || draft.continuity_source_type
+              }
+              onChange={(e) =>
+                setDraft({
                   ...draft,
-                  narration_expected_duration_sec: event.target.value ? Number(event.target.value) : null,
-                })}
-                disabled={busy}
-              />
-            </label>
+                  continuity_source_type: e.target.value ? 'shot_ref' : 'none',
+                  continuity_source_shot_id: e.target.value || null,
+                })
+              }
+              className="mono"
+              placeholder="Shot id or leave empty"
+            />
+          </label>
+          <div className={`validation ${continuityValid ? 'pass' : 'fail'}`}>
+            <Icon name={continuityValid ? 'check' : 'warning'} />
+            <span>
+              <b>{continuityValid ? 'Continuity link valid' : 'Continuity repair required'}</b>
+              <small>
+                {continuityValid
+                  ? `Source: ${draft.continuity_source_type}`
+                  : 'Set a continuity source type other than none.'}
+              </small>
+            </span>
           </div>
-          <p className="form-hint">
-            Narration saves through its canonical resource and requires text or an exception reason.
-          </p>
+          <div className="inline-actions" style={{ marginTop: 8 }}>
+            <Button variant="primary" disabled={busy || actionBusy} onClick={save}>
+              Save shot details
+            </Button>
+            <Button
+              disabled={
+                busy ||
+                actionBusy ||
+                (!draft.narration?.trim() && !draft.narration_exception_reason?.trim())
+              }
+              onClick={saveNarration}
+            >
+              Save narration
+            </Button>
+          </div>
         </div>
       ) : null}
 
       {tab === 'prompts' ? (
-        <div role="tabpanel">
+        <div className="form-stack" role="tabpanel">
           <p className="form-hint">
-            Saving creates a new canonical prompt-package version; it never invokes a model or starts generation.
+            Saving creates a new canonical prompt-package version; it never invokes a model or starts
+            generation.
           </p>
           <label>
-            Image prompt
+            Starting-image prompt
             <textarea
+              className="prompt tall"
+              disabled={disabled}
               value={draft.prompt_positive ?? ''}
-              onChange={(event) => setDraft({ ...draft, prompt_positive: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, prompt_positive: e.target.value || null })}
             />
           </label>
           <label>
             Video prompt
             <textarea
+              className="prompt tall"
+              disabled={disabled}
               value={draft.prompt_video ?? ''}
-              onChange={(event) => setDraft({ ...draft, prompt_video: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, prompt_video: e.target.value || null })}
             />
           </label>
           <label>
             Negative prompt
             <textarea
+              className="prompt"
+              disabled={disabled}
               value={draft.prompt_negative ?? ''}
-              onChange={(event) => setDraft({ ...draft, prompt_negative: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, prompt_negative: e.target.value || null })}
             />
           </label>
           <label>
             Continuity instructions
             <textarea
+              className="prompt"
+              disabled={disabled}
               value={draft.prompt_continuity_instructions ?? ''}
-              onChange={(event) => setDraft({ ...draft, prompt_continuity_instructions: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) =>
+                setDraft({ ...draft, prompt_continuity_instructions: e.target.value || null })
+              }
             />
           </label>
           <label>
-            Style lock prompt
+            Style-lock prompt
             <textarea
+              className="prompt"
+              disabled={disabled}
               value={draft.prompt_style_lock ?? ''}
-              onChange={(event) => setDraft({ ...draft, prompt_style_lock: event.target.value || null })}
-              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, prompt_style_lock: e.target.value || null })}
             />
           </label>
-        </div>
-      ) : null}
-
-      {tab === 'cast' ? (
-        <div role="tabpanel" className="stack-form" style={{ maxWidth: '100%' }}>
-          <div>
-            <h3>Character assignments</h3>
-            <p className="form-hint">
-              Checked characters and their roles are persisted as ordered shot-character links.
-            </p>
-          </div>
-          {characters.length ? characters.map((character) => {
-            const link = characterLinks.find((item) => item.character_id === character.id)
-            return (
-              <div key={character.id} className="notice info">
-                <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(link)}
-                    disabled={disabled}
-                    style={{ width: 20, height: 20, minHeight: 20 }}
-                    onChange={(event) => {
-                      if (event.target.checked) {
-                        setCharacterLinks((current) => [
-                          ...current,
-                          {
-                            character_id: character.id,
-                            order_index: current.length,
-                            role_in_shot: character.role,
-                            continuity_notes: null,
-                          },
-                        ])
-                      } else {
-                        setCharacterLinks((current) =>
-                          current
-                            .filter((item) => item.character_id !== character.id)
-                            .map((item, order_index) => ({ ...item, order_index })),
-                        )
-                      }
-                    }}
-                  />
-                  <span>{character.name}</span>
-                </label>
-                {link ? (
-                  <label>
-                    Role in shot
-                    <input
-                      value={link.role_in_shot ?? ''}
-                      disabled={disabled}
-                      onChange={(event) => setCharacterLinks((current) =>
-                        current.map((item) => item.character_id === character.id
-                          ? { ...item, role_in_shot: event.target.value || null }
-                          : item),
-                      )}
-                    />
-                  </label>
-                ) : null}
-              </div>
-            )
-          }) : <p className="form-hint">No characters exist in this story.</p>}
-          <button type="button" className="secondary-button" disabled={disabled} onClick={() => void saveCharacterLinks()}>
-            Save character assignments
-          </button>
-
-          <div>
-            <h3>Model / workflow recommendations</h3>
-            <p className="form-hint">
-              Recommendations are planning metadata only. Saving or acknowledging one never submits a render.
-            </p>
-          </div>
-          {draft.recommendations?.length ? (
-            <div className="stack-form" style={{ maxWidth: '100%' }}>
-              {draft.recommendations.map((recommendation) => (
-                <article className="notice info" key={recommendation.id}>
-                  <strong>{recommendation.recommendation_type} · {recommendation.approval_state}</strong>
-                  <p>{recommendation.rationale || 'No rationale recorded.'}</p>
-                  <small>
-                    Availability {recommendation.availability_status} · benchmark {recommendation.benchmark_status}
-                    {recommendation.acknowledged_at ? ` · acknowledged ${recommendation.acknowledged_at}` : ''}
-                  </small>
-                  <div className="inline-actions" style={{ marginTop: 8 }}>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={disabled || Boolean(recommendation.acknowledged_at)}
-                      onClick={() => void updateRecommendation(recommendation.id, { acknowledge: true })}
-                    >
-                      {recommendation.acknowledged_at ? 'Acknowledged' : 'Acknowledge'}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={disabled || recommendation.approval_state === 'in_review'}
-                      onClick={() => void updateRecommendation(recommendation.id, { approval_state: 'in_review' })}
-                    >
-                      Mark in review
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={disabled}
-                      onClick={() => void deleteRecommendation(recommendation.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : <p className="form-hint">No recommendation is persisted for this shot.</p>}
-          <form className="stack-form" style={{ maxWidth: '100%' }} onSubmit={(event) => void createRecommendation(event)}>
-            <label>
-              Recommendation target type
-              <select
-                value={recommendationKind}
-                disabled={disabled}
-                onChange={(event) => {
-                  setRecommendationKind(event.target.value as 'generation' | 'workflow')
-                  setRecommendationTargetId('')
-                }}
-              >
-                <option value="generation">Generation model variant</option>
-                <option value="workflow">Workflow template</option>
-              </select>
-            </label>
-            <label>
-              Catalog target
-              <select value={recommendationTargetId} onChange={(event) => setRecommendationTargetId(event.target.value)} disabled={disabled}>
-                <option value="">Select a factual catalog record</option>
-                {recommendationKind === 'generation'
-                  ? runtimeCatalog?.model_variants.map((variant) => (
-                      <option key={variant.id} value={variant.id}>{variant.variant_name} · {variant.path_status} · {variant.benchmark_status}</option>
-                    ))
-                  : runtimeCatalog?.workflow_templates.map((workflow) => (
-                      <option key={workflow.id} value={workflow.id}>{workflow.name} {workflow.version} · {workflow.registration_status}</option>
-                    ))}
-              </select>
-            </label>
-            <label>
-              Rationale
-              <textarea value={recommendationRationale} onChange={(event) => setRecommendationRationale(event.target.value)} disabled={disabled} />
-            </label>
-            <button type="submit" className="secondary-button" disabled={disabled || !recommendationTargetId}>
-              Save recommendation
-            </button>
-            {!runtimeCatalog ? <p className="notice warning">Runtime catalog is unavailable; new recommendations cannot be created, but existing records remain reviewable.</p> : null}
-          </form>
+          <Button variant="primary" disabled={busy || actionBusy} onClick={savePromptPackage}>
+            Save new prompt version
+          </Button>
         </div>
       ) : null}
 
       {tab === 'technical' ? (
-        <div role="tabpanel">
+        <div className="form-stack" role="tabpanel">
           <label>
             Continuity source type
             <select
+              disabled={disabled}
               value={draft.continuity_source_type}
-              onChange={(event) => setDraft({
-                ...draft,
-                continuity_source_type: event.target.value,
-                continuity_source_shot_id: event.target.value === 'none' ? null : draft.continuity_source_shot_id,
-              })}
-              disabled={busy}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  continuity_source_type: e.target.value,
+                  continuity_source_shot_id:
+                    e.target.value === 'none' ? null : draft.continuity_source_shot_id,
+                })
+              }
             >
               <option value="none">None</option>
               <option value="previous_shot">Previous shot</option>
@@ -564,67 +530,58 @@ function ShotInspector({
           <label>
             Continuity source shot ID
             <input
-              value={draft.continuity_source_shot_id ?? ''}
-              onChange={(event) => setDraft({ ...draft, continuity_source_shot_id: event.target.value || null })}
-              disabled={busy || draft.continuity_source_type === 'none'}
               className="mono"
+              disabled={disabled || draft.continuity_source_type === 'none'}
+              value={draft.continuity_source_shot_id ?? ''}
+              onChange={(e) =>
+                setDraft({ ...draft, continuity_source_shot_id: e.target.value || null })
+              }
             />
           </label>
           <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
             <input
               type="checkbox"
               checked={draft.starting_image_required}
-              onChange={(event) => setDraft({ ...draft, starting_image_required: event.target.checked })}
-              disabled={busy}
+              disabled={disabled}
               style={{ width: 20, height: 20, minHeight: 20 }}
+              onChange={(e) => setDraft({ ...draft, starting_image_required: e.target.checked })}
             />
             <span>Starting image required</span>
           </label>
           <label>
             Starting image asset ID
             <input
-              value={draft.starting_image_asset_id ?? ''}
-              onChange={(event) => setDraft({ ...draft, starting_image_asset_id: event.target.value || null })}
-              disabled={busy}
               className="mono"
+              disabled={disabled}
+              value={draft.starting_image_asset_id ?? ''}
+              onChange={(e) =>
+                setDraft({ ...draft, starting_image_asset_id: e.target.value || null })
+              }
             />
           </label>
           <label>
             Camera direction
             <textarea
-              value={draft.camera_direction ?? ''}
-              onChange={(event) => setDraft({ ...draft, camera_direction: event.target.value || null })}
               disabled={disabled}
+              value={draft.camera_direction ?? ''}
+              onChange={(e) => setDraft({ ...draft, camera_direction: e.target.value || null })}
             />
           </label>
           <label>
             Motion direction
             <textarea
+              disabled={disabled}
               value={draft.motion_direction ?? ''}
-              onChange={(event) => setDraft({ ...draft, motion_direction: event.target.value || null })}
-              disabled={disabled}
+              onChange={(e) => setDraft({ ...draft, motion_direction: e.target.value || null })}
             />
-          </label>
-          <label>
-            Shot approval state
-            <select
-              value={draft.approval_state}
-              onChange={(event) => setDraft({ ...draft, approval_state: event.target.value })}
-              disabled={disabled}
-            >
-              <option value="draft">Draft</option>
-              <option value="in_review">In review</option>
-              <option value="approved">Approved</option>
-              <option value="blocked">Blocked</option>
-            </select>
           </label>
           <label>
             Production status
             <input
               list={`production-status-${draft.id}`}
-              value={draft.production_status}
-              onChange={(event) => setDraft({ ...draft, production_status: event.target.value })}
               disabled={disabled}
+              value={draft.production_status}
+              onChange={(e) => setDraft({ ...draft, production_status: e.target.value })}
             />
             <datalist id={`production-status-${draft.id}`}>
               <option value="planned" />
@@ -636,67 +593,247 @@ function ShotInspector({
           <label>
             Blocked reason
             <textarea
-              value={draft.blocked_reason ?? ''}
-              onChange={(event) => setDraft({ ...draft, blocked_reason: event.target.value || null })}
               disabled={disabled || draft.production_status !== 'blocked'}
-              required={draft.production_status === 'blocked'}
+              value={draft.blocked_reason ?? ''}
+              onChange={(e) => setDraft({ ...draft, blocked_reason: e.target.value || null })}
               placeholder="Required when production status is blocked"
             />
           </label>
-          <p className="form-hint">
-            The backend requires a blocker reason when production status is blocked and clears the reason for other statuses.
-          </p>
-        </div>
-      ) : null}
-
-      {actionError ? <p className="notice error" role="alert">{actionError}</p> : null}
-
-      <div className="inline-actions" style={{ marginTop: 14 }}>
-        {tab === 'details' ? (
-          <>
-            <button type="button" className="primary-button touch-target" disabled={busy} onClick={save}>
-              Save shot details
-            </button>
-            <button
-              type="button"
-              className="secondary-button touch-target"
-              disabled={busy || (!draft.narration?.trim() && !draft.narration_exception_reason?.trim())}
-              onClick={saveNarration}
-            >
-              Save narration
-            </button>
-          </>
-        ) : null}
-        {tab === 'prompts' ? (
-          <button type="button" className="primary-button touch-target" disabled={busy} onClick={savePromptPackage}>
-            Save new prompt version
-          </button>
-        ) : null}
-        {tab === 'technical' ? (
-          <button
-            type="button"
-            className="primary-button touch-target"
-            disabled={disabled || !draft.production_status.trim() || (draft.production_status === 'blocked' && !draft.blocked_reason?.trim())}
+          <div className="spec-grid">
+            <div>
+              <span>Resolution</span>
+              <b>1280×720</b>
+            </div>
+            <div>
+              <span>Frame rate</span>
+              <b>24 fps</b>
+            </div>
+            <div>
+              <span>Frames</span>
+              <b>{Math.round(draft.duration_sec * 24)}</b>
+            </div>
+            <div>
+              <span>Seed policy</span>
+              <b>Fixed</b>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            disabled={
+              busy ||
+              actionBusy ||
+              !draft.production_status.trim() ||
+              (draft.production_status === 'blocked' && !draft.blocked_reason?.trim())
+            }
             onClick={() => void saveLifecycle()}
           >
             Save technical and lifecycle fields
-          </button>
-        ) : null}
-      </div>
+          </Button>
+        </div>
+      ) : null}
+
+      {tab === 'cast' ? (
+        <div className="form-stack" role="tabpanel">
+          <div>
+            <h3>Character assignments</h3>
+            <p className="form-hint">
+              Checked characters and their roles are persisted as ordered shot-character links.
+            </p>
+          </div>
+          {characters.length ? (
+            characters.map((character) => {
+              const link = characterLinks.find((item) => item.character_id === character.id)
+              return (
+                <div key={character.id} className="notice info">
+                  <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(link)}
+                      disabled={busy || actionBusy}
+                      style={{ width: 20, height: 20, minHeight: 20 }}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setCharacterLinks((current) => [
+                            ...current,
+                            {
+                              character_id: character.id,
+                              order_index: current.length,
+                              role_in_shot: character.role,
+                              continuity_notes: null,
+                            },
+                          ])
+                        } else {
+                          setCharacterLinks((current) =>
+                            current
+                              .filter((item) => item.character_id !== character.id)
+                              .map((item, order_index) => ({ ...item, order_index })),
+                          )
+                        }
+                      }}
+                    />
+                    <span>{character.name}</span>
+                  </label>
+                  {link ? (
+                    <label>
+                      Role in shot
+                      <input
+                        value={link.role_in_shot ?? ''}
+                        disabled={busy || actionBusy}
+                        onChange={(event) =>
+                          setCharacterLinks((current) =>
+                            current.map((item) =>
+                              item.character_id === character.id
+                                ? { ...item, role_in_shot: event.target.value || null }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              )
+            })
+          ) : (
+            <p className="form-hint">No characters exist in this story.</p>
+          )}
+          <Button disabled={busy || actionBusy} onClick={() => void saveCharacterLinks()}>
+            Save character assignments
+          </Button>
+
+          <div>
+            <h3>Model / workflow recommendations</h3>
+            <p className="form-hint">
+              Recommendations are planning metadata only. Saving or acknowledging one never submits a
+              render.
+            </p>
+          </div>
+          {draft.recommendations?.length ? (
+            draft.recommendations.map((recommendation) => (
+              <article className="notice info" key={recommendation.id}>
+                <strong>
+                  {recommendation.recommendation_type} · {recommendation.approval_state}
+                </strong>
+                <p>{recommendation.rationale || 'No rationale recorded.'}</p>
+                <small>
+                  Availability {recommendation.availability_status} · benchmark{' '}
+                  {recommendation.benchmark_status}
+                  {recommendation.acknowledged_at
+                    ? ` · acknowledged ${recommendation.acknowledged_at}`
+                    : ''}
+                </small>
+                <div className="inline-actions" style={{ marginTop: 8 }}>
+                  <Button
+                    variant="quiet"
+                    disabled={busy || actionBusy || Boolean(recommendation.acknowledged_at)}
+                    onClick={() => void updateRecommendation(recommendation.id, { acknowledge: true })}
+                  >
+                    {recommendation.acknowledged_at ? 'Acknowledged' : 'Acknowledge'}
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    disabled={busy || actionBusy || recommendation.approval_state === 'in_review'}
+                    onClick={() =>
+                      void updateRecommendation(recommendation.id, { approval_state: 'in_review' })
+                    }
+                  >
+                    Mark in review
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    disabled={busy || actionBusy}
+                    onClick={() => void deleteRecommendation(recommendation.id)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <p className="form-hint">No recommendation is persisted for this shot.</p>
+          )}
+          <form className="form-stack" onSubmit={(event) => void createRecommendation(event)}>
+            <label>
+              Recommendation target type
+              <select
+                value={recommendationKind}
+                disabled={busy || actionBusy}
+                onChange={(event) => {
+                  setRecommendationKind(event.target.value as 'generation' | 'workflow')
+                  setRecommendationTargetId('')
+                }}
+              >
+                <option value="generation">Generation model variant</option>
+                <option value="workflow">Workflow template</option>
+              </select>
+            </label>
+            <label>
+              Catalog target
+              <select
+                value={recommendationTargetId}
+                onChange={(event) => setRecommendationTargetId(event.target.value)}
+                disabled={busy || actionBusy}
+              >
+                <option value="">Select a factual catalog record</option>
+                {recommendationKind === 'generation'
+                  ? runtimeCatalog?.model_variants.map((variant) => (
+                      <option key={variant.id} value={variant.id}>
+                        {variant.variant_name} · {variant.path_status} · {variant.benchmark_status}
+                      </option>
+                    ))
+                  : runtimeCatalog?.workflow_templates.map((workflow) => (
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.name} {workflow.version} · {workflow.registration_status}
+                      </option>
+                    ))}
+              </select>
+            </label>
+            <label>
+              Rationale
+              <textarea
+                value={recommendationRationale}
+                onChange={(event) => setRecommendationRationale(event.target.value)}
+                disabled={busy || actionBusy}
+              />
+            </label>
+            <Button
+              type="submit"
+              disabled={busy || actionBusy || !recommendationTargetId}
+            >
+              Save recommendation
+            </Button>
+            {!runtimeCatalog ? (
+              <p className="notice warning">
+                Runtime catalog is unavailable; new recommendations cannot be created, but existing
+                records remain reviewable.
+              </p>
+            ) : null}
+          </form>
+        </div>
+      ) : null}
+
+      {actionError ? (
+        <p className="notice error" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+
+      <footer>
+        <Button variant="danger" onClick={onRequestChanges} disabled={busy || actionBusy}>
+          Request changes
+        </Button>
+        <Button variant="primary" icon="check" onClick={onApprove} disabled={busy || actionBusy}>
+          Approve shot
+        </Button>
+      </footer>
     </>
   )
-}
-
-function approvalLabel(state: string): string {
-  if (state === 'in_review' || state === 'review') return 'Review'
-  if (state === 'approved') return 'Approved'
-  if (state === 'blocked') return 'Blocked'
-  return 'Draft'
 }
 
 export function StoryboardPage() {
   const {
     data,
+    readiness,
     selectedShot,
     setSelectedShot,
     addHierarchy,
@@ -706,229 +843,478 @@ export function StoryboardPage() {
     busy,
     reload,
     setMessage,
+    navigate,
   } = useStudio()
+
+  const view = useMemo(() => (data ? toProtoProject(data, readiness) : null), [data, readiness])
+
+  const productionShots = useMemo(
+    () => data?.chapters.flatMap((c) => c.scenes.flatMap((s) => s.shots)) ?? [],
+    [data],
+  )
+
+  const [filter, setFilter] = useState<StatusFilter>('All')
+  const [expanded, setExpanded] = useState<string[]>([])
+  const [edit, setEdit] = useState(false)
+  const [inspector, setInspector] = useState(true)
   const [runtimeCatalog, setRuntimeCatalog] = useState<RuntimeCatalog | null>(null)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'in_review' | 'approved' | 'blocked'>('all')
 
   useEffect(() => {
     let active = true
-    void api.runtimeCatalog().then((catalog) => {
-      if (active) setRuntimeCatalog(catalog)
-    }).catch(() => {
-      if (active) setRuntimeCatalog(null)
-    })
+    void api
+      .runtimeCatalog()
+      .then((catalog) => {
+        if (active) setRuntimeCatalog(catalog)
+      })
+      .catch(() => {
+        if (active) setRuntimeCatalog(null)
+      })
     return () => {
       active = false
     }
   }, [])
 
-  if (!data) return null
+  // Seed expanded chapters once per story load; keep user collapse/expand choices.
+  const chapterIdsKey = data?.chapters.map((c) => c.id).join('|') ?? ''
+  useEffect(() => {
+    if (!chapterIdsKey) return
+    setExpanded((current) => {
+      const ids = chapterIdsKey.split('|').filter(Boolean)
+      if (!current.length) return ids
+      const known = new Set(ids)
+      const kept = current.filter((id) => known.has(id))
+      const added = ids.filter((id) => !current.includes(id))
+      return [...kept, ...added]
+    })
+  }, [chapterIdsKey])
 
-  const allShots = data.chapters.flatMap((chapter) => chapter.scenes.flatMap((scene) => scene.shots))
-  const filterCounts = {
-    all: allShots.length,
-    draft: allShots.filter((shot) => shot.approval_state === 'draft').length,
-    in_review: allShots.filter((shot) => shot.approval_state === 'in_review' || shot.approval_state === 'review').length,
-    approved: allShots.filter((shot) => shot.approval_state === 'approved').length,
-    blocked: allShots.filter((shot) => shot.approval_state === 'blocked').length,
-  }
-
-  const matchesFilter = (shot: Shot) => {
-    if (statusFilter === 'all') return true
-    if (statusFilter === 'in_review') {
-      return shot.approval_state === 'in_review' || shot.approval_state === 'review'
+  // Keep selected shot synced with aggregate; default to first shot.
+  useEffect(() => {
+    if (!productionShots.length) {
+      setSelectedShot(null)
+      return
     }
-    return shot.approval_state === statusFilter
+    setSelectedShot((current) => {
+      if (current) {
+        const refreshed = productionShots.find((s) => s.id === current.id)
+        if (refreshed) return refreshed
+      }
+      return productionShots[0]
+    })
+  }, [productionShots, setSelectedShot])
+
+  if (!data || !view) return null
+
+  const { project, readinessPct } = view
+  const shotTotal = project.shots.length
+  const approvedCount = project.shots.filter((s) => s.status === 'Approved').length
+
+  const statusFilter = filter as StatusFilter
+  const showAllShots = statusFilter === 'All'
+  const filterCounts: Record<StatusFilter, number> = {
+    All: shotTotal,
+    Draft: project.shots.filter((s) => s.status === 'Draft').length,
+    Review: project.shots.filter((s) => s.status === 'Review').length,
+    Approved: approvedCount,
+    Blocked: project.shots.filter((s) => s.status === 'Blocked').length,
   }
 
-  const selectedScene = selectedShot
-    ? data.chapters
-        .flatMap((chapter) => chapter.scenes.map((scene) => ({ scene, chapter })))
-        .find(({ scene }) => scene.shots.some((shot) => shot.id === selectedShot.id))
+  const visibleProto = showAllShots
+    ? project.shots
+    : project.shots.filter((s) => s.status === statusFilter)
+  const visibleIds = new Set(visibleProto.map((s) => s.id))
+
+  const selected =
+    (selectedShot && productionShots.find((s) => s.id === selectedShot.id)) ||
+    productionShots[0] ||
+    null
+
+  const selectedProto = selected
+    ? project.shots.find((s) => s.id === selected.id) ?? null
     : null
-  const timelineShots = selectedScene?.scene.shots ?? []
-  const timelineTotal = timelineShots.reduce((sum, shot) => sum + (shot.duration_sec || 0), 0) || 1
+
+  const selectedSceneId = selectedProto?.sceneId
+  const selectedChapter = selectedSceneId
+    ? data.chapters.find((c) => c.scenes.some((sc) => sc.id === selectedSceneId))
+    : null
+  const selectedScene = selectedChapter?.scenes.find((sc) => sc.id === selectedSceneId) ?? null
+  const sceneShots = selectedScene?.shots ?? []
+  const sceneDurationSec = sceneShots.reduce((n, s) => n + s.duration_sec, 0)
+
+  const selectShot = (shot: Shot) => {
+    setSelectedShot(shot)
+    setInspector(true)
+  }
+
+  const approveSelected = async () => {
+    if (!selected) return
+    const blockers: string[] = []
+    if (!selected.narration_voice_profile_id) blockers.push('voice assignment')
+    if (!selected.continuity_source_type || selected.continuity_source_type === 'none') {
+      blockers.push('valid continuity')
+    }
+    if (selected.starting_image_required && !selected.starting_image_asset_id) {
+      blockers.push('approved starting image')
+    }
+    if (blockers.length) {
+      setMessage(`Cannot approve: needs ${blockers.join(', ')}`)
+      return
+    }
+    try {
+      await api.patchShot(selected.id, { approval_state: 'approved' })
+      await reload(data.story.id)
+      setMessage(`${selected.display_label || selected.id} approved`)
+    } catch (error) {
+      setMessage(errorText(error, 'Could not approve shot.'))
+    }
+  }
+
+  const requestChanges = async () => {
+    if (!selected) return
+    try {
+      await api.patchShot(selected.id, { approval_state: 'in_review' })
+      await reload(data.story.id)
+      setMessage(`${selected.display_label || selected.id} returned to review`)
+    } catch (error) {
+      setMessage(errorText(error, 'Could not return shot to review.'))
+    }
+  }
+
+  const globalShotIndex = (shotId: string) =>
+    productionShots.findIndex((s) => s.id === shotId)
 
   return (
-    <div className="storyboard-layout">
-      <div>
-        <div className="toolbar">
-          <span>Storyboard workspace · ordered Chapter → Scene → Shot hierarchy.</span>
-          <div>
-            <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('chapter')}>
-              + Chapter
-            </button>
-            <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('scene')}>
-              + Scene
-            </button>
-            <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('shot')}>
-              + Shot
-            </button>
+    <div className="page storyboard-page proto-page">
+      <PageTitle
+        eyebrow="STORYBOARD WORKSPACE"
+        title="Production storyboard"
+        description={`Review all ${shotTotal || 0} generation-ready shots across the complete ${formatDuration(data.story.target_duration_sec)} plan.`}
+        aside={
+          <div className="readiness-block">
+            <span>
+              <b>{readinessPct}%</b> storyboard readiness
+            </span>
+            <Progress value={readinessPct} />
+            <small>
+              {approvedCount} of {shotTotal} shots approved
+            </small>
           </div>
-        </div>
+        }
+      />
 
+      <div className="toolbar">
         <div className="segmented" role="tablist" aria-label="Filter shots by approval state">
-          {(
-            [
-              ['all', 'All'],
-              ['draft', 'Draft'],
-              ['in_review', 'Review'],
-              ['approved', 'Approved'],
-              ['blocked', 'Blocked'],
-            ] as const
-          ).map(([id, label]) => (
+          {(['All', 'Draft', 'Review', 'Approved', 'Blocked'] as const).map((s) => (
             <button
-              key={id}
+              key={s}
               type="button"
-              role="tab"
-              aria-selected={statusFilter === id}
-              className={statusFilter === id ? 'active' : ''}
-              onClick={() => setStatusFilter(id)}
+              className={filter === s ? 'active' : ''}
+              onClick={() => setFilter(s)}
             >
-              {label} <em>{filterCounts[id]}</em>
+              {s}
+              <span>{filterCounts[s]}</span>
             </button>
           ))}
         </div>
-
-        {!data.chapters.length ? (
-          <EmptyState
-            title="No chapters yet"
-            detail="Add a chapter to begin the ordered production hierarchy."
-            action={
-              <button type="button" className="primary-button" disabled={busy} onClick={() => void addHierarchy('chapter')}>
-                Add chapter
-              </button>
-            }
-          />
-        ) : (
-          data.chapters.map((chapter, index) => (
-            <article className="chapter-group" key={chapter.id}>
-              <header>
-                <span>CH{String(index + 1).padStart(2, '0')}</span>
-                <b>{chapter.title}</b>
-                <small>
-                  {formatDuration(chapter.duration_sec)} · {chapter.scenes.length} scenes ·{' '}
-                  {chapter.scenes.reduce((n, scene) => n + scene.shots.length, 0)} shots
-                </small>
-              </header>
-              {chapter.scenes.map((scene, sceneIndex) => {
-                const visibleShots = scene.shots.filter(matchesFilter)
-                return (
-                  <section key={scene.id} aria-label={`Scene ${scene.title}`}>
-                    <div className="scene-name">
-                      <span>
-                        SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}
-                      </span>
-                      <small>
-                        {formatDuration(scene.duration_sec)} · {scene.shots.length} shots
-                      </small>
-                    </div>
-                    <div className="shot-row shot-strip" role="list">
-                      {visibleShots.map((shot, shotIndex) => (
-                        <button
-                          key={shot.id}
-                          type="button"
-                          role="listitem"
-                          className={`shot-card frame-art frame-${shotIndex % 8} ${selectedShot?.id === shot.id ? 'selected' : ''}`}
-                          aria-pressed={selectedShot?.id === shot.id}
-                          onClick={() => setSelectedShot(shot)}
-                        >
-                          <span className="shot-frame-label">
-                            {shot.display_label || String.fromCharCode(65 + (shot.order_index % 26))}
-                          </span>
-                          <span className="shot-meta-top">
-                            SH{String(shot.order_index + 1).padStart(2, '0')}
-                            <em>{shot.duration_sec}s</em>
-                          </span>
-                          <b>{shot.title}</b>
-                          <span className={`truth-pill ${shot.approval_state}`}>
-                            {approvalLabel(shot.approval_state)}
-                          </span>
-                        </button>
-                      ))}
-                      {!visibleShots.length ? (
-                        <p className="form-hint" style={{ margin: 0 }}>
-                          No shots match this filter in this scene.
-                        </p>
-                      ) : null}
-                    </div>
-                  </section>
-                )
-              })}
-              {!chapter.scenes.length ? (
-                <section>
-                  <p className="form-hint">No scenes in this chapter yet.</p>
-                </section>
-              ) : null}
-            </article>
-          ))
-        )}
-
-        {timelineShots.length ? (
-          <section className="panel sequence-timeline" aria-label="Sequence timeline">
-            <div className="panel-title">
-              <div>
-                <h2>Sequence timeline</h2>
-                <p>
-                  {selectedScene?.scene.title} · {formatDuration(timelineTotal)} · timing prototype only
-                </p>
-              </div>
-            </div>
-            <div className="timeline-track">
-              {timelineShots.map((shot, index) => (
-                <button
-                  key={shot.id}
-                  type="button"
-                  className={`timeline-block ${selectedShot?.id === shot.id ? 'selected' : ''}`}
-                  style={{ flex: Math.max(shot.duration_sec, 1) }}
-                  onClick={() => setSelectedShot(shot)}
-                >
-                  <span>{shot.display_label || String.fromCharCode(65 + index)}</span>
-                  <small>{shot.duration_sec}s</small>
-                </button>
-              ))}
-            </div>
-            <div className="narration-track">
-              {timelineShots.map((shot) => (
-                <div key={`n-${shot.id}`} style={{ flex: Math.max(shot.duration_sec, 1) }}>
-                  <small>{shot.narration?.slice(0, 48) || 'No narration'}</small>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+        <div>
+          <Button
+            variant="quiet"
+            icon="filter"
+            onClick={() => setMessage(`Showing ${filter.toLowerCase()} shots`)}
+          >
+            Filter
+          </Button>
+          <Button icon={edit ? 'check' : 'edit'} onClick={() => setEdit(!edit)}>
+            {edit ? 'Finish editing' : 'Edit storyboard'}
+          </Button>
+          <Button variant="quiet" icon="plus" disabled={busy} onClick={() => void addHierarchy('shot')}>
+            + Shot
+          </Button>
+        </div>
       </div>
 
-      <aside className="inspector" aria-label="Shot inspector">
-        <header className="inspector-head">
-          <div>
-            <span className="eyebrow">Shot</span>
-            <h2>{selectedShot?.display_label || selectedShot?.title || 'Shot inspector'}</h2>
-          </div>
-          {selectedShot ? (
-            <button type="button" className="icon-button touch-target" aria-label="Close inspector" onClick={() => setSelectedShot(null)}>
-              ×
-            </button>
+      <div className={`storyboard-layout ${inspector ? '' : 'inspector-closed'}`}>
+        <div className="storyboard-main">
+          {!data.chapters.length ? (
+            <EmptyState
+              title="No chapters yet"
+              detail="Add a chapter to begin the ordered production hierarchy."
+              action={
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => void addHierarchy('chapter')}
+                >
+                  Add chapter
+                </Button>
+              }
+            />
+          ) : (
+            data.chapters.map((chapter, chapterIndex) => {
+              const chLabel = chapterLabel(chapterIndex)
+              const open = expanded.includes(chapter.id)
+              const chapterShots = chapter.scenes.flatMap((sc) => sc.shots)
+              const shown = chapterShots.some((s) => visibleIds.has(s.id)) || showAllShots
+              if (!shown && !showAllShots) return null
+              const chapterApproved = chapterShots.length
+                ? chapterShots.every((s) => s.approval_state === 'approved')
+                : false
+              return (
+                <section className="chapter-group" key={chapter.id} hidden={!shown && !showAllShots}>
+                  <button
+                    type="button"
+                    className="chapter-bar"
+                    onClick={() =>
+                      setExpanded(
+                        open ? expanded.filter((id) => id !== chapter.id) : [...expanded, chapter.id],
+                      )
+                    }
+                    aria-expanded={open}
+                  >
+                    <Icon name="chevron" size={16} />
+                    <span>
+                      <b>
+                        {chLabel} · {chapter.title}
+                      </b>
+                      <small>{chapter.summary || 'No chapter summary'}</small>
+                    </span>
+                    <span className="chapter-stats">
+                      <b>{formatDuration(chapter.duration_sec)}</b>
+                      <small>
+                        {chapter.scenes.length} scenes · {chapterShots.length} shots
+                      </small>
+                    </span>
+                    <StatusPill status={chapterApproved ? 'Approved' : 'Review'} />
+                  </button>
+                  {open
+                    ? chapter.scenes.map((scene, sceneIndex) => {
+                        const shots = scene.shots.filter((s) => visibleIds.has(s.id))
+                        if (!showAllShots && !shots.length) return null
+                        const scLabel = sceneLabel(sceneIndex)
+                        return (
+                          <div className="scene-block" key={scene.id}>
+                            <div className="scene-row">
+                              <span>
+                                <small>
+                                  {chLabel} / {scLabel}
+                                </small>
+                                <b>{scene.title}</b>
+                                <p>{scene.summary || 'No scene summary'}</p>
+                              </span>
+                              <span>
+                                <Icon name="clock" size={14} />
+                                <b>{scene.duration_sec} sec</b>
+                                <small>
+                                  {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'}
+                                </small>
+                              </span>
+                            </div>
+                            <div className="shot-strip" role="list">
+                              {(showAllShots ? scene.shots : shots).map((shot, i) => {
+                                const gIndex = globalShotIndex(shot.id)
+                                const status = approvalToProto(shot.approval_state)
+                                return (
+                                  <button
+                                    key={shot.id}
+                                    type="button"
+                                    role="listitem"
+                                    className={`shot-card ${shot.id === selected?.id ? 'selected' : ''}`}
+                                    onClick={() => selectShot(shot)}
+                                  >
+                                    <div
+                                      className={`frame-art frame-${Math.max(0, gIndex) % 8}`}
+                                    >
+                                      <span>
+                                        {shot.display_label ||
+                                          String.fromCharCode(65 + (shot.order_index % 26))}
+                                      </span>
+                                      <i>
+                                        <Icon name="play" size={11} />
+                                      </i>
+                                    </div>
+                                    <div>
+                                      <span>
+                                        <code>{`SH${String(i + 1).padStart(2, '0')}`}</code>
+                                        <b>{shot.duration_sec}s</b>
+                                      </span>
+                                      <strong>{shot.title}</strong>
+                                      <StatusPill status={status} />
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                              {!showAllShots && !shots.length ? (
+                                <p className="form-hint" style={{ margin: 0 }}>
+                                  No shots match this filter in this scene.
+                                </p>
+                              ) : null}
+                              {showAllShots && !scene.shots.length ? (
+                                <p className="form-hint" style={{ margin: 0 }}>
+                                  No shots in this scene yet.
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })
+                    : null}
+                </section>
+              )
+            })
+          )}
+
+          {selectedScene ? (
+            <Section
+              title="Sequence timeline"
+              subtitle={`${sceneLabel(selectedChapter?.scenes.findIndex((s) => s.id === selectedScene.id) ?? 0)} · ${formatDuration(sceneDurationSec)}`}
+              className="timeline-panel"
+            >
+              <div className="timeline-track">
+                {sceneShots.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    style={{ flex: Math.max(s.duration_sec, 1) }}
+                    className={s.id === selected?.id ? 'selected' : ''}
+                    onClick={() => selectShot(s)}
+                  >
+                    <b>{s.display_label || 'A'}</b>
+                    <small>{s.duration_sec}s</small>
+                  </button>
+                ))}
+              </div>
+              <div className="narration-track">
+                <Icon name="mic" />
+                <div>
+                  {sceneShots.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      style={{ flex: Math.max(s.duration_sec, 1) }}
+                      onClick={() => selectShot(s)}
+                    >
+                      {(s.narration || 'No narration').slice(0, 30)}
+                      {s.narration && s.narration.length > 30 ? '…' : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Section>
           ) : null}
-        </header>
-        {selectedShot ? (
-          <ShotInspector
-            key={`${selectedShot.id}-${data.revision}`}
-            shot={selectedShot}
-            busy={busy}
-            onSave={saveShot}
-            onSaveNarration={saveNarration}
-            onSavePromptPackage={savePromptPackage}
-            characters={data.characters}
-            voices={data.voices}
-            runtimeCatalog={runtimeCatalog}
-            onRefresh={() => reload(data.story.id)}
-            onMessage={setMessage}
-          />
+
+          {selected ? (
+            <div className="lower-grid">
+              <Section
+                title="Character readiness"
+                subtitle="References must be locked before approval."
+                action={
+                  <button
+                    type="button"
+                    className="text-action"
+                    onClick={() => navigate('characters')}
+                  >
+                    Open bible
+                  </button>
+                }
+              >
+                <div className="mini-entity-list">
+                  {(selected.characters ?? []).length ? (
+                    (selected.characters ?? []).map((link) => {
+                      const c = data.characters.find((x) => x.id === link.character_id)
+                      if (!c) return null
+                      const linked = productionShots.filter((s) =>
+                        s.characters?.some((l) => l.character_id === c.id),
+                      ).length
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => navigate('characters')}
+                        >
+                          <span className="avatar">{c.name.slice(0, 2).toUpperCase()}</span>
+                          <span>
+                            <b>{c.name}</b>
+                            <small>{linked} linked shots</small>
+                          </span>
+                          <StatusPill status={approvalToProto(c.approval_state)} />
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <p className="form-hint">No characters linked to this shot.</p>
+                  )}
+                </div>
+              </Section>
+              <Section
+                title="Generation plan"
+                subtitle="Recommendations validated against this machine."
+              >
+                <div className="model-summary">
+                  <div>
+                    <span>
+                      {selected.recommendations?.find((r) => r.recommendation_type === 'generation')
+                        ?.rationale || 'No image model recommendation'}
+                    </span>
+                    <StatusPill status="Review" />
+                  </div>
+                  <div>
+                    <span>
+                      {selected.recommendations?.find((r) => r.recommendation_type === 'workflow')
+                        ?.rationale || 'No video model recommendation'}
+                    </span>
+                    <StatusPill status="Review" />
+                  </div>
+                  <div>
+                    <span>Planning workflow</span>
+                    <StatusPill status="Validated" />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="full-row-action"
+                  onClick={() => navigate('routing')}
+                >
+                  Review model routing <Icon name="arrow" />
+                </button>
+              </Section>
+            </div>
+          ) : null}
+        </div>
+
+        {inspector && selected ? (
+          <aside className="inspector" aria-label="Shot inspector">
+            <button
+              type="button"
+              className="icon-button"
+              style={{ position: 'absolute', right: 12, top: 12 }}
+              onClick={() => setInspector(false)}
+              aria-label="Close inspector"
+            >
+              <Icon name="close" />
+            </button>
+            <ShotInspector
+              key={`${selected.id}-${data.revision}`}
+              shot={selected}
+              busy={busy}
+              edit={edit}
+              onSave={saveShot}
+              onSaveNarration={saveNarration}
+              onSavePromptPackage={savePromptPackage}
+              characters={data.characters}
+              voices={data.voices}
+              runtimeCatalog={runtimeCatalog}
+              onRefresh={() => reload(data.story.id)}
+              onMessage={setMessage}
+              onApprove={() => void approveSelected()}
+              onRequestChanges={() => void requestChanges()}
+            />
+          </aside>
         ) : (
-          <p>Select a shot to inspect persisted details, prompts, and technical planning information.</p>
+          <button type="button" className="open-inspector" onClick={() => setInspector(true)}>
+            <Icon name="settings" /> Shot details
+          </button>
         )}
-      </aside>
+      </div>
     </div>
   )
 }
