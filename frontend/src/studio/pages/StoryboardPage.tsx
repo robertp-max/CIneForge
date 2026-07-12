@@ -1160,20 +1160,6 @@ export function StoryboardPage() {
     }
   }, [])
 
-  // Prototype opens only the first chapter (CH01). Seed once when hierarchy first appears.
-  const chapterIdsKey = data?.chapters.map((c) => c.id).join('|') ?? ''
-  useEffect(() => {
-    if (!chapterIdsKey) return
-    const ids = chapterIdsKey.split('|').filter(Boolean)
-    if (!ids.length) return
-    setExpanded((current) => {
-      if (!current.length) return ids.slice(0, 1)
-      const known = new Set(ids)
-      const kept = current.filter((id) => known.has(id))
-      return kept.length ? kept : ids.slice(0, 1)
-    })
-  }, [chapterIdsKey])
-
   // Keep selected shot synced with aggregate; default to first shot.
   useEffect(() => {
     if (!productionShots.length) {
@@ -1190,6 +1176,15 @@ export function StoryboardPage() {
   }, [productionShots, setSelectedShot])
 
   if (!data || !view) return null
+
+  // Prototype opens CH01 by default; once the user expands/collapses, honor `expanded`.
+  const firstChapterId = data.chapters[0]?.id
+  const openChapterIds =
+    expanded.length > 0
+      ? expanded.filter((id) => data.chapters.some((c) => c.id === id))
+      : firstChapterId
+        ? [firstChapterId]
+        : []
 
   const { project, readinessPct } = view
   const shotTotal = project.shots.length
@@ -1421,7 +1416,7 @@ export function StoryboardPage() {
           ) : (
             data.chapters.map((chapter, chapterIndex) => {
               const chLabel = chapterLabel(chapterIndex)
-              const open = expanded.includes(chapter.id)
+              const open = openChapterIds.includes(chapter.id)
               const chapterShots = chapter.scenes.flatMap((sc) => sc.shots)
               const shown = chapterShots.some((s) => visibleIds.has(s.id))
               if (!shown && !showAllShots) return null
@@ -1436,7 +1431,9 @@ export function StoryboardPage() {
                     className="chapter-bar"
                     onClick={() =>
                       setExpanded(
-                        open ? expanded.filter((id) => id !== chapter.id) : [...expanded, chapter.id],
+                        open
+                          ? openChapterIds.filter((id) => id !== chapter.id)
+                          : [...openChapterIds, chapter.id],
                       )
                     }
                     aria-expanded={open}
