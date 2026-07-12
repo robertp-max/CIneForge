@@ -1,0 +1,256 @@
+"""Factual provider/runtime discovery without loading models or downloading.
+
+Discovery only inspects configuration evidence, module presence, and approval
+flags. It never installs packages, pulls weights, or initializes GPU models.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+from backend.app.schemas.voice import PARLER_UNAVAILABLE_MESSAGE, ProviderConfigurationStatus
+from backend.app.services.runtime.evidence import EvidenceRecord, evidence
+
+
+@dataclass(frozen=True)
+class RuntimeEvidence:
+    provider: str
+    available: bool
+    status: str
+    evidence_level: str
+    evidence_source: str | None = None
+    message: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def as_record(self, capability: str = "voice") -> EvidenceRecord:
+        return evidence(
+            provider=self.provider,
+            capability=capability,
+            status=self.status,
+            evidence_level=self.evidence_level,
+            available=self.available,
+            evidence_source=self.evidence_source,
+            message=self.message,
+            details=self.details,
+        )
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on", "enabled", "approved"}
+
+
+def discover_qwen_runtime() -> RuntimeEvidence:
+    """Reuse only the configured existing Qwen runtime.
+
+    Looks for configuration references already present in the environment.
+    Does not load models, start servers, or download weights.
+    """
+    runtime_ref = (
+        os.environ.get("CINEFORGE_QWEN_RUNTIME_REF")
+        or os.environ.get("QWEN_RUNTIME_REF")
+        or os.environ.get("CINEFORGE_QWEN_BASE_URL")
+        or os.environ.get("QWEN_BASE_URL")
+    )
+    model = (
+        os.environ.get("CINEFORGE_QWEN_VOICE_MODEL")
+        or os.environ.get("QWEN_VOICE_MODEL")
+        or os.environ.get("CINEFORGE_QWEN_MODEL")
+        or os.environ.get("QWEN_MODEL")
+    )
+    enabled_flag = os.environ.get("CINEFORGE_QWEN_ENABLED") or os.environ.get("QWEN_ENABLED")
+
+    details: dict[str, Any] = {
+        "runtime_ref_present": bool(runtime_ref),
+        "runtime_ref": runtime_ref,
+        "configured_model": model,
+        "enabled_flag": enabled_flag,
+        "loads_models_on_discover": False,
+        "will_install_or_download": False,
+        "reuse_existing_runtime_only": True,
+    }
+
+    # If explicitly disabled, report unavailable.
+    if enabled_flag is not None and not _truthy(enabled_flag):
+        return RuntimeEvidence(
+            provider="qwen",
+            available=False,
+            status=ProviderConfigurationStatus.unavailable.value,
+            evidence_level="configuration_evidence",
+            evidence_source="env:CINEFORGE_QWEN_ENABLED|QWEN_ENABLED",
+            message="Configured Qwen runtime is disabled.",
+            details=details,
+        )
+
+    if not runtime_ref and not model and enabled_flag is None:
+        return RuntimeEvidence(
+            provider="qwen",
+            available=False,
+            status=ProviderConfigurationStatus.not_configured.value,
+            evidence_level="configuration_evidence",
+            evidence_source="env:CINEFORGE_QWEN_*|QWEN_*",
+            message="No configured Qwen runtime reference found.",
+            details=details,
+        )
+
+    # Presence of a runtime ref or explicit enablement is sufficient evidence.
+    # We never probe the network or load weights during discovery.
+    available = bool(runtime_ref) or _truthy(enabled_flag)
+    if not available and model:
+        # Model name alone without runtime is not enough to claim availability.
+        return RuntimeEvidence(
+            provider="qwen",
+            available=False,
+            status=ProviderConfigurationStatus.not_configured.value,
+            evidence_level="configuration_evidence",
+            evidence_source="env:CINEFORGE_QWEN_*|QWEN_*",
+            message="Qwen model is named but no runtime reference is configured.",
+            details=details,
+        )
+
+    return RuntimeEvidence(
+        provider="qwen",
+        available=True,
+        status=ProviderConfigurationStatus.available.value,
+        evidence_level="configuration_evidence",
+        evidence_source="env:CINEFORGE_QWEN_*|QWEN_*",
+        message="Configured Qwen runtime evidence found (not loaded).",
+        details=details,
+    )
+
+
+def discover_elevenlabs() -> RuntimeEvidence:
+    key_present = bool(
+        os.environ.get("CINEFORGE_ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
+    )
+    model = os.environ.get("CINEFORGE_ELEVENLABS_VOICE_MODEL") or os.environ.get(
+        "ELEVENLABS_VOICE_MODEL"
+    )
+    details = {
+        "api_key_configured": key_present,
+        "configured_model": model,
+        "loads_models_on_discover": False,
+        "network_call_on_discover": False,
+        "will_install_or_download": False,
+    }
+    if not key_present:
+        return RuntimeEvidence(
+            provider="elevenlabs",
+            available=False,
+            status=ProviderConfigurationStatus.not_configured.value,
+            evidence_level="configuration_evidence",
+            evidence_source="env:CINEFORGE_ELEVENLABS_API_KEY|ELEVENLABS_API_KEY",
+            message="ElevenLabs is not configured.",
+            details=details,
+        )
+    return RuntimeEvidence(
+        provider="elevenlabs",
+        available=True,
+        status=ProviderConfigurationStatus.available.value,
+        evidence_level="configuration_evidence",
+        evidence_source="env:CINEFORGE_ELEVENLABS_API_KEY|ELEVENLABS_API_KEY",
+        message="ElevenLabs API key is configured (presence only).",
+        details=details,
+    )
+
+
+def discover_parler() -> RuntimeEvidence:
+    # Lazy import of the provider helper to keep the exact unavailable message centralized.
+    from backend.app.services.voice_design.providers.parler import discover_parler as _discover
+
+    cap = _discover()
+    return RuntimeEvidence(
+        provider="parler",
+        available=cap.available,
+        status=cap.status,
+        evidence_level=cap.evidence_level,
+        evidence_source=cap.evidence_source,
+        message=cap.message if not cap.available else cap.message,
+        details=dict(cap.details),
+    )
+
+
+def discover_builtin(provider: str) -> RuntimeEvidence:
+    return RuntimeEvidence(
+        provider=provider,
+        available=True,
+        status=ProviderConfigurationStatus.available.value,
+        evidence_level="built_in",
+        evidence_source=f"runtime.discovery.{provider}",
+        message=f"{provider} requires no external runtime.",
+        details={"loads_models_on_discover": False, "requires_gpu": False},
+    )
+
+
+def discover_provider(name: str) -> RuntimeEvidence:
+    key = (name or "").strip().lower()
+    if key in {"qwen", "qwen_voice_design"}:
+        return discover_qwen_runtime()
+    if key in {"qwen_custom_voice", "qwen-custom-voice"}:
+        base = discover_qwen_runtime()
+        details = {
+            **base.details,
+            "custom_voice_mode": "preset_speaker_only",
+            "supports_cloning": False,
+            "supports_reference_audio": False,
+        }
+        return RuntimeEvidence(
+            provider="qwen_custom_voice",
+            available=base.available,
+            status=base.status,
+            evidence_level=base.evidence_level,
+            evidence_source=base.evidence_source,
+            message=base.message,
+            details=details,
+            checked_at=base.checked_at,
+        )
+    if key in {"elevenlabs", "eleven_labs"}:
+        return discover_elevenlabs()
+    if key in {"parler", "parler_local", "parler-tts", "parler_tts"}:
+        ev = discover_parler()
+        # Guarantee exact unavailable message.
+        if not ev.available:
+            return RuntimeEvidence(
+                provider="parler",
+                available=False,
+                status=ev.status,
+                evidence_level=ev.evidence_level,
+                evidence_source=ev.evidence_source,
+                message=PARLER_UNAVAILABLE_MESSAGE,
+                details=ev.details,
+                checked_at=ev.checked_at,
+            )
+        return ev
+    if key in {
+        "placeholder",
+        "manual",
+        "existing_provider_voice",
+        "user_provided_consented",
+    }:
+        return discover_builtin(key)
+
+    return RuntimeEvidence(
+        provider=key or "unknown",
+        available=False,
+        status=ProviderConfigurationStatus.unknown.value,
+        evidence_level="none",
+        evidence_source=None,
+        message=f"No discovery handler for provider {name!r}.",
+        details={"loads_models_on_discover": False},
+    )
+
+
+def discover_all_voice_providers() -> list[RuntimeEvidence]:
+    names = [
+        "placeholder",
+        "manual",
+        "existing_provider_voice",
+        "qwen",
+        "qwen_custom_voice",
+        "elevenlabs",
+        "parler",
+        "user_provided_consented",
+    ]
+    return [discover_provider(name) for name in names]
