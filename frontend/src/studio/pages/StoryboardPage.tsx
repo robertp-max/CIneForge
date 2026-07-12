@@ -40,14 +40,23 @@ function firstReason(...reasons: Array<string | false | null | undefined>): stri
   return undefined
 }
 
-/** Production-shot blockers for per-shot approval (planning only; no render). */
-function shotApprovalBlockers(shot: Shot): string[] {
+/** Fields inspected for per-shot approval gates (planning only; no render). */
+type ShotApprovalGateFields = Pick<
+  Shot,
+  | 'narration_voice_profile_id'
+  | 'continuity_source_type'
+  | 'starting_image_required'
+  | 'starting_image_asset_id'
+>
+
+/** Blockers for per-shot approval from a field snapshot (production or same-save draft). */
+function shotApprovalBlockers(fields: ShotApprovalGateFields): string[] {
   const blockers: string[] = []
-  if (!shot.narration_voice_profile_id) blockers.push('voice assignment')
-  if (!shot.continuity_source_type || shot.continuity_source_type === 'none') {
+  if (!fields.narration_voice_profile_id) blockers.push('voice assignment')
+  if (!fields.continuity_source_type || fields.continuity_source_type === 'none') {
     blockers.push('valid continuity')
   }
-  if (shot.starting_image_required && !shot.starting_image_asset_id) {
+  if (fields.starting_image_required && !fields.starting_image_asset_id) {
     blockers.push('approved starting image')
   }
   return blockers
@@ -193,12 +202,7 @@ function ShotInspector({
     approveBlockers.length > 0 && `Cannot approve: needs ${approveBlockers.join(', ')}.`,
   )
 
-  useEffect(() => {
-    setDraft(shot)
-    setCharacterLinks(shot.characters ?? [])
-    setTab('details')
-    setActionError(null)
-  }, [shot])
+  // Draft state is reset by remounting ShotInspector with key=shot.id+revision at the call site.
 
   const save = () => {
     if (disabled) return
@@ -250,9 +254,16 @@ function ShotInspector({
 
   async function saveLifecycle() {
     if (disabled || lifecycleSaveReason) return
-    // Same approval gates as the dedicated Approve shot action — no lifecycle bypass.
+    // Same approval gates as Approve shot — no lifecycle bypass.
+    // Continuity / starting-image use the draft values being patched in this call.
+    // Voice is not part of this patch, so it must already exist on the production shot.
     if (draft.approval_state === 'approved') {
-      const blockers = shotApprovalBlockers(shot)
+      const blockers = shotApprovalBlockers({
+        narration_voice_profile_id: shot.narration_voice_profile_id,
+        continuity_source_type: draft.continuity_source_type,
+        starting_image_required: draft.starting_image_required,
+        starting_image_asset_id: draft.starting_image_asset_id,
+      })
       if (blockers.length) {
         const reason = `Cannot approve via lifecycle save: needs ${blockers.join(', ')}.`
         setActionError(reason)
@@ -270,6 +281,13 @@ function ShotInspector({
           draft.production_status === 'blocked' ? draft.blocked_reason?.trim() || null : null,
         camera_direction: draft.camera_direction?.trim() || null,
         motion_direction: draft.motion_direction?.trim() || null,
+        continuity_source_type: draft.continuity_source_type,
+        continuity_source_shot_id:
+          draft.continuity_source_type === 'none'
+            ? null
+            : draft.continuity_source_shot_id?.trim() || null,
+        starting_image_required: draft.starting_image_required,
+        starting_image_asset_id: draft.starting_image_asset_id?.trim() || null,
       })
       await onRefresh()
       onMessage('Shot lifecycle, blocker, and production fields saved to the backend.')
@@ -1142,17 +1160,17 @@ export function StoryboardPage() {
     }
   }, [])
 
-  // Seed expanded chapters once per story load; keep user collapse/expand choices.
+  // Prototype opens only the first chapter (CH01). Seed once when hierarchy first appears.
   const chapterIdsKey = data?.chapters.map((c) => c.id).join('|') ?? ''
   useEffect(() => {
     if (!chapterIdsKey) return
+    const ids = chapterIdsKey.split('|').filter(Boolean)
+    if (!ids.length) return
     setExpanded((current) => {
-      const ids = chapterIdsKey.split('|').filter(Boolean)
-      if (!current.length) return ids
+      if (!current.length) return ids.slice(0, 1)
       const known = new Set(ids)
       const kept = current.filter((id) => known.has(id))
-      const added = ids.filter((id) => !current.includes(id))
-      return [...kept, ...added]
+      return kept.length ? kept : ids.slice(0, 1)
     })
   }, [chapterIdsKey])
 
@@ -1205,8 +1223,7 @@ export function StoryboardPage() {
   let selectedChapterIndex = 0
   let selectedSceneIndex = 0
   let selectedShotIndexInScene = 0
-  let selectedChapter = data.chapters[0] ?? null
-  let selectedScene = selectedChapter?.scenes[0] ?? null
+  let selectedScene = data.chapters[0]?.scenes[0] ?? null
 
   if (selected) {
     outer: for (let ci = 0; ci < data.chapters.length; ci++) {
@@ -1218,7 +1235,6 @@ export function StoryboardPage() {
           selectedChapterIndex = ci
           selectedSceneIndex = si
           selectedShotIndexInScene = idx
-          selectedChapter = chapter
           selectedScene = scene
           break outer
         }
@@ -1266,11 +1282,55 @@ export function StoryboardPage() {
 
   const globalShotIndex = (shotId: string) => productionShots.findIndex((s) => s.id === shotId)
 
-  // Generation-plan rows from selected proto shot + catalog availability.
-  const genImage = selectedProto?.imageModel || 'No image model recommendation'
-  const genVideo = selectedProto?.videoModel || 'No video model recommendation'
-  const genWorkflow = selectedProto?.workflow || 'Planning workflow'
-  const videoMissing = String(genVideo).toLowerCase().includes('missing')
+  // Generation-plan rows from selected shot recommendations + runtime catalog (planning only).
+  const selectedRecs = selected?.recommendations ?? []
+  const generationRec =
+    selectedRecs.find((r) => r.recommendation_type === 'generation') ?? null
+  const workflowRec =
+    selectedRecs.find((r) => r.recommendation_type === 'workflow') ?? null
+  const catalogVariant = generationRec?.generation_model_variant_id
+    ? runtimeCatalog?.model_variants.find((v) => v.id === generationRec.generation_model_variant_id)
+    : undefined
+  const catalogWorkflow = workflowRec?.workflow_template_id
+    ? runtimeCatalog?.workflow_templates.find((w) => w.id === workflowRec.workflow_template_id)
+    : undefined
+  const catalogModel = catalogVariant
+    ? runtimeCatalog?.models.find((m) => m.id === catalogVariant.model_id)
+    : undefined
+  const protoImage =
+    selectedProto?.imageModel && selectedProto.imageModel !== 'Unknown'
+      ? selectedProto.imageModel
+      : null
+  const protoVideo =
+    selectedProto?.videoModel &&
+    selectedProto.videoModel !== 'Unknown' &&
+    /video|ltx|wan|i2v|cog|missing/i.test(selectedProto.videoModel)
+      ? selectedProto.videoModel
+      : null
+  const genImage =
+    catalogVariant?.variant_name ||
+    generationRec?.rationale ||
+    protoImage ||
+    'No image model recommendation'
+  const genVideo =
+    protoVideo ||
+    catalogModel?.family ||
+    catalogModel?.name ||
+    selectedRecs.find((r) => r.rationale && /video|ltx|wan|i2v|cog/i.test(r.rationale || ''))
+      ?.rationale ||
+    'No video model recommendation'
+  const genWorkflow = catalogWorkflow
+    ? `${catalogWorkflow.name}${catalogWorkflow.version ? ` ${catalogWorkflow.version}` : ''}`
+    : workflowRec?.rationale || selectedProto?.workflow || 'Planning workflow'
+  const videoMissing =
+    String(genVideo).toLowerCase().includes('missing') ||
+    catalogVariant?.path_status === 'missing' ||
+    generationRec?.availability_status === 'missing'
+  // Planning-only per-shot estimate (matches Overview planning constants; never a real GPU job).
+  const PLANNING_MIN_PER_SHOT = 1.52 + 14.37 + 1.22
+  const estimateLabel = selected
+    ? `~${Math.max(1, Math.round(PLANNING_MIN_PER_SHOT))}m`
+    : '—'
 
   return (
     <div className="page storyboard-page">
@@ -1566,7 +1626,14 @@ export function StoryboardPage() {
                 <div className="model-summary">
                   <div>
                     <span>{genImage}</span>
-                    <StatusPill status="Installed" />
+                    <StatusPill
+                      status={
+                        generationRec?.availability_status === 'missing' ||
+                        catalogVariant?.path_status === 'missing'
+                          ? 'Missing'
+                          : 'Installed'
+                      }
+                    />
                   </div>
                   <div>
                     <span>{genVideo}</span>
@@ -1574,7 +1641,18 @@ export function StoryboardPage() {
                   </div>
                   <div>
                     <span>{genWorkflow}</span>
-                    <StatusPill status="Validated" />
+                    <StatusPill
+                      status={
+                        catalogWorkflow?.registration_status === 'missing' ||
+                        workflowRec?.availability_status === 'missing'
+                          ? 'Missing'
+                          : 'Validated'
+                      }
+                    />
+                  </div>
+                  <div title="Planning estimate only — rendering is disabled in Phase A.">
+                    <span>Estimated render workload</span>
+                    <b>{estimateLabel}</b>
                   </div>
                 </div>
                 <button

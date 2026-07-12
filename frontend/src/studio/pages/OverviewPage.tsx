@@ -1,7 +1,14 @@
 /**
  * Exact structural port of CineForge-Storyboard-Studio-v2 OverviewPage
- * (components/pagesCore.tsx) — visual/DOM hierarchy preserved.
- * Production API wiring: useStudio aggregate + readiness; approvePlan gated.
+ * (components/pagesCore.tsx) — visual/DOM hierarchy preserved for screenshot
+ * 2026-07-11 172715.png:
+ *   PageTitle → overview-strip → metric-grid.eight → Production-plan pipeline →
+ *   overview-columns (Readiness gates | Unresolved + Orchestrator | Workload + Activity)
+ *   → gate modal
+ *
+ * Production wiring only: useStudio aggregate + readiness; approvePlan gated by
+ * readiness.ready; navigate uses real PageIds; factual disabled titles; type=button;
+ * no mock / projectStore.
  */
 import { useMemo, useState } from 'react'
 import type { PageId } from '../../components/AppShell'
@@ -30,6 +37,27 @@ const PLANNING_MIN_PER_SHOT = {
   upscale: 1.22,
 } as const
 
+/** Known readiness code → screenshot-style label (fallback: humanize code). */
+const GATE_LABELS: Record<string, string> = {
+  target_duration: 'Target duration',
+  duration_reconciliation: 'Duration reconciliation',
+  character_approval: 'Character approval',
+  voice_coverage: 'Voice coverage',
+  starting_images: 'Starting images',
+  continuity: 'Continuity links',
+  model_gap: 'Model gaps',
+  blocked_shot: 'Blocked shots',
+  ready: 'Ready',
+  pending: 'Pending',
+}
+
+function humanizeGateLabel(code: string): string {
+  if (GATE_LABELS[code]) return GATE_LABELS[code]
+  return code
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
 function formatPlanningEstimate(totalMinutes: number): string {
   if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return '0m'
   const rounded = Math.round(totalMinutes)
@@ -39,7 +67,7 @@ function formatPlanningEstimate(totalMinutes: number): string {
   return `~${hours}h ${String(minutes).padStart(2, '0')}m`
 }
 
-/** Map server gate text to the most relevant studio page (no mock destinations). */
+/** Map server gate text to the most relevant studio page (canonical PageIds only). */
 function issueNav(label: string, reason: string): PageId {
   const hay = `${label} ${reason}`.toLowerCase()
   if (/voice|narration|tts|audio/.test(hay)) return 'voices'
@@ -49,6 +77,8 @@ function issueNav(label: string, reason: string): PageId {
   if (/model|checkpoint|routing|provider|recommendation/.test(hay)) return 'routing'
   if (/duration|runtime|chapter|scene|story|structure|synopsis|hierarchy/.test(hay)) return 'story'
   if (/prompt/.test(hay)) return 'storyboard'
+  if (/export|package|download/.test(hay)) return 'exports'
+  if (/setting|policy|privacy/.test(hay)) return 'settings'
   return 'storyboard'
 }
 
@@ -56,15 +86,19 @@ function approveDisabledReason(args: {
   approving: boolean
   busy: boolean
   alreadyApproved: boolean
-  failingCount: number
+  failingReasons: string[]
   serverReady: boolean
 }): string {
   if (args.approving) return 'Approval in progress'
   if (args.busy) return 'Another studio operation is in progress'
   if (args.alreadyApproved) return 'Plan already approved for this revision'
-  if (args.failingCount > 0) return 'Blocked by readiness gates — open gate modal for details'
-  if (!args.serverReady) return 'Server has not marked this plan ready'
-  return 'Ready to approve'
+  if (args.failingReasons.length > 0) {
+    return `Blocked by readiness gates: ${args.failingReasons.join(' · ')}`
+  }
+  if (!args.serverReady) {
+    return 'Server has not marked this plan ready (readiness.ready is false)'
+  }
+  return 'Ready to approve — no render or queue job will be created'
 }
 
 export function OverviewPage() {
@@ -86,7 +120,8 @@ export function OverviewPage() {
   const failing = gates.filter((g) => !g.pass)
   const serverReady = Boolean(readiness?.ready)
   const alreadyApproved = project.approvedPlan
-  const canApprove = serverReady && failing.length === 0 && !alreadyApproved
+  // Hard gate: never call approvePlan unless the backend reports ready.
+  const canApprove = serverReady && failing.length === 0 && !alreadyApproved && !busy && !approving
   const reconciled =
     Math.abs((plannedRuntime || 0) - (data.story.target_duration_sec || 0)) <= 1
 
@@ -134,7 +169,7 @@ export function OverviewPage() {
     approving,
     busy,
     alreadyApproved,
-    failingCount: failing.length,
+    failingReasons: failing.map((g) => g.reason),
     serverReady,
   })
 
@@ -144,10 +179,11 @@ export function OverviewPage() {
       return
     }
     // approvePlan only when readiness.ready; else gate modal / lock.
-    if (!canApprove) {
+    if (!serverReady || failing.length > 0) {
       setGateModal(true)
       return
     }
+    if (busy || approving) return
     setApproving(true)
     try {
       await approvePlan('Producer')
@@ -330,27 +366,30 @@ export function OverviewPage() {
           }
         >
           <div className="gate-list">
-            {gates.map((g) => (
-              <button
-                key={`${g.label}-${g.reason}`}
-                type="button"
-                onClick={() => {
-                  if (!g.pass) {
-                    explain(g.label, g.reason)
-                    navigate(issueNav(g.label, g.reason))
-                  }
-                }}
-              >
-                <span className={g.pass ? 'gate-pass' : 'gate-fail'}>
-                  <Icon name={g.pass ? 'check' : 'warning'} size={14} />
-                </span>
-                <span>
-                  <b>{g.label}</b>
-                  <small>{g.pass ? 'Passed' : g.reason}</small>
-                </span>
-                <StatusPill status={g.pass ? 'Ready' : 'Open'} />
-              </button>
-            ))}
+            {gates.map((g) => {
+              const displayLabel = humanizeGateLabel(g.label)
+              return (
+                <button
+                  key={`${g.label}-${g.reason}`}
+                  type="button"
+                  onClick={() => {
+                    if (!g.pass) {
+                      explain(displayLabel, g.reason)
+                      navigate(issueNav(g.label, g.reason))
+                    }
+                  }}
+                >
+                  <span className={g.pass ? 'gate-pass' : 'gate-fail'}>
+                    <Icon name={g.pass ? 'check' : 'warning'} size={14} />
+                  </span>
+                  <span>
+                    <b>{displayLabel}</b>
+                    <small>{g.pass ? 'Passed' : g.reason}</small>
+                  </span>
+                  <StatusPill status={g.pass ? 'Ready' : 'Open'} />
+                </button>
+              )
+            })}
           </div>
         </Section>
 
@@ -364,11 +403,11 @@ export function OverviewPage() {
                     type="button"
                     onClick={() => navigate(issueNav(g.label, g.reason))}
                   >
-                    <span className={`priority ${index === 0 ? 'red' : 'amber'}`}>
+                    <span className={`severity priority ${index === 0 ? 'red' : 'amber'}`}>
                       P{index === 0 ? '0' : '1'}
                     </span>
                     <span>
-                      <b>{g.label}</b>
+                      <b>{humanizeGateLabel(g.label)}</b>
                       <small>{g.reason}</small>
                     </span>
                     <Icon name="arrow" />
@@ -491,7 +530,7 @@ export function OverviewPage() {
                   >
                     <Icon name="warning" />
                     <span>
-                      <b>{g.label}</b>
+                      <b>{humanizeGateLabel(g.label)}</b>
                       <small>{g.reason}</small>
                     </span>
                   </button>

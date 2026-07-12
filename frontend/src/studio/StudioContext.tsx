@@ -252,6 +252,7 @@ export function StudioProvider({
         const text = errorMessage(err, 'Could not save shot.')
         setMessage(text)
         setError(text)
+        throw err
       } finally {
         setBusy(false)
       }

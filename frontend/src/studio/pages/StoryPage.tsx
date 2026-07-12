@@ -2,13 +2,17 @@
  * Exact structural port of prototype StoryPage (pagesCore.tsx / pagesCore.source.tsx)
  * adapted to production studio context + story save / hierarchy / orchestration APIs.
  *
- * DOM hierarchy matches the ZIP prototype:
+ * DOM hierarchy matches the ZIP prototype (Screenshot 2026-07-11 172730.png):
  * page-title (STORY INTAKE & STRUCTURE + Generate structure / Mark reviewed) →
  * split-layout.story-editor → stack (Source story form + Narrative hierarchy with
- * chapter/scene chrome + character-dots) | suggestion-panel (proposals).
+ * chapter/scene chrome + character-dots) | suggestion-panel (ORCHESTRATOR SUGGESTIONS).
  *
- * Production orchestration (create/start/cancel/retry runs, review/reject/apply)
- * is preserved below the split layout and wired into the suggestion panel.
+ * Production wiring (api client only — no mock / project store):
+ * - Generate structure → routing preflight + createOrchestrationRun (+ auto-start)
+ * - Mark reviewed → reviewProposal with validation/terminal/actor gates (disabled when ineligible)
+ * - Hierarchy CRUD → create/update/delete/reorder chapters & scenes on the backend
+ * - Full planning orchestration (create pending / start / cancel / retry / reject / apply)
+ *   is preserved below the split layout for operator control
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -479,7 +483,8 @@ export function StoryPage() {
     }
   }
 
-  async function createRun() {
+  async function createRun(options?: { autoStart?: boolean }) {
+    const autoStart = options?.autoStart === true
     setPlanningBusy(true)
     setPlanningError(null)
     setPlanningNotice(null)
@@ -518,17 +523,32 @@ export function StoryPage() {
         transport_retry_limit: transportRetryLimit,
         idempotency_key: `studio-${crypto.randomUUID()}`,
       })
-      setPlanningNotice(
-        result.idempotent_replay
-          ? 'The existing idempotent pending run was loaded. It has not been started.'
-          : 'Planning run created in pending state. Start it explicitly when ready.',
-      )
-      await loadPlanning(result.run.id, selectedProposalId || undefined)
+      let runId = result.run.id
+      let notice = result.idempotent_replay
+        ? 'The existing idempotent pending run was loaded. It has not been started.'
+        : 'Planning run created in pending state. Start it explicitly when ready.'
+
+      // Prototype “Generate structure” creates a comparable proposal; auto-start when requested.
+      if (autoStart && result.run.status === 'pending') {
+        const started = await api.startOrchestrationRun(result.run.id)
+        runId = started.run.id
+        notice =
+          started.message ||
+          'The planning request is running. No proposal will be applied automatically.'
+      }
+
+      setPlanningNotice(notice)
+      await loadPlanning(runId, selectedProposalId || undefined)
     } catch (error) {
       setPlanningError(errorMessage(error, 'Could not create the planning run.'))
     } finally {
       setPlanningBusy(false)
     }
+  }
+
+  /** Header action — Generate structure → real createRun (auto-starts for proposal comparison). */
+  async function generateStructure() {
+    await createRun({ autoStart: true })
   }
 
   async function startRun() {
@@ -670,6 +690,22 @@ export function StoryPage() {
     )
   }
 
+  async function addSceneToChapter(chapter: Chapter) {
+    const title = window.prompt('New scene title', 'Untitled scene')
+    if (title === null || !title.trim()) return
+    const summary = window.prompt('Scene summary (optional)', '')
+    if (summary === null) return
+    await persistStructure(
+      () =>
+        api.createScene(chapter.id, {
+          title: title.trim(),
+          summary: summary.trim() || undefined,
+          order_index: chapter.scenes.length,
+        }),
+      `Scene “${title.trim()}” created on the backend.`,
+    )
+  }
+
   async function editScene(scene: Scene) {
     const title = window.prompt('Scene title', scene.title)
     if (title === null || !title.trim()) return
@@ -768,15 +804,38 @@ export function StoryPage() {
         description="Edit the source narrative and reconcile every structural beat before shot planning."
         aside={
           <div className="page-actions">
+            <label title="Required for proposal review, reject, and apply.">
+              <span className="sr-only">Audit name</span>
+              <input
+                value={actorName}
+                onChange={(event) => setActorName(event.target.value)}
+                disabled={disabled}
+                placeholder="Audit name"
+                maxLength={200}
+                aria-label="Audit name for proposal review"
+                style={{
+                  height: 32,
+                  width: 132,
+                  borderRadius: 7,
+                  border: '1px solid var(--line-2, #34383d)',
+                  background: '#202225',
+                  color: 'inherit',
+                  padding: '0 10px',
+                  fontSize: 9,
+                }}
+              />
+            </label>
             <Button
-              onClick={() => void createRun()}
+              type="button"
+              onClick={() => void generateStructure()}
               disabled={disabled}
               title={createRunReason}
               icon="spark"
             >
-              {planningBusy ? 'Creating planning run…' : 'Generate structure'}
+              {planningBusy ? 'Generating proposal…' : 'Generate structure'}
             </Button>
             <Button
+              type="button"
               variant="primary"
               icon="check"
               onClick={() => void reviewProposal()}
@@ -788,6 +847,17 @@ export function StoryPage() {
           </div>
         }
       />
+
+      {planningError ? (
+        <p className="notice error" role="alert">
+          {planningError}
+        </p>
+      ) : null}
+      {planningNotice ? (
+        <p className="notice info" role="status" aria-live="polite">
+          {planningNotice}
+        </p>
+      ) : null}
 
       <div className="split-layout story-editor">
         <div className="stack">
@@ -907,6 +977,7 @@ export function StoryPage() {
             subtitle={hierarchySummary}
             action={
               <Button
+                type="button"
                 variant="quiet"
                 icon="plus"
                 disabled={structureDisabled}
@@ -989,6 +1060,15 @@ export function StoryPage() {
                             type="button"
                             disabled={structureDisabled}
                             title={structureBusyReason}
+                            onClick={() => void addSceneToChapter(chapter)}
+                            aria-label="Add scene to chapter"
+                          >
+                            <Icon name="plus" size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={structureDisabled}
+                            title={structureBusyReason}
                             onClick={() => void duplicateChapter(chapter)}
                             aria-label="Duplicate chapter"
                           >
@@ -1057,6 +1137,32 @@ export function StoryPage() {
                               </div>
                             )
                           })}
+                          {!chapter.scenes.length ? (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                borderTop: '1px solid #292c30',
+                                padding: 9,
+                              }}
+                            >
+                              <p className="form-hint" style={{ margin: 0 }}>
+                                No scenes in this chapter yet.
+                              </p>
+                              <Button
+                                type="button"
+                                variant="quiet"
+                                icon="plus"
+                                disabled={structureDisabled}
+                                title={structureBusyReason}
+                                onClick={() => void addSceneToChapter(chapter)}
+                              >
+                                Add scene
+                              </Button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </article>
@@ -1090,14 +1196,19 @@ export function StoryPage() {
                   <div>
                     <b>{card.title}</b>
                     <p>{card.body}</p>
-                    <small>{selectedProposal?.status || 'Proposal'} · not auto-applied</small>
+                    <small>
+                      {selectedProposal?.status === 'draft' || !selectedProposal
+                        ? 'Low-risk structural refinement'
+                        : `${selectedProposal.status} · not auto-applied`}
+                    </small>
                   </div>
                   <button
                     type="button"
-                    disabled={disabled || !actor || !proposalCanReview}
+                    disabled={planningBusy || busy || !actor || !proposalCanReview}
                     title={reviewProposalReason}
                     onClick={(e) => {
-                      ;(e.currentTarget.closest('article') as HTMLElement).dataset.accepted = 'true'
+                      const article = e.currentTarget.closest('article') as HTMLElement | null
+                      if (article) article.dataset.accepted = 'true'
                       void reviewProposal()
                     }}
                   >
@@ -1114,7 +1225,12 @@ export function StoryPage() {
                 Run Generate Structure to compare a new orchestrator proposal against the current
                 hierarchy.
               </p>
-              <Button onClick={() => void createRun()} disabled={disabled} title={createRunReason}>
+              <Button
+                type="button"
+                onClick={() => void generateStructure()}
+                disabled={planningBusy || busy}
+                title={createRunReason}
+              >
                 Generate proposal
               </Button>
             </div>
@@ -1128,11 +1244,13 @@ export function StoryPage() {
                 : `${chapters.length} chapters · ${sceneCount} scenes · ${shotCount} shots`}
             </b>
             <small>
-              Planned duration {formatDuration(plannedDuration)}
-              {story.target_duration_sec
-                ? ` · target ${formatDuration(story.target_duration_sec)}`
-                : ''}
-              .
+              {runtimeExact && story.target_duration_sec != null
+                ? `All duration rollups reconcile to ${story.target_duration_sec} seconds.`
+                : `Planned duration ${formatDuration(plannedDuration)}${
+                    story.target_duration_sec
+                      ? ` · target ${formatDuration(story.target_duration_sec)}`
+                      : ''
+                  }.`}
             </small>
           </div>
         </aside>
@@ -1145,6 +1263,7 @@ export function StoryPage() {
             subtitle="Create and start a real backend planning run, inspect its immutable proposal, then review, reject, or apply it explicitly. Starting a run never applies its proposal."
             action={
               <Button
+                type="button"
                 variant="quiet"
                 disabled={disabled}
                 title={busyReason}
@@ -1178,6 +1297,7 @@ export function StoryPage() {
                   disabled={disabled}
                   placeholder="Your name or production role"
                   maxLength={200}
+                  aria-label="Audit name for proposal review"
                 />
               </label>
               <div className="form-grid two">
@@ -1339,10 +1459,16 @@ export function StoryPage() {
                 </p>
               ) : null}
               <div className="inline-actions">
-                <Button disabled={disabled} title={createRunReason} onClick={() => void createRun()}>
+                <Button
+                  type="button"
+                  disabled={disabled}
+                  title={createRunReason}
+                  onClick={() => void createRun()}
+                >
                   Create pending run
                 </Button>
                 <Button
+                  type="button"
                   variant="primary"
                   disabled={disabled || !runCanStart}
                   title={startRunReason}
@@ -1351,6 +1477,7 @@ export function StoryPage() {
                   Start selected run
                 </Button>
                 <Button
+                  type="button"
                   variant="quiet"
                   disabled={disabled || !runCanCancel}
                   title={cancelRunReason}
@@ -1359,6 +1486,7 @@ export function StoryPage() {
                   Cancel selected run
                 </Button>
                 <Button
+                  type="button"
                   disabled={disabled || !runCanRetry}
                   title={retryRunReason}
                   onClick={() => void retryRun()}
@@ -1600,6 +1728,7 @@ export function StoryPage() {
 
                   <div className="inline-actions">
                     <Button
+                      type="button"
                       disabled={disabled || !actor || !proposalCanReview}
                       title={reviewProposalReason}
                       onClick={() => void reviewProposal()}
@@ -1607,6 +1736,7 @@ export function StoryPage() {
                       Mark reviewed
                     </Button>
                     <Button
+                      type="button"
                       variant="quiet"
                       disabled={
                         disabled || !actor || !rejectionReason.trim() || proposalIsTerminal
@@ -1617,6 +1747,7 @@ export function StoryPage() {
                       Reject proposal
                     </Button>
                     <Button
+                      type="button"
                       variant="primary"
                       disabled={disabled || !actor || !proposalCanApply}
                       title={applyProposalReason}

@@ -2,14 +2,15 @@
  * Exact structural port of prototype CharactersPage (pagesAssets.tsx / pagesAssets.source.tsx)
  * adapted to production studio context + character CRUD / reference APIs.
  *
- * DOM hierarchy matches the ZIP prototype:
+ * DOM hierarchy matches ZIP prototype + Screenshot 2026-07-11 172736:
  * page-title (CHARACTER BIBLE + Needs review / Create character) →
  * character-layout → stack (segmented filter + character-grid cards) |
  * entity-drawer (portrait, reference-strip, Identity / Linked shots / Continuity tabs,
- * identity form fields, voice assignment).
+ * identity field stack ending in a single Save character bible control).
  *
- * Production create/update/archive + managed reference upload/link/unlink + voice assign
- * stay wired via api client only (no mock / project store).
+ * Production create (one-click POST) / update / archive + managed reference
+ * upload/link/unlink + voice assign stay wired via api client only (no mock store).
+ * Assign voice + Archive live on Linked / Continuity so Identity matches the shot.
  */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
@@ -97,6 +98,20 @@ function outfitTokens(character: Character): string[] {
     .slice(0, 4)
 }
 
+/**
+ * Prototype CSS variants are `.portrait-dana|maya|jordan` (alex = default `.portrait`).
+ * Production characters use UUIDs, so derive the visual slug from the display name.
+ */
+function portraitSlug(name: string): string {
+  const lower = name.trim().toLowerCase()
+  if (lower.includes('alex')) return 'alex'
+  if (lower.includes('dana')) return 'dana'
+  if (lower.includes('maya')) return 'maya'
+  if (lower.includes('jordan')) return 'jordan'
+  const first = lower.split(/\s+/)[0]?.replace(/[^a-z0-9]/g, '') ?? ''
+  return first || 'default'
+}
+
 function Portrait({
   name,
   role,
@@ -107,8 +122,12 @@ function Portrait({
   large?: boolean
 }) {
   const roleLabel = (role ?? 'Character').split('·')[0]?.trim() || 'Character'
+  const slug = portraitSlug(name)
   return (
-    <div className={`portrait${large ? ' large' : ''}`} aria-hidden="true">
+    <div
+      className={`portrait portrait-${slug}${large ? ' large' : ''}`}
+      aria-hidden="true"
+    >
       <span>{initials(name)}</span>
       <i>{roleLabel}</i>
     </div>
@@ -121,10 +140,6 @@ export function CharactersPage() {
   const [filter, setFilter] = useState<ApprovalFilter>('All')
   const [edit, setEdit] = useState(false)
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('identity')
-  const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newRole, setNewRole] = useState('')
-  const [newDescription, setNewDescription] = useState('')
   const [assets, setAssets] = useState<PlanningMediaAsset[]>([])
   const [references, setReferences] = useState<CharacterReferenceLink[]>([])
   const [referenceApiAvailable, setReferenceApiAvailable] = useState(true)
@@ -288,11 +303,6 @@ export function CharactersPage() {
     archiveConflictParts.length > 0 &&
       `Cannot archive: ${archiveConflictParts.join('; ')}. Unlink shots/voices/references or use a non-approved character.`,
   )
-  const createNameReason = firstReason(
-    busyReason,
-    !newName.trim() &&
-      'Enter a character name before creating via POST /storyboard/stories/{id}/characters.',
-  )
   const saveReason = firstReason(busyReason, editReason)
   const uploadReason = firstReason(
     busyReason,
@@ -312,25 +322,20 @@ export function CharactersPage() {
       'Approved voice profiles are immutable and cannot be reassigned.',
   )
 
-  const onAddCharacter = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!newName.trim() || actionsBusy) return
+  /** Proto creates a draft instantly; production persists via POST then opens edit. */
+  const onCreateCharacter = async () => {
+    if (actionsBusy) return
     setSaving(true)
     setError(null)
     try {
       const created = await api.createCharacter(data.story.id, {
-        name: newName.trim(),
-        role: newRole.trim() || undefined,
-        physical_description: newDescription.trim() || undefined,
+        name: 'New character',
+        role: 'Unassigned role',
       })
       await reload()
       setSelectedId(created.id)
       setEdit(true)
       setDrawerTab('identity')
-      setNewName('')
-      setNewRole('')
-      setNewDescription('')
-      setShowCreate(false)
       setMessage(`Character “${created.name}” saved. No image generation was started.`)
     } catch (err) {
       const text = errorText(err, 'Could not create the character.')
@@ -341,34 +346,17 @@ export function CharactersPage() {
     }
   }
 
-  const onQuickCreate = () => {
-    if (showCreate) {
-      setShowCreate(false)
-      return
-    }
-    // Production needs a name; open the compact create form (proto creates a draft instantly).
-    setShowCreate(true)
-    setNewName('New character')
-    setNewRole('Unassigned role')
-    setNewDescription('')
-  }
-
   const onSaveCharacter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedCharacter || actionsBusy || !edit) return
     const form = new FormData(event.currentTarget)
-    const nextName =
-      String(form.get('name') ?? selectedCharacter.name).trim() || selectedCharacter.name
-    if (!nextName) return
     setSaving(true)
     setError(null)
     try {
+      // Identity stack matches screenshot/proto (starts at Physical description; name stays in header).
       const result = await api.updateCharacter(selectedCharacter.id, {
-        name: nextName,
-        role:
-          String(form.get('role') ?? selectedCharacter.role ?? '').trim() ||
-          selectedCharacter.role ||
-          null,
+        name: selectedCharacter.name,
+        role: selectedCharacter.role || null,
         age_range: String(form.get('age_range') ?? '').trim() || null,
         physical_description: String(form.get('physical_description') ?? '').trim() || null,
         personality: String(form.get('personality') ?? '').trim() || null,
@@ -382,8 +370,23 @@ export function CharactersPage() {
         setMessage('Character edit API is unavailable; no changes were persisted.')
         return
       }
+      // Optional voice pick on Identity select: assign mutable profile when user chose one.
+      if (selectedVoiceId && selectedVoice && selectedVoice.approval_state !== 'approved') {
+        const voiceResult = await api.updateVoice(selectedVoice.id, {
+          character_id: selectedCharacter.id,
+        })
+        if (voiceResult == null) {
+          setMessage(
+            `Character “${result.name}” updated; voice profile assignment API was unavailable.`,
+          )
+          await reload()
+          setEdit(false)
+          return
+        }
+      }
       await reload()
       setEdit(false)
+      setSelectedVoiceId('')
       setMessage(`Character “${result.name}” updated on the server.`)
     } catch (err) {
       const text = errorText(err, 'Could not update the character.')
@@ -580,7 +583,7 @@ export function CharactersPage() {
               type="button"
               variant="primary"
               icon="plus"
-              onClick={onQuickCreate}
+              onClick={() => void onCreateCharacter()}
               disabled={actionsBusy}
               title={busyReason ?? undefined}
             >
@@ -608,62 +611,6 @@ export function CharactersPage() {
             ))}
           </div>
 
-          {showCreate ? (
-            <form className="panel stack-form" onSubmit={(event) => void onAddCharacter(event)}>
-              <h3>Create character</h3>
-              <p className="form-hint">
-                Persists via POST /storyboard/stories/{'{story_id}'}/characters. No image is
-                generated.
-              </p>
-              <label>
-                Name
-                <input
-                  required
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                  disabled={actionsBusy}
-                  title={busyReason ?? undefined}
-                />
-              </label>
-              <label>
-                Role
-                <input
-                  value={newRole}
-                  onChange={(event) => setNewRole(event.target.value)}
-                  disabled={actionsBusy}
-                  title={busyReason ?? undefined}
-                />
-              </label>
-              <label>
-                Description
-                <textarea
-                  value={newDescription}
-                  onChange={(event) => setNewDescription(event.target.value)}
-                  disabled={actionsBusy}
-                  title={busyReason ?? undefined}
-                />
-              </label>
-              <div className="inline-actions">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={Boolean(createNameReason)}
-                  title={createNameReason}
-                >
-                  {saving ? 'Creating…' : 'Add character'}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setShowCreate(false)}
-                  disabled={actionsBusy}
-                  title={busyReason ?? undefined}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          ) : null}
-
           {!characters.length ? (
             <EmptyState
               title="No characters yet"
@@ -673,7 +620,7 @@ export function CharactersPage() {
                   type="button"
                   variant="primary"
                   icon="plus"
-                  onClick={onQuickCreate}
+                  onClick={() => void onCreateCharacter()}
                   disabled={actionsBusy}
                   title={busyReason ?? undefined}
                 >
@@ -855,34 +802,10 @@ export function CharactersPage() {
 
             {drawerTab === 'identity' ? (
               <form
-                key={selectedCharacter.id}
+                key={`${selectedCharacter.id}-${edit ? 'edit' : 'view'}`}
                 className="form-stack compact"
                 onSubmit={(event) => void onSaveCharacter(event)}
               >
-                {edit ? (
-                  <>
-                    <label>
-                      Name
-                      <input
-                        name="name"
-                        required
-                        defaultValue={selectedCharacter.name}
-                        disabled={actionsBusy}
-                        title={busyReason ?? undefined}
-                      />
-                    </label>
-                    <label>
-                      Role
-                      <input
-                        name="role"
-                        defaultValue={selectedCharacter.role ?? ''}
-                        disabled={actionsBusy}
-                        title={busyReason ?? undefined}
-                      />
-                    </label>
-                  </>
-                ) : null}
-
                 <label>
                   Physical description
                   <textarea
@@ -1000,34 +923,10 @@ export function CharactersPage() {
                     ))}
                   </select>
                 </label>
-                {edit ? (
-                  <div className="inline-actions">
-                    <Button
-                      type="button"
-                      onClick={() => void onAssignVoice()}
-                      disabled={Boolean(assignVoiceReason)}
-                      title={assignVoiceReason}
-                    >
-                      Assign voice
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      disabled={Boolean(saveReason)}
-                      title={saveReason}
-                    >
-                      {saving ? 'Saving…' : 'Save character bible'}
-                    </Button>
-                    <Button
-                      type="button"
-                      disabled={Boolean(archiveReason)}
-                      title={archiveReason}
-                      onClick={() => void onArchiveCharacter()}
-                    >
-                      Archive character
-                    </Button>
-                  </div>
-                ) : null}
+                {/* Proto always renders a single Save control; disable when not editing. */}
+                <Button type="submit" variant="primary" disabled={Boolean(saveReason)} title={saveReason}>
+                  {saving && edit ? 'Saving…' : 'Save character bible'}
+                </Button>
               </form>
             ) : null}
 
@@ -1343,6 +1242,83 @@ export function CharactersPage() {
                   Generate reference image — disabled
                 </Button>
                 <p className="form-hint">{GENERATION_DISABLED_REASON}</p>
+
+                <h3>Character labels</h3>
+                <p className="form-hint">
+                  Name and role live in the drawer header on Identity (screenshot stack). Rename here
+                  via PATCH /storyboard/characters/{'{id}'}.
+                </p>
+                <form
+                  className="form-stack compact"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    if (!selectedCharacter || actionsBusy) return
+                    const form = new FormData(event.currentTarget)
+                    const nextName =
+                      String(form.get('name') ?? '').trim() || selectedCharacter.name
+                    void (async () => {
+                      setSaving(true)
+                      setError(null)
+                      try {
+                        const result = await api.updateCharacter(selectedCharacter.id, {
+                          name: nextName,
+                          role: String(form.get('role') ?? '').trim() || null,
+                        })
+                        if (result == null) {
+                          setMessage('Character edit API is unavailable; no changes were persisted.')
+                          return
+                        }
+                        await reload()
+                        setMessage(`Character labels updated for “${result.name}”.`)
+                      } catch (err) {
+                        const text = errorText(err, 'Could not update character labels.')
+                        setError(text)
+                        setMessage(text)
+                      } finally {
+                        setSaving(false)
+                      }
+                    })()
+                  }}
+                >
+                  <label>
+                    Name
+                    <input
+                      name="name"
+                      required
+                      defaultValue={selectedCharacter.name}
+                      key={`name-${selectedCharacter.id}`}
+                      disabled={actionsBusy}
+                      title={busyReason ?? undefined}
+                    />
+                  </label>
+                  <label>
+                    Role
+                    <input
+                      name="role"
+                      defaultValue={selectedCharacter.role ?? ''}
+                      key={`role-${selectedCharacter.id}`}
+                      disabled={actionsBusy}
+                      title={busyReason ?? undefined}
+                    />
+                  </label>
+                  <Button type="submit" disabled={actionsBusy} title={busyReason ?? undefined}>
+                    {saving ? 'Saving…' : 'Save labels'}
+                  </Button>
+                </form>
+
+                <h3>Archive</h3>
+                <p className="form-hint">
+                  Soft-delete via DELETE /storyboard/characters/{'{id}'}. Blocked when the character
+                  is approved or still linked to shots, voices, or references.
+                </p>
+                <Button
+                  type="button"
+                  disabled={Boolean(archiveReason)}
+                  title={archiveReason}
+                  onClick={() => void onArchiveCharacter()}
+                >
+                  Archive character
+                </Button>
               </div>
             ) : null}
           </aside>

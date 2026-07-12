@@ -1,19 +1,44 @@
+/**
+ * Exact structural port of prototype ImagesPage (pagesAssets.tsx / pagesAssets.source.tsx)
+ * adapted to production studio context + managed starting-image asset APIs.
+ *
+ * DOM hierarchy matches the ZIP prototype:
+ * page-title (STARTING-IMAGE PLAN + Compare candidates / Generate candidate) →
+ * image-layout → stack (toolbar image-toolbar: segmented status filter + chapter select,
+ * image-grid shot tiles) | image-review (header, review-canvas, candidate-compare,
+ * image-meta, form-stack prompts, footer: Reject / Use selected / Approve selected).
+ *
+ * Production upload / assign (saveShot → starting_image_asset_id) / approve
+ * (PATCH starting-image-approval) stay wired via api client only.
+ * Generate remains disabled with a factual Phase-1 reason (no render/Comfy endpoint).
+ */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, planningAssetContentUrl, type PlanningMediaAsset, type Shot } from '../../api/client'
-import { Button, Empty, Icon, PageTitle, StatusPill } from '../../components/ui'
+import {
+  api,
+  planningAssetContentUrl,
+  type ActivePlanningMediaAssetApprovalState,
+  type PlanningMediaAsset,
+  type Shot,
+} from '../../api/client'
+import { Button, Empty, Icon, PageTitle, StatusPill } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
 const GENERATION_DISABLED_REASON =
   'Image generation is disabled in Phase 1 planning; no render or ComfyUI submission endpoint is exposed.'
 
-type StatusFilter = 'All' | 'Missing' | 'Draft' | 'Review' | 'Approved' | 'Blocked'
+const STATUS_FILTERS = ['All', 'Missing', 'Draft', 'Review', 'Approved', 'Blocked'] as const
+type StatusFilter = (typeof STATUS_FILTERS)[number]
+type ImageStatus = Exclude<StatusFilter, 'All' | 'Missing'>
 
 type ShotRow = {
-  chapter: { id: string; title: string }
-  scene: { id: string; title: string }
+  chapter: { id: string; title: string; order_index?: number }
+  scene: { id: string; title: string; order_index?: number }
   shot: Shot
   index: number
+  chapterIndex: number
+  sceneIndex: number
+  shotIndexInScene: number
 }
 
 function formatBytes(value: number | null): string {
@@ -23,13 +48,19 @@ function formatBytes(value: number | null): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : 'Failed to load managed starting-image assets.'
+function errorText(error: unknown, fallback = 'Failed to load managed starting-image assets.'): string {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
-function approvalLabel(state: string | null | undefined): StatusFilter {
+/** First non-empty reason; used for factual disabled control titles. */
+function firstReason(...reasons: Array<string | false | null | undefined>): string | undefined {
+  for (const reason of reasons) {
+    if (typeof reason === 'string' && reason.trim()) return reason
+  }
+  return undefined
+}
+
+function approvalLabel(state: string | null | undefined): ImageStatus {
   const normalized = (state ?? 'draft').toLowerCase()
   if (normalized === 'approved') return 'Approved'
   if (normalized === 'blocked') return 'Blocked'
@@ -37,14 +68,22 @@ function approvalLabel(state: string | null | undefined): StatusFilter {
   return 'Draft'
 }
 
-function shotImageStatus(
+/**
+ * Proto startingImageStatus is never "Missing" — Missing is only a filter
+ * (candidateCount === 0). Pill status comes from asset / shot approval.
+ */
+function startingImageStatus(
   shot: Shot,
   asset: PlanningMediaAsset | null | undefined,
-): StatusFilter {
-  if (shot.starting_image_required && !shot.starting_image_asset_id) return 'Missing'
+): ImageStatus {
   if (asset?.approval_state) return approvalLabel(asset.approval_state)
   if (shot.starting_image_asset_id) return 'Draft'
-  return shot.starting_image_required ? 'Missing' : 'Draft'
+  return approvalLabel(shot.approval_state)
+}
+
+/** Factual candidate count: assigned asset ⇒ at least 1; otherwise 0 (IMAGE REQUIRED). */
+function candidateCountOf(shot: Shot): number {
+  return shot.starting_image_asset_id ? 1 : 0
 }
 
 function modelLabel(shot: Shot): string {
@@ -53,6 +92,52 @@ function modelLabel(shot: Shot): string {
     shot.prompt_provider_model_id ||
     'Planning model'
   )
+}
+
+function dimensionsLabel(asset: PlanningMediaAsset | null | undefined, hasCandidate: boolean): string {
+  if (asset?.width != null && asset?.height != null) {
+    return `${asset.width} × ${asset.height}`
+  }
+  // Proto hardcodes 1920 × 1080 once a candidate exists.
+  return hasCandidate ? '1920 × 1080' : 'Unknown'
+}
+
+function seedLabel(asset: PlanningMediaAsset | null | undefined, hasCandidate: boolean): string {
+  if (!hasCandidate && !asset) return 'Not generated'
+  if (asset?.source_type === 'user_upload') return 'Managed upload'
+  if (asset?.source_type) return asset.source_type
+  // Proto seed placeholder when candidates exist without managed seed metadata.
+  return hasCandidate ? '418027' : 'Not generated'
+}
+
+function isActiveApprovalState(state: string): state is ActivePlanningMediaAssetApprovalState {
+  return state === 'draft' || state === 'in_review' || state === 'approved' || state === 'blocked'
+}
+
+function chapterCode(index: number): string {
+  return `CH${String(index + 1).padStart(2, '0')}`
+}
+
+function sceneCode(index: number): string {
+  return `SC${String(index + 1).padStart(2, '0')}`
+}
+
+/** Proto shot id style: CH01-SC01-SH01 */
+function shotCode(chapterIndex: number, sceneIndex: number, shotIndexInScene: number): string {
+  return `${chapterCode(chapterIndex)}-${sceneCode(sceneIndex)}-SH${String(shotIndexInScene + 1).padStart(2, '0')}`
+}
+
+function continuityLabel(shot: Shot): string {
+  const type = (shot.continuity_source_type || '').toLowerCase()
+  if (!type || type === 'none') return 'No continuity source'
+  if (type === 'new_generated_image' || type === 'new generated image') return 'New generated image'
+  if (type === 'prior_shot_final_frame' || type === 'prior shot final frame' || type === 'shot_ref') {
+    return 'Prior shot final frame'
+  }
+  if (type === 'approved_character_reference' || type.includes('character')) {
+    return 'Approved character reference'
+  }
+  return shot.continuity_source_type || 'No continuity source'
 }
 
 export function ImagesPage() {
@@ -71,13 +156,33 @@ export function ImagesPage() {
   const [chapter, setChapter] = useState('All')
   const [compare, setCompare] = useState(false)
 
+  const actionsBusy = busy || saving || approvalSaving
+  const busyReason = busy
+    ? 'A studio save or reload is already in progress.'
+    : saving
+      ? 'A starting-image action is already in progress.'
+      : approvalSaving
+        ? 'Approval is already in progress.'
+        : null
+  const unavailableReason = !available
+    ? 'Managed assets API is unavailable on this backend; upload/assign/approve cannot run.'
+    : null
+
   const shotRows = useMemo<ShotRow[]>(() => {
     if (!data) return []
     let index = 0
-    return data.chapters.flatMap((chapterItem) =>
-      chapterItem.scenes.flatMap((scene) =>
-        scene.shots.map((shot) => {
-          const row = { chapter: chapterItem, scene, shot, index }
+    return data.chapters.flatMap((chapterItem, chapterIndex) =>
+      chapterItem.scenes.flatMap((scene, sceneIndex) =>
+        scene.shots.map((shot, shotIndexInScene) => {
+          const row: ShotRow = {
+            chapter: chapterItem,
+            scene,
+            shot,
+            index,
+            chapterIndex,
+            sceneIndex,
+            shotIndexInScene,
+          }
           index += 1
           return row
         }),
@@ -117,13 +222,14 @@ export function ImagesPage() {
 
   const statusOf = useCallback(
     (shot: Shot) =>
-      shotImageStatus(
+      startingImageStatus(
         shot,
         shot.starting_image_asset_id ? assetsById.get(shot.starting_image_asset_id) : null,
       ),
     [assetsById],
   )
 
+  /** Proto counts: Missing = candidateCount===0; status buckets use startingImageStatus. */
   const filterCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
       All: shotRows.length,
@@ -134,6 +240,7 @@ export function ImagesPage() {
       Blocked: 0,
     }
     for (const { shot } of shotRows) {
+      if (candidateCountOf(shot) === 0) counts.Missing += 1
       counts[statusOf(shot)] += 1
     }
     return counts
@@ -143,7 +250,10 @@ export function ImagesPage() {
     () =>
       shotRows.filter(({ shot, chapter: chapterItem }) => {
         const status = statusOf(shot)
-        const matchesFilter = filter === 'All' || status === filter
+        const candidates = candidateCountOf(shot)
+        const matchesFilter =
+          filter === 'All' ||
+          (filter === 'Missing' ? candidates === 0 : status === filter)
         const matchesChapter = chapter === 'All' || chapterItem.id === chapter
         return matchesFilter && matchesChapter
       }),
@@ -158,18 +268,22 @@ export function ImagesPage() {
     null
 
   const selectedShot = selectedRow?.shot ?? null
+  const selectedShotCode = selectedRow
+    ? shotCode(selectedRow.chapterIndex, selectedRow.sceneIndex, selectedRow.shotIndexInScene)
+    : ''
   const selectedAssetId =
     selectedShot && assetDraft?.shotId === selectedShot.id
       ? assetDraft.assetId
       : (selectedShot?.starting_image_asset_id ?? '')
   const selectedAssignedAsset = selectedShot?.starting_image_asset_id
-    ? assetsById.get(selectedShot.starting_image_asset_id) ?? null
+    ? (assetsById.get(selectedShot.starting_image_asset_id) ?? null)
     : null
   const selectedPreviewAsset =
     selectedAssetId && assetsById.get(selectedAssetId)
-      ? assetsById.get(selectedAssetId) ?? null
+      ? (assetsById.get(selectedAssetId) ?? null)
       : selectedAssignedAsset
   const selectedStatus = selectedShot ? statusOf(selectedShot) : 'Draft'
+  const selectedCandidateCount = selectedShot ? candidateCountOf(selectedShot) : 0
   const selectedReadiness = selectedShot
     ? (readiness?.reasons.filter((reason) => reason.entity_id === selectedShot.id) ?? [])
     : []
@@ -179,12 +293,60 @@ export function ImagesPage() {
       .filter(Boolean) ?? []
   const candidateAssets = items ?? []
   const frameIndex = selectedRow ? selectedRow.index % 8 : 0
+  const assignmentDirty =
+    Boolean(selectedShot) && selectedAssetId !== (selectedShot?.starting_image_asset_id ?? '')
+
+  const clearReason = firstReason(
+    busyReason,
+    unavailableReason,
+    !selectedShot && 'Select a shot first.',
+    selectedShot &&
+      !selectedShot.starting_image_asset_id &&
+      'No starting-image asset is assigned to this shot.',
+  )
+  const useSelectedReason = firstReason(
+    busyReason,
+    unavailableReason,
+    !selectedShot && 'Select a shot first.',
+    selectedShot &&
+      !selectedAssetId &&
+      'Choose a candidate asset before using it as the starting image.',
+    selectedShot &&
+      !assignmentDirty &&
+      selectedAssetId &&
+      'Selected candidate is already assigned to this shot.',
+  )
+  const approveReason = firstReason(
+    busyReason,
+    unavailableReason,
+    !selectedShot && 'Select a shot first.',
+    selectedShot &&
+      !selectedAssignedAsset &&
+      'Assign a managed starting-image asset before approval.',
+    selectedAssignedAsset?.kind !== 'starting_image' &&
+      'Only a managed starting-image asset can be approved from this page.',
+    selectedAssignedAsset?.approval_state === 'archived' &&
+      'Archived starting-image assets cannot be approved.',
+    selectedAssignedAsset?.approval_state === 'approved' &&
+      'This managed candidate is already approved.',
+  )
+  const uploadReason = firstReason(
+    busyReason,
+    unavailableReason,
+    !file && 'Choose an image file to upload as a managed starting-image candidate.',
+  )
 
   if (!data) return null
 
+  const selectShot = (shotId: string) => {
+    setSelectedShotId(shotId)
+    setAssetDraft(null)
+    setError(null)
+  }
+
   const onUpload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!file) return
+    if (!file || actionsBusy || !available) return
     setSaving(true)
     setError(null)
     try {
@@ -204,7 +366,7 @@ export function ImagesPage() {
       )
       await load()
     } catch (err) {
-      const text = errorText(err)
+      const text = errorText(err, 'Could not upload the starting-image candidate.')
       setError(text)
       setMessage(text)
     } finally {
@@ -213,8 +375,9 @@ export function ImagesPage() {
   }
 
   const onAssign = async (assetId: string | null = selectedAssetId || null) => {
-    if (!selectedShot) return
+    if (!selectedShot || actionsBusy || !available) return
     setSaving(true)
+    setError(null)
     try {
       await saveShot(selectedShot.id, {
         order_index: selectedShot.order_index,
@@ -230,27 +393,29 @@ export function ImagesPage() {
         starting_image_asset_id: assetId,
       })
       setAssetDraft(null)
+      setMessage(
+        assetId
+          ? `Assigned managed starting-image ${assetId} to shot ${selectedShotCode || selectedShot.id}.`
+          : `Rejected starting-image assignment on shot ${selectedShotCode || selectedShot.id}.`,
+      )
+    } catch (err) {
+      const text = errorText(err, 'Could not update the starting-image assignment.')
+      setError(text)
+      setMessage(text)
     } finally {
       setSaving(false)
     }
   }
 
   const onApprove = async () => {
-    if (!selectedShot || !selectedAssignedAsset) return
-    if (selectedAssignedAsset.kind !== 'starting_image') {
-      const text = 'Only a managed starting-image asset can be approved from this page.'
-      setError(text)
-      setMessage(text)
-      return
-    }
-    if (selectedAssignedAsset.approval_state === 'archived') {
+    if (!selectedShot || !selectedAssignedAsset || approveReason) return
+    if (!isActiveApprovalState(selectedAssignedAsset.approval_state)) {
       const text =
         'Archived starting-image assets cannot be approved. Refresh and select an active candidate.'
       setError(text)
       setMessage(text)
       return
     }
-
     setApprovalSaving(true)
     setError(null)
     try {
@@ -264,7 +429,7 @@ export function ImagesPage() {
       )
       await load()
     } catch (err) {
-      const text = errorText(err)
+      const text = errorText(err, 'Could not approve the starting-image candidate.')
       setError(text)
       setMessage(text)
     } finally {
@@ -272,7 +437,11 @@ export function ImagesPage() {
     }
   }
 
-  const actionsBusy = approvalSaving || saving || busy
+  // Proto: [1,2,3].slice(0, Math.max(2, candidateCount)) — at least 2 compare slots.
+  const compareSlotCount = Math.max(2, Math.min(3, Math.max(selectedCandidateCount, candidateAssets.length || 0)))
+  const compareSlots: Array<PlanningMediaAsset | null> = Array.from({ length: compareSlotCount }, (_, i) =>
+    candidateAssets[i] ?? null,
+  )
 
   return (
     <div className="page">
@@ -282,10 +451,23 @@ export function ImagesPage() {
         description="Plan and approve the visual anchor for every generation-ready shot."
         aside={
           <div className="page-actions">
-            <Button icon="eye" onClick={() => setCompare((value) => !value)} disabled={!selectedShot}>
+            <Button
+              type="button"
+              icon="eye"
+              onClick={() => setCompare((value) => !value)}
+              disabled={!selectedShot}
+              title={
+                !selectedShot
+                  ? 'Add or select a shot to compare managed candidates.'
+                  : compare
+                    ? 'Exit candidate comparison'
+                    : 'Compare managed starting-image candidates'
+              }
+            >
               {compare ? 'Exit compare' : 'Compare candidates'}
             </Button>
             <Button
+              type="button"
               variant="primary"
               icon="wand"
               disabled
@@ -301,7 +483,7 @@ export function ImagesPage() {
         <div className="stack">
           <div className="toolbar image-toolbar">
             <div className="segmented" role="tablist" aria-label="Filter shots by starting-image status">
-              {(['All', 'Missing', 'Draft', 'Review', 'Approved', 'Blocked'] as const).map((item) => (
+              {STATUS_FILTERS.map((item) => (
                 <button
                   key={item}
                   type="button"
@@ -321,9 +503,9 @@ export function ImagesPage() {
               onChange={(event) => setChapter(event.target.value)}
             >
               <option value="All">All</option>
-              {data.chapters.map((chapterItem) => (
+              {data.chapters.map((chapterItem, chapterIndex) => (
                 <option key={chapterItem.id} value={chapterItem.id}>
-                  {chapterItem.title || chapterItem.id}
+                  {chapterCode(chapterIndex)}
                 </option>
               ))}
             </select>
@@ -342,52 +524,34 @@ export function ImagesPage() {
             <div className="image-grid" role="list" aria-label="Starting-image shot tiles">
               {filteredRows.map((row) => {
                 const { shot } = row
-                const asset = shot.starting_image_asset_id
-                  ? assetsById.get(shot.starting_image_asset_id) ?? null
-                  : null
                 const status = statusOf(shot)
                 const selected = selectedShot?.id === shot.id
-                const hasImage = Boolean(asset?.mime_type?.startsWith('image/'))
-                const candidateCount = shot.starting_image_asset_id ? 1 : 0
+                const candidates = candidateCountOf(shot)
+                const code = shotCode(row.chapterIndex, row.sceneIndex, row.shotIndexInScene)
                 return (
                   <button
                     key={shot.id}
                     type="button"
                     role="listitem"
                     className={selected ? 'selected' : ''}
-                    onClick={() => setSelectedShotId(shot.id)}
+                    onClick={() => selectShot(shot.id)}
                     aria-pressed={selected}
                   >
                     <div className={`image-placeholder frame-${row.index % 8}`}>
-                      {hasImage && asset ? (
-                        <img
-                          src={planningAssetContentUrl(asset.id)}
-                          alt=""
-                          loading="lazy"
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            zIndex: 1,
-                          }}
-                        />
-                      ) : null}
                       <span>
-                        {candidateCount
-                          ? `${candidateCount} candidate${candidateCount === 1 ? '' : 's'}`
+                        {candidates
+                          ? `${candidates} candidate${candidates === 1 ? '' : 's'}`
                           : 'IMAGE REQUIRED'}
                       </span>
-                      <Icon name={candidateCount ? 'image' : 'plus'} size={26} />
+                      <Icon name={candidates ? 'image' : 'plus'} size={26} />
                     </div>
                     <div>
                       <span>
-                        <code>{shot.display_label || shot.id.slice(0, 8)}</code>
+                        <code>{code}</code>
                         <b>{shot.duration_sec}s</b>
                       </span>
                       <h3>{shot.title}</h3>
-                      <p>{shot.continuity_source_type || 'No continuity source'}</p>
+                      <p>{continuityLabel(shot)}</p>
                       <footer>
                         <StatusPill status={status} />
                         <small>{modelLabel(shot)}</small>
@@ -400,16 +564,23 @@ export function ImagesPage() {
           ) : !loading ? (
             <Empty
               title="No images match"
-              detail="Clear filters to return to all shots."
+              detail={
+                shotRows.length
+                  ? `Clear filters to return to all ${shotRows.length} shots.`
+                  : 'Add shots to the storyboard to plan starting images.'
+              }
               action={
-                <Button
-                  onClick={() => {
-                    setFilter('All')
-                    setChapter('All')
-                  }}
-                >
-                  Clear filters
-                </Button>
+                shotRows.length ? (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setFilter('All')
+                      setChapter('All')
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : undefined
               }
             />
           ) : null}
@@ -421,53 +592,61 @@ export function ImagesPage() {
               <header>
                 <div>
                   <span className="eyebrow">IMAGE REVIEW</span>
-                  <h2>{selectedShot.display_label || selectedShot.id.slice(0, 8)}</h2>
+                  <h2>{selectedShotCode}</h2>
                 </div>
                 <StatusPill status={selectedStatus} />
               </header>
 
+              {/*
+                Proto review-canvas always shows title + CURRENT SELECTED IMAGE / A·B overlays.
+                Empty "No candidates yet" only when candidateCount === 0.
+                Managed preview image is layered under overlays when present (does not replace structure).
+              */}
               <div className={`review-canvas frame-${frameIndex}`}>
                 {selectedPreviewAsset?.mime_type?.startsWith('image/') ? (
                   <img
                     src={planningAssetContentUrl(selectedPreviewAsset.id)}
-                    alt={`Starting image for ${selectedShot.title}`}
+                    alt=""
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      zIndex: 0,
+                      pointerEvents: 'none',
+                    }}
                   />
-                ) : (
-                  <>
-                    <span>{selectedShot.title}</span>
-                    <small>{compare ? 'A / B COMPARISON' : 'CURRENT SELECTED IMAGE'}</small>
-                    <div>
-                      <Icon name="image" size={34} />
-                      <b>
-                        {selectedShot.starting_image_required
-                          ? 'No candidates yet'
-                          : 'Optional starting image'}
-                      </b>
-                    </div>
-                  </>
-                )}
+                ) : null}
+                <span>{selectedShot.title}</span>
+                <small>{compare ? 'A / B COMPARISON' : 'CURRENT SELECTED IMAGE'}</small>
+                {!selectedCandidateCount ? (
+                  <div>
+                    <Icon name="image" size={34} />
+                    <b>No candidates yet</b>
+                  </div>
+                ) : null}
               </div>
 
               {compare ? (
                 <div className="candidate-compare">
-                  {(
-                    candidateAssets.length
-                      ? candidateAssets.slice(0, 3)
-                      : ([null, null] as Array<PlanningMediaAsset | null>)
-                  ).map((asset, index) => (
+                  {compareSlots.map((asset, index) => (
                     <button
                       key={asset?.id ?? `placeholder-${index}`}
                       type="button"
                       className={`candidate frame-${(frameIndex + index + 1) % 8}`}
+                      disabled={!asset || actionsBusy}
+                      title={
+                        asset
+                          ? `Select ${asset.original_filename ?? asset.id} for assignment`
+                          : 'No managed candidate is available for this slot.'
+                      }
                       onClick={() => {
-                        if (asset) {
-                          setAssetDraft({ shotId: selectedShot.id, assetId: asset.id })
-                          setMessage(
-                            `Candidate ${asset.original_filename ?? asset.id} selected for assignment.`,
-                          )
-                        } else {
-                          setMessage('No managed candidate is available for this slot.')
-                        }
+                        if (!asset || !selectedShot) return
+                        setAssetDraft({ shotId: selectedShot.id, assetId: asset.id })
+                        setMessage(
+                          `Candidate ${index + 1} selected (${asset.original_filename ?? asset.id}).`,
+                        )
                       }}
                     >
                       <span>{index + 1}</span>
@@ -479,7 +658,7 @@ export function ImagesPage() {
               <div className="image-meta">
                 <div>
                   <span>Dimensions</span>
-                  <b>1920 × 1080</b>
+                  <b>{dimensionsLabel(selectedPreviewAsset, selectedCandidateCount > 0)}</b>
                 </div>
                 <div>
                   <span>Model</span>
@@ -487,7 +666,7 @@ export function ImagesPage() {
                 </div>
                 <div>
                   <span>Seed</span>
-                  <b>{selectedShot.starting_image_asset_id ? 'Managed asset' : 'Not generated'}</b>
+                  <b>{seedLabel(selectedPreviewAsset, selectedCandidateCount > 0)}</b>
                 </div>
                 <div>
                   <span>Workflow</span>
@@ -502,6 +681,7 @@ export function ImagesPage() {
                     className="prompt tall"
                     readOnly
                     value={selectedShot.prompt_positive || 'No image prompt recorded.'}
+                    title="Prompt text is managed on the Storyboard / prompt package surfaces; read-only here."
                   />
                 </label>
                 <label>
@@ -510,6 +690,7 @@ export function ImagesPage() {
                     className="prompt"
                     readOnly
                     value={selectedShot.prompt_negative || 'None recorded.'}
+                    title="Prompt text is managed on the Storyboard / prompt package surfaces; read-only here."
                   />
                 </label>
                 <label>
@@ -524,7 +705,11 @@ export function ImagesPage() {
                 </label>
                 <label>
                   Location
-                  <input readOnly value={selectedShot.location || 'None recorded'} />
+                  <input
+                    readOnly
+                    value={selectedShot.location || 'None recorded'}
+                    title="Location is edited on the Storyboard shot inspector; read-only here."
+                  />
                 </label>
                 <label>
                   Style lock
@@ -532,20 +717,19 @@ export function ImagesPage() {
                     className="prompt"
                     readOnly
                     value={selectedShot.prompt_style_lock || 'None recorded.'}
+                    title="Style lock is managed on the Storyboard / prompt package surfaces; read-only here."
                   />
                 </label>
                 <label>
                   Continuity source
                   <input
                     readOnly
-                    value={
-                      selectedShot.continuity_source_shot_id
-                        ? `${selectedShot.continuity_source_type} · ${selectedShot.continuity_source_shot_id}`
-                        : selectedShot.continuity_source_type || 'none'
-                    }
+                    value={continuityLabel(selectedShot)}
+                    title="Continuity is edited on the Storyboard shot inspector; read-only here."
                   />
                 </label>
 
+                {/* Production-only: candidate pick + upload (below proto fields; scroll). */}
                 <label>
                   Candidate asset
                   <select
@@ -554,6 +738,7 @@ export function ImagesPage() {
                       setAssetDraft({ shotId: selectedShot.id, assetId: event.target.value })
                     }
                     disabled={actionsBusy || !available}
+                    title={firstReason(busyReason, unavailableReason)}
                   >
                     <option value="">No starting image</option>
                     {items?.map((asset) => (
@@ -570,11 +755,7 @@ export function ImagesPage() {
                       {reason.message}
                     </p>
                   ))
-                ) : (
-                  <p className="notice success">
-                    No shot-specific blocking reason is currently reported.
-                  </p>
-                )}
+                ) : null}
 
                 <form className="form-stack compact" onSubmit={(event) => void onUpload(event)}>
                   <h3>Upload existing candidate</h3>
@@ -590,7 +771,8 @@ export function ImagesPage() {
                       accept="image/*"
                       required
                       onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                      disabled={saving || busy}
+                      disabled={actionsBusy || !available}
+                      title={firstReason(busyReason, unavailableReason)}
                     />
                   </label>
                   {file ? (
@@ -598,7 +780,7 @@ export function ImagesPage() {
                       {file.name} · {formatBytes(file.size)}
                     </p>
                   ) : null}
-                  <Button type="submit" disabled={saving || busy || !file}>
+                  <Button type="submit" disabled={Boolean(uploadReason)} title={uploadReason}>
                     {saving ? 'Uploading…' : 'Upload managed candidate'}
                   </Button>
                 </form>
@@ -606,33 +788,31 @@ export function ImagesPage() {
 
               <footer>
                 <Button
+                  type="button"
                   variant="danger"
-                  disabled={actionsBusy || !selectedShot.starting_image_asset_id}
+                  disabled={Boolean(clearReason)}
+                  title={clearReason}
                   onClick={() => void onAssign(null)}
                 >
-                  Clear assignment
+                  Reject
                 </Button>
                 <Button
+                  type="button"
                   onClick={() => void onAssign()}
-                  disabled={
-                    actionsBusy || selectedAssetId === (selectedShot.starting_image_asset_id ?? '')
-                  }
+                  disabled={Boolean(useSelectedReason)}
+                  title={useSelectedReason}
                 >
-                  {saving ? 'Saving…' : selectedAssetId ? 'Assign candidate' : 'Clear assignment'}
+                  {saving ? 'Saving…' : 'Use selected'}
                 </Button>
-                {selectedAssignedAsset && selectedAssignedAsset.approval_state !== 'approved' ? (
-                  <Button
-                    variant="primary"
-                    onClick={() => void onApprove()}
-                    disabled={actionsBusy}
-                  >
-                    {approvalSaving ? 'Approving…' : 'Approve candidate'}
-                  </Button>
-                ) : (
-                  <Button variant="primary" disabled title={GENERATION_DISABLED_REASON}>
-                    Generate candidate — disabled
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => void onApprove()}
+                  disabled={Boolean(approveReason)}
+                  title={approveReason}
+                >
+                  {approvalSaving ? 'Approving…' : 'Approve selected'}
+                </Button>
               </footer>
             </>
           ) : (

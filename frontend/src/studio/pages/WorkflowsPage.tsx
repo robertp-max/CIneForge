@@ -1,6 +1,19 @@
 /**
- * Structural port of CineForge-Storyboard-Studio-v2 WorkflowsPage (pagesOps.tsx)
- * adapted to production runtime catalog evidence APIs.
+ * Exact structural port of CineForge-Storyboard-Studio-v2 WorkflowsPage
+ * (components/pagesOps.tsx) — visual/DOM hierarchy preserved.
+ *
+ * Hierarchy (screenshot SoT / pagesOps):
+ * PageTitle COMFYUI MANIFESTS → page-actions (Download policy / Validate selected)
+ * → workflow-summary (Templates · Installed · Valid manifests · Needs benchmark + runtime note)
+ * → workflow-layout → stack (filter-row + data-table.workflow-table)
+ *                  | entity-drawer.workflow-drawer
+ *                    (header · workflow-hero · detail-list · dependency-block
+ *                     · validation-results · footer)
+ *
+ * Production wiring: GET /runtime-catalog/workflow-templates + /runtime/status.
+ * Claims only from catalog `claims` / recorded fields — never invent install,
+ * validation, resolution, VRAM, models, LoRAs, or nodes.
+ * Install / Queue / Validate stay disabled with factual no-API reasons.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type RuntimeCatalogWorkflowTemplate, type RuntimeStatus } from '../../api/client'
@@ -15,8 +28,12 @@ const QUEUE_DISABLED_REASON =
   'Queue is not available from planning — no queue-from-catalog API is exposed.'
 const VALIDATE_DISABLED_REASON =
   'Validate is not available from planning — no workflow validation API is exposed.'
+const ASSIGN_DISABLED_REASON =
+  'Assign to shot type is not available from planning — no workflow-to-shot assignment API is exposed on this surface.'
 const DOWNLOAD_POLICY_MESSAGE =
   'CineForge may list missing models or nodes from registered evidence, but this planning surface never downloads files or changes ComfyUI. A production download would require an explicit install API and user approval.'
+const CATALOG_INVENTORY_NOTE =
+  'Model, LoRA, and custom-node inventories are not returned by the workflow-template list endpoint.'
 
 /** Evidence-only claim label: true → whenTrue, otherwise “Not claimed” (never invent missing/failed). */
 function claimLabel(claimed: boolean | undefined, whenTrue: string): string {
@@ -37,11 +54,25 @@ function shortSha(sha: string): string {
   return `${sha.slice(0, 8)}…${sha.slice(-4)}`
 }
 
+/** Filter chips from registration / claim evidence only (catalog has no mock categories). */
 function filterCategory(wf: RuntimeCatalogWorkflowTemplate): string {
   if (wf.claims.installed === true) return 'Installed claim'
   if (wf.claims.validated === true) return 'Validated claim'
   if (wf.claims.benchmarked === true) return 'Benchmarked claim'
   return humanizeStatus(wf.registration_status)
+}
+
+/** Manifest column pill: install claim only when catalog claims.installed; else presence fact. */
+function manifestPill(wf: RuntimeCatalogWorkflowTemplate): string {
+  if (wf.claims.installed === true) return 'Installed'
+  if (wf.has_manifest) return 'Recorded'
+  return 'Missing'
+}
+
+function needsBenchmark(wf: RuntimeCatalogWorkflowTemplate): boolean {
+  if (wf.claims.benchmarked === true) return false
+  const bench = (wf.benchmark_status || '').toLowerCase()
+  return bench.includes('need') || bench === 'unknown' || !bench
 }
 
 export function WorkflowsPage() {
@@ -95,44 +126,53 @@ export function WorkflowsPage() {
     [filter, listAll],
   )
 
-  const selected = list.find((wf) => wf.id === selectedId) ?? list[0] ?? listAll[0] ?? null
+  const effectiveSelectedId = list.some((wf) => wf.id === selectedId)
+    ? selectedId
+    : list[0]?.id ?? listAll[0]?.id ?? ''
+  const selected =
+    listAll.find((wf) => wf.id === effectiveSelectedId) ??
+    list.find((wf) => wf.id === effectiveSelectedId) ??
+    null
 
   const summary = useMemo(() => {
-    const templates = listAll.length
     let installedClaims = 0
     let validatedClaims = 0
-    let needsBenchmark = 0
+    let needsBenchmarkCount = 0
     for (const wf of listAll) {
       if (wf.claims.installed === true) installedClaims += 1
       if (wf.claims.validated === true) validatedClaims += 1
-      const bench = (wf.benchmark_status || '').toLowerCase()
-      if (!wf.claims.benchmarked && (bench.includes('need') || bench === 'unknown' || !bench)) {
-        needsBenchmark += 1
-      }
+      if (needsBenchmark(wf)) needsBenchmarkCount += 1
     }
-    return { templates, installedClaims, validatedClaims, needsBenchmark }
+    return {
+      templates: listAll.length,
+      installedClaims,
+      validatedClaims,
+      needsBenchmark: needsBenchmarkCount,
+    }
   }, [listAll])
 
   if (!data) return null
 
-  const runtimeNote = runtime
-    ? `ComfyUI ${String(runtime.comfyui.status ?? 'unknown')}${
-        runtime.object_info?.available
-          ? ` · object_info available${
-              runtime.object_info.class_count != null
-                ? ` (${runtime.object_info.class_count} classes)`
-                : ''
-            }`
-          : ' · object_info unavailable'
+  const objectInfoNote = runtime?.object_info?.available
+    ? `object_info available${
+        runtime.object_info.class_count != null
+          ? ` (${runtime.object_info.class_count} classes)`
+          : ''
       }`
+    : 'object_info unavailable'
+
+  const runtimeNote = runtime
+    ? `ComfyUI ${String(runtime.comfyui.status ?? 'unknown')} · ${objectInfoNote}`
     : 'Runtime status unavailable'
+
+  const showTable = listAll.length > 0 && available && !loading
 
   return (
     <div className="page">
       <PageTitle
         eyebrow="COMFYUI MANIFESTS"
         title="Workflows"
-        description="Review immutable workflow templates from the runtime catalog. Install, validate, and queue remain unavailable from planning."
+        description="Review immutable workflow templates, dependencies, benchmarks, and compatible shot types."
         aside={
           <div className="page-actions">
             <Button
@@ -195,7 +235,7 @@ export function WorkflowsPage() {
             <EmptyState title="No workflows registered" detail="Registry returned an empty list." />
           ) : null}
 
-          {listAll.length ? (
+          {showTable ? (
             <>
               <div className="filter-row">
                 {categories.map((category) => (
@@ -233,17 +273,19 @@ export function WorkflowsPage() {
                       <span role="cell">
                         <b>{wf.name}</b>
                         <small>
-                          v{wf.version} · {shortSha(wf.sha256)}
+                          v{wf.version} · {humanizeStatus(wf.registration_status)}
                         </small>
                       </span>
                       <span role="cell">
-                        <b>{humanizeStatus(wf.registration_status)}</b>
-                        <small>API {wf.has_workflow_api ? 'recorded' : 'unknown'}</small>
+                        <b>Not recorded</b>
+                        <small>family not recorded</small>
                       </span>
                       <span role="cell">
-                        <StatusPill status={wf.has_manifest ? 'Installed' : 'Missing'} />
+                        <StatusPill status={manifestPill(wf)} />
                         <small>
                           {wf.has_manifest ? 'manifest present' : 'manifest not recorded'}
+                          {' · '}
+                          {objectInfoNote}
                         </small>
                       </span>
                       <span role="cell">
@@ -254,9 +296,7 @@ export function WorkflowsPage() {
                       <span role="cell">
                         <StatusPill status="Not recorded" />
                       </span>
-                      <span role="cell">
-                        {claimLabel(wf.claims.validated, 'Validated')}
-                      </span>
+                      <span role="cell">{claimLabel(wf.claims.validated, 'Validated')}</span>
                     </button>
                   )
                 })}
@@ -286,10 +326,14 @@ export function WorkflowsPage() {
                     {shortSha(selected.sha256)}
                     {selected.comfyui_commit?.trim()
                       ? ` · Comfy ${selected.comfyui_commit.slice(0, 8)}`
-                      : ''}
+                      : ' · family not recorded'}
                   </small>
                 </div>
-                <StatusPill status={claimLabel(selected.claims.installed, 'Installed')} />
+                <StatusPill
+                  status={
+                    selected.claims.installed === true ? 'Installed' : 'Not installed'
+                  }
+                />
               </div>
 
               <dl className="detail-list">
@@ -298,32 +342,20 @@ export function WorkflowsPage() {
                   <dd>Runtime catalog production template</dd>
                 </div>
                 <div>
-                  <dt>Version</dt>
-                  <dd>{selected.version}</dd>
+                  <dt>VAE</dt>
+                  <dd>Not recorded</dd>
                 </div>
                 <div>
-                  <dt>SHA-256</dt>
-                  <dd className="mono" title={selected.sha256}>
-                    {shortSha(selected.sha256)}
-                  </dd>
+                  <dt>Text encoder</dt>
+                  <dd>Not recorded</dd>
                 </div>
                 <div>
-                  <dt>ComfyUI commit</dt>
-                  <dd className="mono">
-                    {selected.comfyui_commit?.trim() ? selected.comfyui_commit : 'Not recorded'}
-                  </dd>
+                  <dt>Resolution</dt>
+                  <dd>Not recorded</dd>
                 </div>
                 <div>
-                  <dt>Registered</dt>
-                  <dd>{formatDate(selected.created_at)}</dd>
-                </div>
-                <div>
-                  <dt>Manifest JSON</dt>
-                  <dd>{selected.has_manifest ? 'Recorded' : 'Not recorded'}</dd>
-                </div>
-                <div>
-                  <dt>Workflow API JSON</dt>
-                  <dd>{selected.has_workflow_api ? 'Recorded' : 'Not recorded'}</dd>
+                  <dt>Frame support</dt>
+                  <dd>Not recorded</dd>
                 </div>
                 <div>
                   <dt>Benchmark tier</dt>
@@ -343,6 +375,12 @@ export function WorkflowsPage() {
               </dl>
 
               <div className="dependency-block">
+                <h3>Required models</h3>
+                <p>{CATALOG_INVENTORY_NOTE}</p>
+                <h3>Required LoRAs</h3>
+                <p>{CATALOG_INVENTORY_NOTE}</p>
+                <h3>Custom nodes</h3>
+                <p>{CATALOG_INVENTORY_NOTE}</p>
                 <h3>Evidence claims</h3>
                 <span>
                   <Icon name={selected.claims.installed === true ? 'check' : 'warning'} />
@@ -362,8 +400,12 @@ export function WorkflowsPage() {
                 </span>
                 <p>
                   Claim flags mean recorded evidence only — false is “not claimed,” not a negative
-                  runtime probe. Model, LoRA, and custom-node inventories are not returned by the
-                  workflow-template list endpoint.
+                  runtime probe. Registered {formatDate(selected.created_at)} · SHA {shortSha(selected.sha256)} ·
+                  manifest {selected.has_manifest ? 'present' : 'not recorded'} · API{' '}
+                  {selected.has_workflow_api ? 'present' : 'not recorded'}
+                  {selected.comfyui_commit?.trim()
+                    ? ` · Comfy ${selected.comfyui_commit.slice(0, 8)}`
+                    : ''}
                 </p>
               </div>
 
@@ -371,7 +413,9 @@ export function WorkflowsPage() {
                 <Icon name={selected.claims.validated === true ? 'check' : 'warning'} />
                 <span>
                   <b>
-                    {claimLabel(selected.claims.validated, 'Validation claim recorded')}
+                    {selected.claims.validated === true
+                      ? 'Manifest structurally valid'
+                      : 'Validation claim not recorded'}
                   </b>
                   <small>
                     {selected.claims.validated === true
@@ -382,6 +426,36 @@ export function WorkflowsPage() {
               </div>
 
               <footer>
+                <Button
+                  icon="eye"
+                  onClick={() =>
+                    setMessage(
+                      JSON.stringify(
+                        {
+                          id: selected.id,
+                          name: selected.name,
+                          version: selected.version,
+                          sha256: selected.sha256,
+                          comfyui_commit: selected.comfyui_commit,
+                          registration_status: selected.registration_status,
+                          has_manifest: selected.has_manifest,
+                          has_workflow_api: selected.has_workflow_api,
+                          benchmark_status: selected.benchmark_status,
+                          benchmark_run_count: selected.benchmark_run_count,
+                          claims: selected.claims,
+                        },
+                        null,
+                        2,
+                      ),
+                    )
+                  }
+                  disabled={busy}
+                >
+                  View manifest
+                </Button>
+                <Button disabled title={ASSIGN_DISABLED_REASON}>
+                  Assign to shot type
+                </Button>
                 <Button disabled title={INSTALL_DISABLED_REASON} icon="download">
                   Install
                 </Button>

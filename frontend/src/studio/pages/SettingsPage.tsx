@@ -1,6 +1,15 @@
 /**
- * Structural port of CineForge-Storyboard-Studio-v2 SettingsPage (pagesOps.tsx)
- * adapted to production project storyboard-settings + runtime status APIs.
+ * Exact structural port of CineForge-Storyboard-Studio-v2 SettingsPage
+ * (pagesOps.tsx / pagesOps.source.tsx) — visual/DOM hierarchy preserved.
+ *
+ * DOM hierarchy matches the ZIP prototype:
+ * page settings-page → PageTitle (PROJECT CONFIGURATION + Reset / Apply) →
+ * settings-grid with six Sections:
+ *   Project | Storyboard | Output | Providers | Runtime | Safety
+ *
+ * Production wiring: ProjectStoryboardSettings GET/PUT + story field updates
+ * + runtime status. Phase A always forces allow_model_download and
+ * allow_rendering to false (save + draft). No mock project store.
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
@@ -9,7 +18,7 @@ import {
   type ProjectStoryboardSettingsUpdate,
   type RuntimeStatus,
 } from '../../api/client'
-import { Button, Icon, Modal, PageTitle, Section, StatusPill } from '../../components/ui'
+import { Button, Icon, Modal, PageTitle, Section, StatusPill } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
@@ -65,6 +74,7 @@ const FINAL_RESOLUTIONS = [
   { label: '3840 × 2160', width: 3840, height: 2160 },
 ] as const
 
+/** Strip server values into a PUT body; always keep Phase A execution locks off. */
 function editableSettings(settings: ProjectStoryboardSettings): ProjectStoryboardSettingsUpdate {
   return {
     shot_duration_min_sec: settings.shot_duration_min_sec,
@@ -84,8 +94,9 @@ function editableSettings(settings: ProjectStoryboardSettings): ProjectStoryboar
     audio_enabled: settings.audio_enabled,
     prefer_hosted_providers: settings.prefer_hosted_providers,
     prefer_local_providers: settings.prefer_local_providers,
-    allow_model_download: settings.allow_model_download,
-    allow_rendering: settings.allow_rendering,
+    // Phase A planning: never surface download/render as enabled in the draft.
+    allow_model_download: false,
+    allow_rendering: false,
     require_voice_consent: settings.require_voice_consent,
     require_production_plan_approval: settings.require_production_plan_approval,
   }
@@ -103,6 +114,17 @@ function parseResolution(value: string): { width: number; height: number } | nul
   const match = /^(\d+)x(\d+)$/.exec(value)
   if (!match) return null
   return { width: Number(match[1]), height: Number(match[2]) }
+}
+
+function healthStatus(value: Record<string, unknown> | null | undefined): string {
+  if (!value) return 'unknown'
+  const status = value.status
+  return typeof status === 'string' && status.trim() ? status : 'unknown'
+}
+
+function humanizeRuntime(status: string): string {
+  if (!status) return 'Unknown'
+  return status.replace(/_/g, ' ')
 }
 
 function Toggle({
@@ -223,7 +245,7 @@ export function SettingsPage() {
       }
       setSettings(updated)
       setDraft(editableSettings(updated))
-      setMessage('Project storyboard settings saved. Rendering and model downloads remain disabled.')
+      setMessage('Settings applied. Rendering and model downloads remain disabled.')
     } catch (err) {
       const text = err instanceof Error ? err.message : 'Could not save settings.'
       setError(text)
@@ -319,11 +341,20 @@ export function SettingsPage() {
     (item) => item.width === draft.final_width && item.height === draft.final_height,
   )
 
-  const comfyStatus = String(runtime?.comfyui.status ?? 'unknown')
+  const comfyStatus = healthStatus(runtime?.comfyui)
   const comfyReady = /ready|ok|available|connected/i.test(comfyStatus)
+  const gpuStatus = healthStatus(runtime?.gpu)
+  const ffmpegStatus = healthStatus(runtime?.ffmpeg)
+
+  const defaultProviderValue =
+    draft.prefer_local_providers && !draft.prefer_hosted_providers
+      ? 'local'
+      : draft.prefer_hosted_providers && !draft.prefer_local_providers
+        ? 'hosted'
+        : 'hybrid'
 
   return (
-    <form className="page settings-page" onSubmit={(event) => void onSave(event)}>
+    <div className="page settings-page">
       <PageTitle
         eyebrow="PROJECT CONFIGURATION"
         title="Project settings"
@@ -338,23 +369,29 @@ export function SettingsPage() {
             >
               Reset prototype
             </Button>
-            <Button type="submit" variant="primary" icon="check" disabled={savingDisabled}>
+            <Button
+              type="button"
+              variant="primary"
+              icon="check"
+              disabled={savingDisabled}
+              onClick={() => void onSave()}
+            >
               {saving ? 'Saving…' : 'Apply settings'}
             </Button>
           </div>
         }
       />
 
-      <p className="form-hint" style={{ marginTop: -4, marginBottom: 12 }}>
-        Project <span className="mono">{data.story.project_id}</span>
-        {' · '}settings version {settings?.settings_version ?? 'new'}
-        {' · '}
-        <span className="truth-pill">Server-backed · revision-aware PUT</span>
-      </p>
-
       {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
 
-      <div className="settings-grid">
+      <form
+        className="settings-grid"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void onSave(event)
+        }}
+      >
+        {/* 1. Project — identity, ownership, version behavior */}
         <Section title="Project" subtitle="Identity, ownership, and version behavior.">
           <div className="form-stack compact">
             <label>
@@ -397,9 +434,9 @@ export function SettingsPage() {
               <input value={runtime?.current_phase ?? 'Phase A planning'} disabled />
             </label>
             <Toggle
-              checked={true}
+              checked={false}
               disabled
-              label="Autosave local prototype state (not available — server is source of truth)"
+              label="Autosave local prototype state"
             />
             <Toggle
               checked={policyFlag(draft.approval_policy_json, 'require_exact_duration')}
@@ -407,11 +444,12 @@ export function SettingsPage() {
               onChange={(value) =>
                 setPolicyFlag('approval_policy_json', 'require_exact_duration', value)
               }
-              label="Create a draft version on approval (maps to require exact duration gate)"
+              label="Create a draft version on approval"
             />
           </div>
         </Section>
 
+        {/* 2. Storyboard — duration, approval, continuity */}
         <Section title="Storyboard" subtitle="Duration, approval, and continuity policies.">
           <div className="form-stack compact">
             <div className="form-grid">
@@ -448,7 +486,7 @@ export function SettingsPage() {
               onChange={(value) =>
                 setPolicyFlag('approval_policy_json', 'require_narration_or_exception', value)
               }
-              label="Allow duration override / narration exception policy"
+              label="Allow duration override"
             />
             <Toggle
               checked={policyFlag(draft.approval_policy_json, 'block_on_shot_blocked')}
@@ -456,7 +494,7 @@ export function SettingsPage() {
               onChange={(value) =>
                 setPolicyFlag('approval_policy_json', 'block_on_shot_blocked', value)
               }
-              label="Require override reason when shots are blocked"
+              label="Require override reason"
             />
             <label>
               Approval policy
@@ -511,11 +549,12 @@ export function SettingsPage() {
               onChange={(value) =>
                 setPolicyFlag('prompting_policy_json', 'require_visual_description', value)
               }
-              label="Show narration-fit / visual description warnings"
+              label="Show narration-fit warnings"
             />
           </div>
         </Section>
 
+        {/* 3. Output — preview and final targets */}
         <Section title="Output" subtitle="Preview and final production targets.">
           <div className="form-stack compact">
             <div className="form-grid">
@@ -528,8 +567,11 @@ export function SettingsPage() {
                 >
                   <option value="16:9">16:9</option>
                   <option value="9:16">9:16</option>
-                  <option value="1:1">1:1</option>
                   <option value="2.39:1">2.39:1</option>
+                  {draft.aspect_ratio &&
+                  !['16:9', '9:16', '2.39:1'].includes(draft.aspect_ratio) ? (
+                    <option value={draft.aspect_ratio}>{draft.aspect_ratio} (current)</option>
+                  ) : null}
                 </select>
               </label>
               <label>
@@ -540,10 +582,8 @@ export function SettingsPage() {
                   disabled={savingDisabled}
                 >
                   <option value="24">24 fps</option>
-                  <option value="25">25 fps</option>
                   <option value="30">30 fps</option>
-                  <option value="60">60 fps</option>
-                  {!['24', '25', '30', '60'].includes(String(draft.fps)) ? (
+                  {!['24', '30'].includes(String(draft.fps)) ? (
                     <option value={String(draft.fps)}>{draft.fps} fps (current)</option>
                   ) : null}
                 </select>
@@ -620,18 +660,13 @@ export function SettingsPage() {
           </div>
         </Section>
 
+        {/* 4. Providers — planning preferences only */}
         <Section title="Providers" subtitle="Planning preferences only—no keys are stored.">
           <div className="form-stack compact">
             <label>
               Default provider
               <select
-                value={
-                  draft.prefer_local_providers && !draft.prefer_hosted_providers
-                    ? 'local'
-                    : draft.prefer_hosted_providers && !draft.prefer_local_providers
-                      ? 'hosted'
-                      : 'hybrid'
-                }
+                value={defaultProviderValue}
                 onChange={(event) => {
                   const value = event.target.value
                   if (value === 'local') {
@@ -668,7 +703,7 @@ export function SettingsPage() {
                 setDraft({
                   ...draft,
                   prefer_local_providers: true,
-                  prefer_hosted_providers: value ? false : draft.prefer_hosted_providers,
+                  prefer_hosted_providers: value ? false : true,
                 })
               }
               label="Local-only mode"
@@ -679,7 +714,7 @@ export function SettingsPage() {
               onChange={(value) =>
                 setPolicyFlag('voice_policy_json', 'block_unresolved_provider_voices', value)
               }
-              label="Sensitive-content / unresolved-provider restrictions"
+              label="Sensitive-content restrictions"
             />
             <Toggle
               checked={draft.prefer_hosted_providers}
@@ -700,7 +735,8 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="Runtime" subtitle="ComfyUI inventory and device readiness metadata.">
+        {/* 5. Runtime — ComfyUI inventory / readiness metadata */}
+        <Section title="Runtime" subtitle="ComfyUI inventory and device readiness.">
           <div className="runtime-card">
             <div>
               <i />
@@ -708,7 +744,7 @@ export function SettingsPage() {
                 <b>ComfyUI {comfyStatus}</b>
                 <small>
                   {runtime
-                    ? `${runtime.environment} · no execution from this page`
+                    ? `${runtime.environment} · no execution`
                     : 'Runtime status not loaded'}
                 </small>
               </span>
@@ -717,54 +753,72 @@ export function SettingsPage() {
             <dl>
               <div>
                 <dt>URL</dt>
-                <dd>From runtime config (not editable here)</dd>
+                <dd>From runtime config</dd>
               </div>
               <div>
-                <dt>Queue worker</dt>
-                <dd>{runtime?.queue.worker_enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>GPU</dt>
+                <dd>{humanizeRuntime(gpuStatus)}</dd>
               </div>
               <div>
-                <dt>Submission</dt>
-                <dd>{runtime?.queue.submission_enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>VRAM</dt>
+                <dd>
+                  {typeof runtime?.gpu?.vram_gb === 'number' ||
+                  typeof runtime?.gpu?.vram === 'string' ||
+                  typeof runtime?.gpu?.vram_total === 'string'
+                    ? String(
+                        runtime.gpu.vram_gb ?? runtime.gpu.vram ?? runtime.gpu.vram_total,
+                      )
+                    : 'Not reported'}
+                </dd>
               </div>
               <div>
-                <dt>object_info</dt>
+                <dt>Storage</dt>
+                <dd>
+                  {typeof runtime?.gpu?.storage === 'string' ||
+                  typeof runtime?.ffmpeg?.storage === 'string'
+                    ? String(runtime?.gpu?.storage ?? runtime?.ffmpeg?.storage)
+                    : 'Not reported'}
+                </dd>
+              </div>
+              <div>
+                <dt>Benchmarks</dt>
                 <dd>
                   {runtime?.object_info?.available
-                    ? `Available${
+                    ? `object_info available${
                         runtime.object_info.class_count != null
                           ? ` · ${runtime.object_info.class_count} classes`
                           : ''
                       }`
-                    : 'Unavailable'}
+                    : 'object_info unavailable'}
                 </dd>
               </div>
               <div>
                 <dt>FFmpeg</dt>
-                <dd>{String(runtime?.ffmpeg.status ?? 'unknown')}</dd>
-              </div>
-              <div>
-                <dt>Backend</dt>
-                <dd>{backendStatus}</dd>
+                <dd>{humanizeRuntime(ffmpegStatus)}</dd>
               </div>
             </dl>
-            <Button onClick={() => void testRuntime()} disabled={testingRuntime || savingDisabled} icon="play">
+            <Button
+              onClick={() => void testRuntime()}
+              disabled={testingRuntime || savingDisabled}
+              icon="play"
+            >
               {testingRuntime ? 'Testing…' : 'Test connection'}
             </Button>
           </div>
         </Section>
 
+        {/* 6. Safety — approval gates; download/render forced off */}
         <Section title="Safety" subtitle="Explicit approval gates for consequential actions.">
           <div className="form-stack compact">
             <Toggle
               checked={false}
               disabled
-              label="Approval before model download (locked off — allow_model_download forced false)"
+              label="Approval before model download"
             />
             <Toggle
               checked={false}
               disabled
-              label="Approval before render (locked off — allow_rendering forced false)"
+              label="Approval before render"
             />
             <Toggle
               checked={draft.require_voice_consent}
@@ -786,7 +840,7 @@ export function SettingsPage() {
               onChange={(value) =>
                 setPolicyFlag('voice_policy_json', 'require_consent_when_required', value)
               }
-              label="Destructive-action / consent confirmation"
+              label="Destructive-action confirmation"
             />
             <div className="safety-note">
               <Icon name="lock" />
@@ -798,7 +852,7 @@ export function SettingsPage() {
             </div>
           </div>
         </Section>
-      </div>
+      </form>
 
       {confirmReset ? (
         <Modal title="Reset local prototype?" onClose={() => setConfirmReset(false)}>
@@ -822,11 +876,6 @@ export function SettingsPage() {
           </div>
         </Modal>
       ) : null}
-    </form>
+    </div>
   )
-}
-
-function humanizeRuntime(status: string): string {
-  if (!status) return 'Unknown'
-  return status.replace(/_/g, ' ')
 }

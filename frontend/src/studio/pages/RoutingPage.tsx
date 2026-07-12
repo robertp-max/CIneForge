@@ -1,6 +1,25 @@
 /**
- * Structural port of CineForge-Storyboard-Studio-v2 RoutingPage (pagesOps.tsx)
- * adapted to production studio context + real provider/routing APIs.
+ * Exact structural port of CineForge-Storyboard-Studio-v2 RoutingPage (pagesOps.tsx)
+ * adapted to production studio context + real provider profiles / task assignments.
+ *
+ * Screenshot reference: 2026-07-11 172754.png (Model routing).
+ *
+ * DOM hierarchy matches the ZIP prototype:
+ * page-title (MODEL ORCHESTRATION / Model routing) →
+ * routing-controls (mode · default provider · default model · privacy · speed · cost) →
+ * optional test-result →
+ * provider-grid tiles →
+ * routing-layout → Task-routing matrix | route-detail (ROUTE DETAIL).
+ *
+ * Capabilities (Worker B / T07):
+ * - Provider profile CRUD via storyboard-crud APIs
+ * - Task-provider assignment CRUD
+ * - validateStoryRouting preflight (non-mutating)
+ * - connection-test only when catalog advertises connection_test_supported
+ * - All interactive controls use type="button" (submit only for profile form)
+ *
+ * Availability pills use backend evidence only — never invent "Connected".
+ * Credentials are never requested or stored here.
  */
 import {
   useCallback,
@@ -22,10 +41,11 @@ import {
   type TaskProviderAssignment,
 } from '../../api/client'
 import { formatDate } from '../../components/formatDate'
-import { Button, Icon, PageTitle, Section, StatusPill } from '../../components/ui'
+import { Button, Icon, PageTitle, Section, StatusPill } from '../proto/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
+/** Production planning task rows with logical Sol/Terra/Luna defaults (not prototype labels). */
 const TASK_PROFILE_MAP: ReadonlyArray<{
   task: PlanningTaskType
   label: string
@@ -58,16 +78,23 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+/** Title-case backend snake/space tokens for display — never remaps to Connected. */
+function humanizeStatus(status: string | null | undefined): string {
+  if (!status || !status.trim()) return 'Unknown'
+  return status
+    .replace(/_/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
 function capabilityLabels(profile: ProviderProfile): string {
   const declared =
     profile.capabilities_json.declared_capabilities ?? profile.capabilities_json.capabilities
   return Array.isArray(declared) && declared.length
     ? declared.map(String).join(', ')
     : 'No declared capabilities'
-}
-
-function humanizeStatus(status: string): string {
-  return status.replace(/_/g, ' ')
 }
 
 function privacyLabel(value: string | null | undefined): string {
@@ -90,6 +117,33 @@ function applyPrivacyPreference(value: string): { preferLocal: boolean; preferHo
   return { preferLocal: true, preferHosted: true }
 }
 
+/** Mode pill for matrix — factual assignment_mode only (Auto/Manual/Default/Suggested). */
+function modeLabel(mode: string | null | undefined, hasProfile: boolean): string {
+  if (!mode) return hasProfile ? 'Draft' : 'Unassigned'
+  const m = mode.toLowerCase()
+  if (m === 'manual') return 'Manual'
+  if (m === 'default' || m === 'auto' || m === 'automatic') return 'Auto'
+  if (m === 'suggested') return 'Suggested'
+  return humanizeStatus(mode)
+}
+
+/**
+ * Availability display from backend evidence only.
+ * Never invent "Connected" — that was prototype mock chrome.
+ */
+function availabilityLabel(status: string | null | undefined): string {
+  if (!status || !status.trim()) return 'Unknown'
+  return humanizeStatus(status.trim())
+}
+
+function providerNote(profile: ProviderProfile, catalog?: ProviderCatalogEntry): string {
+  const privacy = privacyLabel(profile.privacy_classification)
+  const model = profile.provider_model_id?.trim() || 'No model'
+  const detail = catalog?.detail?.trim()
+  if (detail) return `${privacy} · ${model} · ${detail}`
+  return `${profile.provider_identifier} · ${privacy} · ${model}`
+}
+
 export function RoutingPage() {
   const { data, busy, reload, setMessage } = useStudio()
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
@@ -105,16 +159,28 @@ export function RoutingPage() {
   const [preferLocal, setPreferLocal] = useState(true)
   const [preferHosted, setPreferHosted] = useState(false)
   const [routingMode, setRoutingMode] = useState<OrchestrationRoutingMode>('hybrid')
+  const [defaultProfileId, setDefaultProfileId] = useState('')
+  const [speedPreference, setSpeedPreference] = useState('Quality weighted')
+  const [costSensitivity, setCostSensitivity] = useState('Balanced')
   const [routeDrafts, setRouteDrafts] = useState<Record<string, RouteDraft>>({})
   const [drawer, setDrawer] = useState<DrawerFocus>({ kind: 'task', task: 'story_structure' })
   const [preflight, setPreflight] = useState<RoutingPreflightResponse | null>(null)
   const [lastConnectionNote, setLastConnectionNote] = useState<string | null>(null)
 
-  const profilesById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles])
+  const profilesById = useMemo(
+    () => new Map(profiles.map((profile) => [profile.id, profile])),
+    [profiles],
+  )
   const catalogByIdentifier = useMemo(
     () => new Map(providerCatalog.map((entry) => [entry.provider_identifier, entry])),
     [providerCatalog],
   )
+  const modelOptions = useMemo(() => {
+    const models = profiles
+      .map((p) => p.provider_model_id?.trim())
+      .filter((m): m is string => Boolean(m))
+    return Array.from(new Set(models))
+  }, [profiles])
 
   const load = useCallback(async () => {
     if (!data) return
@@ -137,6 +203,12 @@ export function RoutingPage() {
         setPreferLocal(settingsResult.prefer_local_providers)
         setPreferHosted(settingsResult.prefer_hosted_providers)
       }
+      setDefaultProfileId((current) => {
+        if (current && profileResult.some((p) => p.id === current)) return current
+        const firstAssigned = assignmentResult.find((a) => a.enabled)?.provider_profile_id
+        if (firstAssigned && profileResult.some((p) => p.id === firstAssigned)) return firstAssigned
+        return profileResult[0]?.id ?? ''
+      })
     } catch (err) {
       setError(errorText(err, 'Failed to load routing configuration.'))
     } finally {
@@ -213,6 +285,7 @@ export function RoutingPage() {
           availability_status: 'unknown',
         })
         setDrawer({ kind: 'profile', profileId: created.id })
+        setDefaultProfileId(created.id)
         setMessage(`Provider profile “${displayName}” created with availability Unknown.`)
       }
       await load()
@@ -265,16 +338,17 @@ export function RoutingPage() {
     }))
   }
 
-  const onSaveAssignment = async (task: PlanningTaskType) => {
+  const onSaveAssignment = async (task: PlanningTaskType, profileOverride?: string) => {
     const draft = routeDrafts[task] ?? getDraft(task)
-    if (!draft.providerProfileId) return
+    const providerProfileId = (profileOverride || draft.providerProfileId).trim()
+    if (!providerProfileId) return
     const existing = assignments.find((assignment) => assignment.task_type === task)
     setSaving(true)
     setError(null)
     try {
       if (existing) {
         await api.updateTaskProviderAssignment(existing.id, {
-          provider_profile_id: draft.providerProfileId,
+          provider_profile_id: providerProfileId,
           assignment_mode: 'manual',
           rationale: draft.rationale.trim() || null,
           enabled: draft.enabled,
@@ -282,13 +356,21 @@ export function RoutingPage() {
       } else {
         await api.createTaskProviderAssignment(data.story.id, {
           task_type: task,
-          provider_profile_id: draft.providerProfileId,
+          provider_profile_id: providerProfileId,
           assignment_mode: 'manual',
           rationale: draft.rationale.trim() || null,
           enabled: draft.enabled,
           priority: 0,
         })
       }
+      setRouteDrafts((current) => ({
+        ...current,
+        [task]: {
+          providerProfileId,
+          enabled: draft.enabled,
+          rationale: draft.rationale,
+        },
+      }))
       await Promise.all([load(), reload()])
       setMessage(`Saved the ${task} provider assignment.`)
     } catch (err) {
@@ -298,6 +380,12 @@ export function RoutingPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const onOverrideRouting = async () => {
+    const profileId = (getDraft(selectedTask).providerProfileId || defaultProfileId).trim()
+    if (!profileId) return
+    await onSaveAssignment(selectedTask, profileId)
   }
 
   const onDeleteAssignment = async (assignment: TaskProviderAssignment) => {
@@ -316,9 +404,9 @@ export function RoutingPage() {
     }
   }
 
-  const onSavePreferences = async () => {
+  const onSavePreferences = async (nextPreferLocal = preferLocal, nextPreferHosted = preferHosted) => {
     if (!settings) return
-    if (!preferLocal && !preferHosted) {
+    if (!nextPreferLocal && !nextPreferHosted) {
       setError('At least one provider privacy preference must remain enabled.')
       return
     }
@@ -341,8 +429,8 @@ export function RoutingPage() {
         fps: settings.fps,
         captions_enabled: settings.captions_enabled,
         audio_enabled: settings.audio_enabled,
-        prefer_hosted_providers: preferHosted,
-        prefer_local_providers: preferLocal,
+        prefer_hosted_providers: nextPreferHosted,
+        prefer_local_providers: nextPreferLocal,
         allow_model_download: settings.allow_model_download,
         allow_rendering: settings.allow_rendering,
         require_voice_consent: settings.require_voice_consent,
@@ -355,6 +443,8 @@ export function RoutingPage() {
         return
       }
       setSettings(result)
+      setPreferLocal(result.prefer_local_providers)
+      setPreferHosted(result.prefer_hosted_providers)
       setMessage('Provider privacy preferences saved without probing or contacting a provider.')
     } catch (err) {
       const text = errorText(err, 'Could not save provider privacy preferences.')
@@ -422,10 +512,26 @@ export function RoutingPage() {
     setRoutingTestBusy(true)
     setError(null)
     try {
+      const manualRoutes = TASK_PROFILE_MAP.flatMap((row) => {
+        const draft = getDraft(row.task)
+        if (!draft.enabled || !draft.providerProfileId) return []
+        const profile = profilesById.get(draft.providerProfileId)
+        if (!profile) return []
+        return [
+          {
+            task_type: row.task,
+            provider_identifier: profile.provider_identifier,
+            logical_model: row.logicalProfile.toLowerCase() as 'luna' | 'terra' | 'sol',
+            resolved_model: profile.provider_model_id,
+            rationale: draft.rationale.trim() || row.description,
+          },
+        ]
+      })
       const result = await api.validateStoryRouting(data.story.id, {
         routing_mode: routingMode,
         prefer_local_providers: preferLocal,
         prefer_hosted_providers: preferHosted,
+        manual_routes: routingMode === 'automatic' ? [] : manualRoutes,
       })
       setPreflight(result)
       const gapCount = result.errors.length + result.warnings.length
@@ -463,12 +569,17 @@ export function RoutingPage() {
     : null
   const connectionSupport = connectionSupportFor(selectedProfile)
   const disabled = loading || busy || saving || testingConnection || routingTestBusy
+  const defaultProfile = defaultProfileId ? profilesById.get(defaultProfileId) ?? null : null
+  const canOverride =
+    Boolean(selectedDraft.providerProfileId || defaultProfileId) && profiles.length > 0
 
+  /** Provider tiles: production profiles first; catalog fallback. Real availability only. */
   const providerCards: Array<{
     key: string
     name: string
     note: string
     status: string
+    selected: boolean
     onClick: () => void
   }> = profiles.length
     ? profiles.map((profile) => {
@@ -476,19 +587,22 @@ export function RoutingPage() {
         return {
           key: profile.id,
           name: profile.display_name,
-          note: `${profile.provider_identifier} · ${privacyLabel(profile.privacy_classification)} · ${profile.provider_model_id ?? 'No model'}`,
+          note: providerNote(profile, catalogEntry),
           status: profile.availability_status || catalogEntry?.availability_status || 'unknown',
+          selected: drawer.kind === 'profile' && drawer.profileId === profile.id,
           onClick: () => {
             setDrawer({ kind: 'profile', profileId: profile.id })
             setLastConnectionNote(null)
+            setDefaultProfileId(profile.id)
           },
         }
       })
     : providerCatalog.map((entry) => ({
         key: entry.provider_identifier,
         name: entry.display_name,
-        note: `${entry.provider_identifier} · ${privacyLabel(entry.privacy_classification)} · ${entry.detail}`,
+        note: `${privacyLabel(entry.privacy_classification)} · ${entry.detail || entry.provider_identifier}`,
         status: entry.availability_status || 'unknown',
+        selected: false,
         onClick: () => {
           setMessage(
             `Catalog entry “${entry.display_name}” has no saved provider profile yet. Create a profile to assign routes.`,
@@ -496,6 +610,13 @@ export function RoutingPage() {
           resetProfileForm()
         },
       }))
+
+  const whyRoute =
+    selectedDraft.rationale.trim() ||
+    selectedTaskMeta?.description ||
+    'No rationale recorded for this route'
+
+  const newProfileSelected = drawer.kind === 'profile' && drawer.profileId == null
 
   return (
     <div className="page">
@@ -506,6 +627,7 @@ export function RoutingPage() {
         aside={
           <div className="page-actions">
             <Button
+              type="button"
               onClick={() =>
                 setMessage(
                   'Privacy boundary: Provider connections, availability, speed, and cost are planning metadata or backend evidence only. This page never stores secrets and only runs connection tests when the catalog advertises support.',
@@ -515,10 +637,8 @@ export function RoutingPage() {
             >
               Privacy boundary
             </Button>
-            <Button onClick={() => void load()} disabled={disabled} icon="clock">
-              Refresh
-            </Button>
             <Button
+              type="button"
               variant="primary"
               icon="play"
               onClick={() => void onRunRoutingTest()}
@@ -534,26 +654,68 @@ export function RoutingPage() {
       {loading ? <LoadingState title="Loading routing records…" /> : null}
       {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
 
+      {/* Exact control order from pagesOps RoutingPage / screenshot 172754 */}
       <div className="routing-controls">
         <label>
           Orchestration mode
-          <div className="segmented">
-            {([
-              ['automatic', 'Automatic'],
-              ['hybrid', 'Hybrid'],
-              ['manual', 'Manual'],
-            ] as const).map(([value, label]) => (
+          <div className="segmented" role="group" aria-label="Orchestration mode">
+            {(
+              [
+                ['automatic', 'Automatic'],
+                ['hybrid', 'Hybrid'],
+                ['manual', 'Manual'],
+              ] as const
+            ).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
                 className={routingMode === value ? 'active' : ''}
                 onClick={() => setRoutingMode(value)}
                 disabled={disabled}
+                aria-pressed={routingMode === value}
               >
                 {label}
               </button>
             ))}
           </div>
+        </label>
+        <label>
+          Default orchestrator provider
+          <select
+            value={defaultProfileId}
+            onChange={(event) => setDefaultProfileId(event.target.value)}
+            disabled={disabled || !profiles.length}
+            title={
+              profiles.length
+                ? 'Selects the preferred provider profile for new manual overrides.'
+                : 'No saved provider profiles yet.'
+            }
+          >
+            {!profiles.length ? <option value="">No profiles</option> : null}
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Default orchestrator model
+          <select
+            value={defaultProfile?.provider_model_id ?? ''}
+            disabled
+            title="Model is stored on the selected provider profile."
+          >
+            <option value="">
+              {defaultProfile?.provider_model_id?.trim() ||
+                (modelOptions[0] ?? 'From provider profiles')}
+            </option>
+            {defaultProfile?.provider_model_id ? (
+              <option value={defaultProfile.provider_model_id}>
+                {defaultProfile.provider_model_id}
+              </option>
+            ) : null}
+          </select>
         </label>
         <label>
           Privacy preference
@@ -563,6 +725,7 @@ export function RoutingPage() {
               const next = applyPrivacyPreference(event.target.value)
               setPreferLocal(next.preferLocal)
               setPreferHosted(next.preferHosted)
+              if (settings) void onSavePreferences(next.preferLocal, next.preferHosted)
             }}
             disabled={disabled || !settings}
           >
@@ -572,58 +735,49 @@ export function RoutingPage() {
           </select>
         </label>
         <label>
-          Default orchestrator provider
-          <select disabled title="No project-level default orchestrator field is stored; use per-task assignments.">
-            <option>Per-task assignment</option>
-          </select>
-        </label>
-        <label>
-          Default orchestrator model
-          <select disabled title="No project-level default orchestrator model field is stored; use provider profiles.">
-            <option>From provider profiles</option>
-          </select>
-        </label>
-        <label>
           Speed vs quality
-          <select disabled title="Backend does not expose speed/quality routing preferences.">
-            <option>Not recorded</option>
+          <select
+            value={speedPreference}
+            onChange={(event) => setSpeedPreference(event.target.value)}
+            disabled={disabled}
+            title="Session planning preference only — not stored on the backend."
+          >
+            <option>Quality weighted</option>
+            <option>Balanced</option>
+            <option>Speed weighted</option>
           </select>
         </label>
         <label>
           Cost sensitivity
-          <select disabled title="Backend does not expose cost-sensitivity routing preferences.">
-            <option>Not recorded</option>
+          <select
+            value={costSensitivity}
+            onChange={(event) => setCostSensitivity(event.target.value)}
+            disabled={disabled}
+            title="Session planning preference only — not stored on the backend."
+          >
+            <option>Balanced</option>
+            <option>Cost sensitive</option>
+            <option>Quality first</option>
           </select>
         </label>
       </div>
 
-      <div className="page-actions" style={{ marginBottom: 10 }}>
-        <Button
-          variant="primary"
-          onClick={() => void onSavePreferences()}
-          disabled={disabled || !settings || (!preferLocal && !preferHosted)}
-          title={
-            settingsAvailable
-              ? 'Persist privacy preferences for this project.'
-              : 'Project settings API unavailable.'
-          }
-        >
-          Save privacy preference
-        </Button>
-        {!settingsAvailable && !loading ? (
-          <span className="form-hint">Project settings unavailable — privacy preference not persisted.</span>
-        ) : null}
-      </div>
+      {!settingsAvailable && !loading ? (
+        <p className="form-hint" style={{ marginBottom: 8 }}>
+          Project settings unavailable — privacy preference not persisted.
+        </p>
+      ) : null}
 
       {preflight ? (
         <div className="test-result">
           <Icon name="check" />
           <span>
             <b>
-              Routing preflight {preflight.valid ? 'passed' : 'failed'} · mode {preflight.effective_mode}
+              Routing preflight {preflight.valid ? 'passed' : 'failed'}
+              {preflight.warnings.length ? ' with warnings' : ''} · mode {preflight.effective_mode}
             </b>
             <small>
-              {preflight.routes.length} route(s) · {preflight.errors.length} error(s) ·{' '}
+              {preflight.routes.length} task route(s) available · {preflight.errors.length} error(s) ·{' '}
               {preflight.warnings.length} warning(s)
               {preflight.errors[0] ? ` · ${preflight.errors[0].message}` : ''}
               {preflight.warnings[0] && !preflight.errors[0]
@@ -640,24 +794,37 @@ export function RoutingPage() {
       {!profiles.length && !providerCatalog.length && !loading ? (
         <EmptyState
           title="No provider profiles"
-          detail="Create a disabled or manually controlled provider record. Availability begins Unknown."
+          detail="Create a disabled or manually controlled provider record. Availability begins Unknown — never Connected unless the backend reports it."
         />
       ) : null}
 
-      {providerCards.length ? (
+      {providerCards.length || !loading ? (
         <div className="provider-grid">
           {providerCards.map((card, index) => (
-            <button key={card.key} type="button" onClick={card.onClick} disabled={disabled}>
+            <button
+              key={card.key}
+              type="button"
+              className={card.selected ? 'selected' : ''}
+              onClick={card.onClick}
+              disabled={disabled}
+              aria-pressed={card.selected}
+            >
               <span className={`provider-logo provider-${index % 6}`}>{card.name.charAt(0)}</span>
               <span>
                 <b>{card.name}</b>
                 <small>{card.note}</small>
               </span>
-              <StatusPill status={humanizeStatus(card.status)} />
+              <StatusPill status={availabilityLabel(card.status)} />
               <Icon name="chevron" />
             </button>
           ))}
-          <button type="button" onClick={resetProfileForm} disabled={disabled}>
+          <button
+            type="button"
+            className={newProfileSelected ? 'selected' : ''}
+            onClick={resetProfileForm}
+            disabled={disabled}
+            aria-pressed={newProfileSelected}
+          >
             <span className="provider-logo provider-0">+</span>
             <span>
               <b>New profile</b>
@@ -672,18 +839,18 @@ export function RoutingPage() {
       <div className="routing-layout">
         <Section
           title="Task-routing matrix"
-          subtitle="Recommendations remain editable per task. Sol, Terra, and Luna remain logical defaults."
+          subtitle="Recommendations remain editable per task."
           className="routing-table-panel"
         >
-          <div className="data-table routing-table">
-            <div className="table-head">
-              <span>Task</span>
-              <span>Provider / model</span>
-              <span>Mode</span>
-              <span>Privacy</span>
-              <span>Speed</span>
-              <span>Usage</span>
-              <span>Status</span>
+          <div className="data-table routing-table" role="table" aria-label="Task-routing matrix">
+            <div className="table-head" role="row">
+              <span role="columnheader">Task</span>
+              <span role="columnheader">Provider / model</span>
+              <span role="columnheader">Mode</span>
+              <span role="columnheader">Privacy</span>
+              <span role="columnheader">Speed</span>
+              <span role="columnheader">Usage</span>
+              <span role="columnheader">Status</span>
             </div>
             {TASK_PROFILE_MAP.map((row) => {
               const assignment = assignments.find((item) => item.task_type === row.task)
@@ -691,8 +858,8 @@ export function RoutingPage() {
               const profile = draft.providerProfileId
                 ? profilesById.get(draft.providerProfileId) ?? null
                 : null
-              const status = profile?.availability_status ?? 'unassigned'
-              const mode = assignment?.assignment_mode ?? (draft.providerProfileId ? 'draft' : 'unassigned')
+              const status = profile?.availability_status ?? ''
+              const mode = modeLabel(assignment?.assignment_mode, Boolean(draft.providerProfileId))
               const selected = drawer.kind === 'task' && drawer.task === row.task
               return (
                 <div
@@ -702,6 +869,7 @@ export function RoutingPage() {
                   className={`data-row${selected ? ' selected' : ''}`}
                   onClick={() => selectTask(row.task)}
                   onKeyDown={(event) => onTaskKeyDown(event, row.task)}
+                  aria-pressed={selected}
                 >
                   <span>
                     <b>{row.label}</b>
@@ -724,7 +892,7 @@ export function RoutingPage() {
                       <option value="">Unassigned</option>
                       {profiles.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.display_name} · {item.availability_status}
+                          {item.display_name}
                         </option>
                       ))}
                     </select>
@@ -737,15 +905,17 @@ export function RoutingPage() {
                     />
                   </span>
                   <span>
-                    <StatusPill status={humanizeStatus(mode)} />
+                    <StatusPill status={mode} />
                   </span>
                   <span>{privacyLabel(profile?.privacy_classification)}</span>
-                  <span title="Backend does not expose estimated speed for planning routes.">—</span>
-                  <span title="Backend does not expose usage/cost indicators for planning routes.">—</span>
+                  <span title="Backend does not expose estimated speed for planning routes.">
+                    Not recorded
+                  </span>
+                  <span title="Backend does not expose usage/cost indicators for planning routes.">
+                    Not recorded
+                  </span>
                   <span>
-                    <StatusPill
-                      status={status === 'unassigned' ? 'Draft' : humanizeStatus(status)}
-                    />
+                    <StatusPill status={!profile ? 'Draft' : availabilityLabel(status)} />
                   </span>
                 </div>
               )
@@ -753,7 +923,7 @@ export function RoutingPage() {
           </div>
         </Section>
 
-        <aside className="route-detail">
+        <aside className="route-detail" aria-label="Route or provider detail">
           {drawer.kind === 'task' && selectedTaskMeta ? (
             <>
               <header>
@@ -777,8 +947,10 @@ export function RoutingPage() {
                 <div>
                   <dt>Control</dt>
                   <dd>
-                    {selectedAssignment?.assignment_mode ??
-                      (selectedDraft.providerProfileId ? 'draft (unsaved)' : 'unassigned')}
+                    {modeLabel(
+                      selectedAssignment?.assignment_mode,
+                      Boolean(selectedDraft.providerProfileId),
+                    )}
                   </dd>
                 </div>
                 <div>
@@ -789,7 +961,9 @@ export function RoutingPage() {
                   <dt>Availability</dt>
                   <dd>
                     {selectedRouteProfile ? (
-                      <StatusPill status={humanizeStatus(selectedRouteProfile.availability_status)} />
+                      <StatusPill
+                        status={availabilityLabel(selectedRouteProfile.availability_status)}
+                      />
                     ) : (
                       <StatusPill status="Draft" />
                     )}
@@ -808,9 +982,8 @@ export function RoutingPage() {
                 <Icon name="spark" />
                 <p>
                   <b>Why this route</b>
-                  {selectedDraft.rationale.trim() || selectedTaskMeta.description}. Logical default:{' '}
-                  {selectedTaskMeta.logicalProfile}. CineForge validates returned structure before storing
-                  it.
+                  {whyRoute}. Logical default: {selectedTaskMeta.logicalProfile}. CineForge
+                  validates returned structure before storing it.
                 </p>
               </div>
               <label className="form-hint" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -837,14 +1010,21 @@ export function RoutingPage() {
               </label>
               <div className="page-actions" style={{ marginTop: 12 }}>
                 <Button
+                  type="button"
                   variant="primary"
-                  onClick={() => void onSaveAssignment(selectedTask)}
-                  disabled={disabled || !selectedDraft.providerProfileId}
+                  onClick={() => void onOverrideRouting()}
+                  disabled={disabled || !canOverride}
+                  title={
+                    canOverride
+                      ? 'Persist a manual task-provider assignment for this route.'
+                      : 'Select or create a provider profile first.'
+                  }
                 >
                   Override routing
                 </Button>
                 {selectedAssignment ? (
                   <Button
+                    type="button"
                     variant="danger"
                     onClick={() => void onDeleteAssignment(selectedAssignment)}
                     disabled={disabled}
@@ -854,6 +1034,7 @@ export function RoutingPage() {
                 ) : null}
                 {selectedRouteProfile ? (
                   <Button
+                    type="button"
                     variant="secondary"
                     onClick={() =>
                       setDrawer({ kind: 'profile', profileId: selectedRouteProfile.id })
@@ -885,7 +1066,8 @@ export function RoutingPage() {
                 </div>
               </header>
               <p className="form-hint">
-                Availability remains factual backend evidence and is not editable here.
+                Availability remains factual backend evidence and is not editable here. New profiles
+                start as Unknown — never Connected.
               </p>
               <label>
                 Provider identifier
@@ -960,7 +1142,9 @@ export function RoutingPage() {
                   <div>
                     <dt>Availability</dt>
                     <dd>
-                      <StatusPill status={humanizeStatus(selectedProfile.availability_status)} />
+                      <StatusPill
+                        status={availabilityLabel(selectedProfile.availability_status)}
+                      />
                     </dd>
                   </div>
                   <div>
@@ -990,12 +1174,18 @@ export function RoutingPage() {
                   {saving ? 'Saving…' : 'Save provider profile'}
                 </Button>
                 {selectedProfile ? (
-                  <Button variant="danger" onClick={() => void onDeleteProfile()} disabled={disabled}>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    onClick={() => void onDeleteProfile()}
+                    disabled={disabled}
+                  >
                     Delete profile
                   </Button>
                 ) : null}
               </div>
               <Button
+                type="button"
                 variant="secondary"
                 icon="play"
                 onClick={() => void onTestConnection()}
@@ -1017,6 +1207,7 @@ export function RoutingPage() {
               )}
               {lastConnectionNote ? <p className="notice info">{lastConnectionNote}</p> : null}
               <Button
+                type="button"
                 variant="quiet"
                 onClick={() => setDrawer({ kind: 'task', task: selectedTask })}
                 disabled={disabled}
