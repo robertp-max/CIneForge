@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from backend.app.main import app
 
@@ -50,6 +51,20 @@ def test_local_vite_origin_is_allowed_by_cors():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
+@pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
+def test_phase1_mutation_methods_are_allowed_by_cors(method):
+    response = client.options(
+        "/projects/00000000-0000-0000-0000-000000000000/storyboard-settings",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": method,
+        },
+    )
+    assert response.status_code == 200
+    allowed = {item.strip() for item in response.headers["access-control-allow-methods"].split(",")}
+    assert method in allowed
 
 
 def test_comfy_offline_health_handled_gracefully():

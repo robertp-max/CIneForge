@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, type Project } from '../api/client'
 import { DebugPanel, EmptyState, ErrorNotice, SuccessNotice } from '../components/Cards'
-import { PageHeader, formatDate } from '../components/Page'
+import { PageHeader } from '../components/Page'
+import { formatDate } from '../components/formatDate'
 
 export function Projects() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -28,7 +29,8 @@ export function Projects() {
   }
 
   useEffect(() => {
-    void loadProjects()
+    const timer = window.setTimeout(() => void loadProjects(), 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   async function createProject(event: FormEvent<HTMLFormElement>) {

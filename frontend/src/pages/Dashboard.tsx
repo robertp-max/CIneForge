@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, type Campaign, type HealthResponse, type Job, type Project, type RootStatus } from '../api/client'
 import { DebugPanel, EmptyState, ErrorNotice } from '../components/Cards'
-import { PageHeader, formatDate } from '../components/Page'
+import { PageHeader } from '../components/Page'
+import { formatDate } from '../components/formatDate'
 import { StatusCard } from '../components/Cards'
 
 type DashboardHealth = {

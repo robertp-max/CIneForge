@@ -1,5 +1,7 @@
 # Sprint 1C Plan
 
+> Historical runtime/queue safety plan. It remains applicable to execution hardening, but does not override the storyboard-first product direction in `docs/PRODUCT_VISION.md`.
+
 Date: 2026-05-26
 
 Status: Slice 1 complete; Slice 2 complete; Slice 3 complete; worker skeleton complete; reserved-job heartbeat and timeout/recovery policy complete; Phase 1 runtime preflight/readiness boundary complete.

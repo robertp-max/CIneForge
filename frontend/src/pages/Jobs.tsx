@@ -26,7 +26,8 @@ export function Jobs() {
   }
 
   useEffect(() => {
-    void loadJobs()
+    const timer = window.setTimeout(() => void loadJobs(), 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   async function readJob(event: FormEvent<HTMLFormElement>) {
