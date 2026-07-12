@@ -71,15 +71,25 @@ type VoiceEditDraft = {
 
 type DrawerTab = 'profile' | 'recipes' | 'create'
 
-function DecorativeWaveform({ label = 'Decorative waveform placeholder' }: { label?: string }) {
+const WAVEFORM_BARS = [8, 15, 22, 12, 28, 18, 10, 24, 30, 17, 12, 26, 19, 9, 16, 25, 13, 21, 8, 18]
+
+function Waveform({ active = false }: { active?: boolean }) {
   return (
     <div
-      className="waveform"
+      className={`waveform${active ? ' playing' : ''}`}
       role="img"
-      aria-label={label}
+      aria-label="Decorative waveform placeholder"
       title="Decorative placeholder only — not real audio"
-    />
+    >
+      {WAVEFORM_BARS.map((height, index) => (
+        <i key={index} style={{ height }} />
+      ))}
+    </div>
   )
+}
+
+function voiceIconSuffix(id: string): string {
+  return id.split('-').at(-1) || 'default'
 }
 
 export function VoicesPage() {
@@ -91,6 +101,8 @@ export function VoicesPage() {
   )
   const [selectedVoiceId, setSelectedVoiceId] = useState('')
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('profile')
+  const [playing, setPlaying] = useState('')
+  const [edit, setEdit] = useState(false)
   const effectiveSelectedVoiceId = voices.some((voice) => voice.id === selectedVoiceId)
     ? selectedVoiceId
     : voices[0]?.id ?? ''
@@ -220,12 +232,21 @@ export function VoicesPage() {
     setEditDraft(null)
     setRecipeProvider(voice.provider ?? '')
     setDrawerTab('profile')
+    setEdit(false)
   }
 
   function onCardKeyDown(event: KeyboardEvent<HTMLElement>, voice: Voice) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       selectVoice(voice)
+    }
+  }
+
+  function playPlaceholder(id: string) {
+    setPlaying((current) => (current === id ? '' : id))
+    if (playing !== id) {
+      setMessage('Playing local placeholder sample — decorative only, not real audio.')
+      window.setTimeout(() => setPlaying(''), 2400)
     }
   }
 
@@ -443,7 +464,7 @@ export function VoicesPage() {
   }
 
   return (
-    <div className="stack-form" style={{ maxWidth: '100%' }}>
+    <div className="page">
       <PageTitle
         eyebrow="VOICE ASSIGNMENT"
         title="Voices"
@@ -466,6 +487,7 @@ export function VoicesPage() {
               onClick={() => {
                 setDrawerTab('create')
                 setPageNote(null)
+                setEdit(true)
               }}
             >
               Add voice profile
@@ -474,7 +496,7 @@ export function VoicesPage() {
         }
       />
 
-      <div className="summary-strip" aria-label="Voice coverage summary">
+      <div className="voice-summary" aria-label="Voice coverage summary">
         <div>
           <span>Profiles</span>
           <b>{voices.length}</b>
@@ -493,11 +515,10 @@ export function VoicesPage() {
           <span>Consent holds</span>
           <b>{consentHolds}</b>
         </div>
+        <p>
+          <Icon name="warning" /> Final voice generation happens only after storyboard approval.
+        </p>
       </div>
-      <p className="form-hint" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: -4 }}>
-        <Icon name="warning" size={14} />
-        Final voice generation happens only after storyboard approval. Waveforms on this page are decorative placeholders, not audio.
-      </p>
 
       {pageError ? <ErrorState title="Voice workflow error" detail={pageError} /> : null}
       {pageNote ? (
@@ -507,7 +528,7 @@ export function VoicesPage() {
       ) : null}
 
       <div className="voice-layout">
-        <div className="stack-form" style={{ maxWidth: '100%' }}>
+        <div className="stack">
           {!voices.length ? (
             <EmptyState
               title="No voice profiles"
@@ -533,103 +554,62 @@ export function VoicesPage() {
                     onClick={() => selectVoice(voice)}
                     onKeyDown={(event) => onCardKeyDown(event, voice)}
                   >
-                    <header
-                      style={{
-                        display: 'flex',
-                        gap: 10,
-                        alignItems: 'flex-start',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: 'inline-grid',
-                          placeItems: 'center',
-                          width: 34,
-                          height: 34,
-                          borderRadius: 10,
-                          background: '#1f2a28',
-                          color: 'var(--mint, #58dda1)',
-                          flexShrink: 0,
-                        }}
-                        aria-hidden="true"
-                      >
-                        <Icon name="mic" size={16} />
+                    <header>
+                      <span className={`voice-icon voice-${voiceIconSuffix(voice.id)}`}>
+                        <Icon name="mic" />
                       </span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <small style={{ display: 'block', color: 'var(--muted)' }}>
-                          {voiceModeLabel(voice)}
-                        </small>
-                        <b style={{ display: 'block' }}>{voice.name}</b>
+                      <span>
+                        <small>{voiceModeLabel(voice)}</small>
+                        <b>{voice.name}</b>
                       </span>
                       <StatusPill status={approvalPillLabel(voice.approval_state)} />
                     </header>
 
-                    <DecorativeWaveform />
+                    <Waveform active={playing === voice.id} />
 
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {voice.language ? (
-                        <span className="truth-pill">{voice.language}</span>
-                      ) : null}
-                      {voice.tone ? <span className="truth-pill">{voice.tone}</span> : null}
-                      {voice.accent ? <span className="truth-pill">{voice.accent}</span> : null}
-                      {!voice.language && !voice.tone && !voice.accent ? (
-                        <span className="truth-pill">{voice.source_type || voiceModeLabel(voice)}</span>
-                      ) : null}
+                    <div className="voice-tags">
+                      <span>{voice.language || '—'}</span>
+                      <span>{voice.accent || voice.source_type || '—'}</span>
+                      <span>{voice.tone || voiceModeLabel(voice)}</span>
                     </div>
 
-                    <dl
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                        gap: 8,
-                        margin: 0,
-                      }}
-                    >
+                    <dl>
                       <div>
-                        <dt style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Provider</dt>
-                        <dd style={{ margin: 0 }}>{voice.provider?.trim() || 'Unassigned'}</dd>
+                        <dt>Provider</dt>
+                        <dd>{voice.provider?.trim() || 'Unassigned'}</dd>
                       </div>
                       <div>
-                        <dt style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Assigned</dt>
-                        <dd style={{ margin: 0 }}>{assignedCharacter?.name ?? 'Unassigned'}</dd>
+                        <dt>Assigned</dt>
+                        <dd>{assignedCharacter?.name ?? 'Unassigned'}</dd>
                       </div>
                       <div>
-                        <dt style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Narration</dt>
-                        <dd style={{ margin: 0 }}>{linkedShots} shots</dd>
+                        <dt>Narration</dt>
+                        <dd>{linkedShots} shots</dd>
                       </div>
                     </dl>
 
-                    <p className="form-hint" style={{ margin: 0 }}>
-                      {providerNote(voice)}
-                    </p>
-
-                    <footer
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      {voice.consent_confirmed ? (
-                        <span style={{ color: 'var(--mint, #58dda1)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                          <Icon name="check" size={13} />
+                    <footer>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          playPlaceholder(voice.id)
+                        }}
+                      >
+                        <Icon name={playing === voice.id ? 'close' : 'play'} />
+                        {playing === voice.id ? 'Stop' : 'Preview'}
+                      </button>
+                      {voice.consent_confirmed || !voice.consent_required ? (
+                        <span className="safe">
+                          <Icon name="check" />
                           Source clear
                         </span>
-                      ) : voice.consent_required ? (
-                        <span style={{ color: '#e0b35a', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                          <Icon name="warning" size={13} />
+                      ) : (
+                        <span className="unsafe">
+                          <Icon name="warning" />
                           Consent required
                         </span>
-                      ) : (
-                        <span style={{ color: 'var(--muted)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                          <Icon name="check" size={13} />
-                          No consent required
-                        </span>
                       )}
-                      <small style={{ color: 'var(--muted)' }}>Decorative waveform only</small>
                     </footer>
                   </article>
                 )
@@ -642,7 +622,7 @@ export function VoicesPage() {
           <header>
             <div>
               <span className="eyebrow">VOICE PROFILE</span>
-              <h2 style={{ marginBottom: 0 }}>
+              <h2>
                 {drawerTab === 'create'
                   ? 'Add voice profile'
                   : selectedVoice?.name ?? 'No profile selected'}
@@ -651,9 +631,38 @@ export function VoicesPage() {
             {drawerTab !== 'create' && selectedVoice ? (
               <StatusPill status={approvalPillLabel(selectedVoice.approval_state)} />
             ) : null}
+            {drawerTab !== 'create' && selectedVoice ? (
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setEdit((value) => !value)}
+                aria-label="Edit voice"
+                disabled={selectedVoiceLocked}
+              >
+                <Icon name={edit ? 'check' : 'edit'} />
+              </button>
+            ) : null}
           </header>
 
-          <div className="segmented" role="tablist" aria-label="Voice drawer sections">
+          {drawerTab !== 'create' && selectedVoice ? (
+            <div className="voice-hero">
+              <span className="voice-icon">
+                <Icon name="mic" size={24} />
+              </span>
+              <div>
+                <Waveform active={playing === selectedVoice.id} />
+                <Button
+                  variant="quiet"
+                  icon="play"
+                  onClick={() => playPlaceholder(selectedVoice.id)}
+                >
+                  Play sample
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="tabs small-tabs" role="tablist" aria-label="Voice drawer sections">
             <button
               type="button"
               className={drawerTab === 'profile' ? 'active' : undefined}
@@ -685,7 +694,7 @@ export function VoicesPage() {
           </div>
 
           {drawerTab === 'create' ? (
-            <form className="stack-form" style={{ maxWidth: '100%' }} onSubmit={(event) => void onSubmit(event)}>
+            <form className="form-stack compact" onSubmit={(event) => void onSubmit(event)}>
               <p className="form-hint">Select one of the eight modes. Saving writes planning metadata only.</p>
               <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
                 <legend className="eyebrow">Source mode (8)</legend>
@@ -777,7 +786,7 @@ export function VoicesPage() {
                 </label>
               ) : null}
               {mode === 'user_provided_consented' ? (
-                <div className="notice warning stack-form" style={{ maxWidth: '100%' }}>
+                <div className="notice warning form-stack compact">
                   <strong>Managed consented source</strong>
                   <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
                     <input
@@ -856,33 +865,7 @@ export function VoicesPage() {
                 detail="Create or select a voice profile to manage it."
               />
             ) : (
-              <div className="stack-form" style={{ maxWidth: '100%' }}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'auto 1fr',
-                    gap: 12,
-                    alignItems: 'center',
-                    marginBottom: 4,
-                  }}
-                >
-                  <span
-                    style={{
-                      display: 'inline-grid',
-                      placeItems: 'center',
-                      width: 48,
-                      height: 48,
-                      borderRadius: 12,
-                      background: '#1f2a28',
-                      color: 'var(--mint, #58dda1)',
-                    }}
-                    aria-hidden="true"
-                  >
-                    <Icon name="mic" size={24} />
-                  </span>
-                  <DecorativeWaveform label="Decorative waveform for selected voice" />
-                </div>
-
+              <div className="form-stack compact">
                 <ul className="kv-list">
                   <li>
                     <span>Mode</span>
@@ -915,19 +898,25 @@ export function VoicesPage() {
                     onChange={(event) =>
                       setEditDraft({ ...effectiveEditDraft, name: event.target.value })
                     }
-                    disabled={disabled || selectedVoiceLocked}
+                    disabled={disabled || selectedVoiceLocked || !edit}
                   />
                 </label>
-                <label>
-                  Language
-                  <input
-                    value={effectiveEditDraft.language}
-                    onChange={(event) =>
-                      setEditDraft({ ...effectiveEditDraft, language: event.target.value })
-                    }
-                    disabled={disabled || selectedVoiceLocked}
-                  />
-                </label>
+                <div className="form-grid">
+                  <label>
+                    Language
+                    <input
+                      value={effectiveEditDraft.language}
+                      onChange={(event) =>
+                        setEditDraft({ ...effectiveEditDraft, language: event.target.value })
+                      }
+                      disabled={disabled || selectedVoiceLocked || !edit}
+                    />
+                  </label>
+                  <label>
+                    Provider
+                    <input value={selectedVoice.provider ?? ''} disabled />
+                  </label>
+                </div>
                 <label>
                   Usage notes
                   <textarea
@@ -935,7 +924,7 @@ export function VoicesPage() {
                     onChange={(event) =>
                       setEditDraft({ ...effectiveEditDraft, notes: event.target.value })
                     }
-                    disabled={disabled || selectedVoiceLocked}
+                    disabled={disabled || selectedVoiceLocked || !edit}
                   />
                 </label>
                 <label>
@@ -948,7 +937,7 @@ export function VoicesPage() {
                         sourceDescription: event.target.value,
                       })
                     }
-                    disabled={disabled || selectedVoiceLocked}
+                    disabled={disabled || selectedVoiceLocked || !edit}
                   />
                 </label>
 
@@ -958,19 +947,17 @@ export function VoicesPage() {
                     or routing fields.
                   </p>
                 ) : (
-                  <button
+                  <Button
                     type="button"
-                    className="secondary-button"
-                    disabled={disabled || !effectiveEditDraft.name.trim()}
+                    disabled={disabled || !edit || !effectiveEditDraft.name.trim()}
                     onClick={() => void saveProfile()}
                   >
                     Save profile edits
-                  </button>
+                  </Button>
                 )}
 
-                <button
+                <Button
                   type="button"
-                  className="ghost-button"
                   disabled={disabled || selectedVoiceLocked}
                   title={
                     selectedVoiceLocked
@@ -980,7 +967,7 @@ export function VoicesPage() {
                   onClick={() => void archiveSelectedVoice()}
                 >
                   Archive voice profile
-                </button>
+                </Button>
 
                 <label>
                   Approval audit name
@@ -991,24 +978,23 @@ export function VoicesPage() {
                     placeholder="Your name or production role"
                   />
                 </label>
-                <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+                <label className="checkbox-row">
                   <input
                     type="checkbox"
                     checked={allowWithoutPreview}
                     onChange={(event) => setAllowWithoutPreview(event.target.checked)}
                     disabled={disabled || selectedVoiceLocked}
-                    style={{ width: 20, height: 20, minHeight: 20 }}
                   />
                   <span>Allow approval without a preview when this setup mode permits it</span>
                 </label>
-                <button
+                <Button
                   type="button"
-                  className="primary-button"
+                  variant="primary"
                   disabled={disabled || selectedVoiceLocked || !approvedBy.trim()}
                   onClick={() => void approveProfile()}
                 >
                   {selectedVoiceLocked ? 'Profile approved' : 'Approve voice profile'}
-                </button>
+                </Button>
               </div>
             )
           ) : null}
@@ -1022,10 +1008,9 @@ export function VoicesPage() {
             ) : resourcesLoading ? (
               <LoadingState title="Loading recipes and previews…" />
             ) : (
-              <div className="stack-form" style={{ maxWidth: '100%' }}>
+              <div className="form-stack compact">
                 <form
-                  className="stack-form"
-                  style={{ maxWidth: '100%' }}
+                  className="form-stack compact"
                   onSubmit={(event) => void createRecipe(event)}
                 >
                   <h3>Create recipe</h3>
