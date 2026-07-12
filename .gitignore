@@ -17,6 +17,7 @@ storage/assets/*
 storage/inputs/*
 storage/benchmarks/*.json
 storage/benchmarks/*.jsonl
+storage/headless_orchestrator/
 !storage/**/.gitkeep
 !storage/workflow_templates/**
 !storage/workflow_templates/example_smoke/**
