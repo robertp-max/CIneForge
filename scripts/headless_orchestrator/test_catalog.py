@@ -27,6 +27,14 @@ TEST_CATALOG: dict[str, tuple[str, ...]] = {
         "backend/tests/test_db_schema.py",
         "-q",
     ),
+    "schema-lane": (
+        "-m",
+        "pytest",
+        "backend/tests/test_db_schema.py",
+        "backend/tests/test_storyboard_phase1_schema.py",
+        "backend/tests/test_storyboard_phase1_migration.py",
+        "-q",
+    ),
 }
 
 
