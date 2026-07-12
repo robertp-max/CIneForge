@@ -349,7 +349,11 @@ class AIProposalRecord(UUIDMixin, TimestampMixin, Base):
         ForeignKey("storyboard_versions.id", ondelete="SET NULL", use_alter=True, name="fk_ai_proposals_base_version"),
     )
     schema_name: Mapped[str | None] = mapped_column(String(128))
+    schema_version: Mapped[int | None] = mapped_column(Integer)
     content_hash: Mapped[str | None] = mapped_column(String(64))
+    input_context_hash: Mapped[str | None] = mapped_column(String(64))
+    payload_hash: Mapped[str | None] = mapped_column(String(64))
+    base_content_hash: Mapped[str | None] = mapped_column(String(64))
     validation_status: Mapped[str | None] = mapped_column(String(32))
     validation_report_json: Mapped[dict] = mapped_column(json_type(), default=dict)
     warnings_json: Mapped[list] = mapped_column(json_type(), default=list)
@@ -359,6 +363,9 @@ class AIProposalRecord(UUIDMixin, TimestampMixin, Base):
     reviewed_by: Mapped[str | None] = mapped_column(Text)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("storyboard_versions.id", ondelete="SET NULL")
+    )
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejection_reason: Mapped[str | None] = mapped_column(Text)
 
@@ -448,6 +455,9 @@ class Story(UUIDMixin, StoryboardTimestampMixin, Base):
     visual_style: Mapped[str | None] = mapped_column(Text)
     point_of_view: Mapped[str | None] = mapped_column(Text)
     production_notes: Mapped[str | None] = mapped_column(Text)
+    narrative_objectives_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    pacing_plan_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    duration_strategy_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     active_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -536,6 +546,19 @@ class VoiceProfile(UUIDMixin, StoryboardTimestampMixin, Base):
     pitch: Mapped[str | None] = mapped_column(Text)
     style: Mapped[str | None] = mapped_column(Text)
     provider_configuration_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    provider_identifier: Mapped[str | None] = mapped_column(String(80))
+    provider_voice_id: Mapped[str | None] = mapped_column(Text)
+    voice_recipe_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("voice_recipes.id", ondelete="SET NULL", use_alter=True)
+    )
+    voice_recipe_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    voice_recipe_hash: Mapped[str | None] = mapped_column(String(64))
+    voice_description: Mapped[str | None] = mapped_column(Text)
+    design_model_id: Mapped[str | None] = mapped_column(Text)
+    selected_preview_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("voice_previews.id", ondelete="SET NULL", use_alter=True)
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint(
             "setup_mode IN ("
@@ -563,6 +586,7 @@ class Character(UUIDMixin, StoryboardTimestampMixin, Base):
     identity_method: Mapped[str | None] = mapped_column(String(64))
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     assigned_voice_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("voice_profiles.id", ondelete="SET NULL", use_alter=True, name="fk_characters_assigned_voice"))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CharacterReferenceAsset(UUIDMixin, StoryboardTimestampMixin, Base):
@@ -581,6 +605,9 @@ class Chapter(UUIDMixin, StoryboardTimestampMixin, Base):
     order_index: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
+    narrative_purpose: Mapped[str | None] = mapped_column(Text)
+    target_duration_sec: Mapped[float | None] = mapped_column(Numeric)
+    dramatic_progression: Mapped[str | None] = mapped_column(Text)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (UniqueConstraint("story_id", "order_index", name="uq_chapter_story_order"),)
@@ -595,6 +622,7 @@ class Scene(UUIDMixin, StoryboardTimestampMixin, Base):
     narrative_purpose: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(Text)
     conflict_or_beat: Mapped[str | None] = mapped_column(Text)
+    target_duration_sec: Mapped[float | None] = mapped_column(Numeric)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (UniqueConstraint("chapter_id", "order_index", name="uq_scene_chapter_order"),)
@@ -610,6 +638,8 @@ class Shot(UUIDMixin, StoryboardTimestampMixin, Base):
     story_purpose: Mapped[str | None] = mapped_column(Text)
     visual_description: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(Text)
+    camera_direction: Mapped[str | None] = mapped_column(Text)
+    motion_direction: Mapped[str | None] = mapped_column(Text)
     continuity_source_type: Mapped[str] = mapped_column(String(48), default="none", nullable=False)
     continuity_source_shot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("shots.id", ondelete="SET NULL"))
     starting_image_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -617,6 +647,7 @@ class Shot(UUIDMixin, StoryboardTimestampMixin, Base):
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     production_status: Mapped[str] = mapped_column(String(32), default="planned", nullable=False)
     blocked_reason: Mapped[str | None] = mapped_column(Text)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         UniqueConstraint("scene_id", "order_index", name="uq_shot_scene_order"),
         CheckConstraint("duration_sec > 0", name="ck_shot_positive_duration"),
@@ -640,6 +671,10 @@ class ShotNarration(UUIDMixin, StoryboardTimestampMixin, Base):
     start_offset_sec: Mapped[float] = mapped_column(Numeric, default=0)
     expected_duration_sec: Mapped[float | None] = mapped_column(Numeric)
     narration_exception_reason: Mapped[str | None] = mapped_column(Text)
+    pacing_notes: Mapped[str | None] = mapped_column(Text)
+    pronunciation_notes: Mapped[str | None] = mapped_column(Text)
+    narration_fit_status: Mapped[str | None] = mapped_column(String(32))
+    narration_fit_wpm: Mapped[float | None] = mapped_column(Numeric)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
 
 
@@ -662,6 +697,8 @@ class ShotPromptPackage(UUIDMixin, StoryboardTimestampMixin, Base):
         ),
     )
     provider_model_id: Mapped[str | None] = mapped_column(Text)
+    prompt_rationale: Mapped[str | None] = mapped_column(Text)
+    provider_metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
     proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ai_proposal_records.id", ondelete="SET NULL"))
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     __table_args__ = (UniqueConstraint("shot_id", "version", name="uq_shot_prompt_version"),)
@@ -736,7 +773,7 @@ class ProjectStoryboardSettings(UUIDMixin, StoryboardTimestampMixin, Base):
 
     __tablename__ = "project_storyboard_settings"
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
     shot_duration_min_sec: Mapped[float] = mapped_column(Numeric, nullable=False)
     shot_duration_max_sec: Mapped[float] = mapped_column(Numeric, nullable=False)
@@ -782,6 +819,9 @@ class OrchestrationRun(UUIDMixin, StoryboardTimestampMixin, Base):
     __tablename__ = "orchestration_runs"
     story_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    retry_of_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchestration_runs.id", ondelete="SET NULL")
     )
     base_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("storyboard_versions.id", ondelete="SET NULL")

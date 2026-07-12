@@ -68,6 +68,31 @@ def upgrade() -> None:
     op.add_column("planning_media_assets", sa.Column("size_bytes", sa.Integer()))
     op.add_column("planning_media_assets", sa.Column("archived_at", sa.DateTime(timezone=True)))
 
+    for column in (
+        sa.Column("narrative_objectives_json", _json(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("pacing_plan_json", _json(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("duration_strategy_json", _json(), nullable=False, server_default=sa.text("'{}'")),
+    ):
+        op.add_column("stories", column)
+
+    op.add_column("chapters", sa.Column("narrative_purpose", sa.Text()))
+    op.add_column("chapters", sa.Column("target_duration_sec", sa.Numeric()))
+    op.add_column("chapters", sa.Column("dramatic_progression", sa.Text()))
+    op.add_column("scenes", sa.Column("target_duration_sec", sa.Numeric()))
+    op.add_column("shots", sa.Column("camera_direction", sa.Text()))
+    op.add_column("shots", sa.Column("motion_direction", sa.Text()))
+    op.add_column("shots", sa.Column("archived_at", sa.DateTime(timezone=True)))
+    op.add_column("characters", sa.Column("archived_at", sa.DateTime(timezone=True)))
+    op.add_column("shot_narrations", sa.Column("pacing_notes", sa.Text()))
+    op.add_column("shot_narrations", sa.Column("pronunciation_notes", sa.Text()))
+    op.add_column("shot_narrations", sa.Column("narration_fit_status", sa.String(32)))
+    op.add_column("shot_narrations", sa.Column("narration_fit_wpm", sa.Numeric()))
+    op.add_column("shot_prompt_packages", sa.Column("prompt_rationale", sa.Text()))
+    op.add_column(
+        "shot_prompt_packages",
+        sa.Column("provider_metadata_json", _json(), nullable=False, server_default=sa.text("'{}'")),
+    )
+
     op.add_column(
         "storyboard_versions",
         sa.Column("base_version_id", _uuid()),
@@ -106,6 +131,18 @@ def upgrade() -> None:
             server_default="unknown",
         ),
     )
+    op.add_column("voice_profiles", sa.Column("provider_identifier", sa.String(80)))
+    op.add_column("voice_profiles", sa.Column("provider_voice_id", sa.Text()))
+    op.add_column("voice_profiles", sa.Column("voice_recipe_id", _uuid()))
+    op.add_column(
+        "voice_profiles",
+        sa.Column("voice_recipe_json", _json(), nullable=False, server_default=sa.text("'{}'")),
+    )
+    op.add_column("voice_profiles", sa.Column("voice_recipe_hash", sa.String(64)))
+    op.add_column("voice_profiles", sa.Column("voice_description", sa.Text()))
+    op.add_column("voice_profiles", sa.Column("design_model_id", sa.Text()))
+    op.add_column("voice_profiles", sa.Column("selected_preview_id", _uuid()))
+    op.add_column("voice_profiles", sa.Column("archived_at", sa.DateTime(timezone=True)))
 
     # Conservative setup_mode backfill — never infer Qwen/Parler from generic data.
     op.execute(
@@ -175,6 +212,7 @@ def upgrade() -> None:
         "orchestration_runs",
         sa.Column("id", _uuid(), primary_key=True),
         sa.Column("story_id", _uuid(), sa.ForeignKey("stories.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("retry_of_run_id", _uuid(), sa.ForeignKey("orchestration_runs.id", ondelete="SET NULL")),
         sa.Column(
             "base_storyboard_version_id",
             _uuid(),
@@ -415,7 +453,11 @@ def upgrade() -> None:
         ),
     )
     op.add_column("ai_proposal_records", sa.Column("schema_name", sa.String(128)))
+    op.add_column("ai_proposal_records", sa.Column("schema_version", sa.Integer()))
     op.add_column("ai_proposal_records", sa.Column("content_hash", sa.String(64)))
+    op.add_column("ai_proposal_records", sa.Column("input_context_hash", sa.String(64)))
+    op.add_column("ai_proposal_records", sa.Column("payload_hash", sa.String(64)))
+    op.add_column("ai_proposal_records", sa.Column("base_content_hash", sa.String(64)))
     op.add_column("ai_proposal_records", sa.Column("validation_status", sa.String(32)))
     op.add_column(
         "ai_proposal_records",
@@ -435,6 +477,7 @@ def upgrade() -> None:
     op.add_column("ai_proposal_records", sa.Column("reviewed_by", sa.Text()))
     op.add_column("ai_proposal_records", sa.Column("reviewed_at", sa.DateTime(timezone=True)))
     op.add_column("ai_proposal_records", sa.Column("applied_at", sa.DateTime(timezone=True)))
+    op.add_column("ai_proposal_records", sa.Column("applied_storyboard_version_id", _uuid()))
     op.add_column("ai_proposal_records", sa.Column("rejected_at", sa.DateTime(timezone=True)))
     op.add_column("ai_proposal_records", sa.Column("rejection_reason", sa.Text()))
     op.create_index("ix_ai_proposal_records_story_id", "ai_proposal_records", ["story_id"])
@@ -473,6 +516,22 @@ def upgrade() -> None:
             ondelete="SET NULL",
         )
         op.create_foreign_key(
+            "fk_voice_profiles_voice_recipe",
+            "voice_profiles",
+            "voice_recipes",
+            ["voice_recipe_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+        op.create_foreign_key(
+            "fk_voice_profiles_selected_preview",
+            "voice_profiles",
+            "voice_previews",
+            ["selected_preview_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+        op.create_foreign_key(
             "fk_ai_proposal_records_story",
             "ai_proposal_records",
             "stories",
@@ -501,6 +560,14 @@ def upgrade() -> None:
             "ai_proposal_records",
             "ai_proposal_records",
             ["superseded_by_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+        op.create_foreign_key(
+            "fk_ai_proposal_records_applied_storyboard_version",
+            "ai_proposal_records",
+            "storyboard_versions",
+            ["applied_storyboard_version_id"],
             ["id"],
             ondelete="SET NULL",
         )
@@ -553,6 +620,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove only Phase 1 additions. Never rebuild or drop Phase A tables."""
     if _is_postgres():
+        op.drop_constraint(
+            "fk_ai_proposal_records_applied_storyboard_version",
+            "ai_proposal_records",
+            type_="foreignkey",
+        )
         op.drop_constraint("fk_ai_proposal_records_superseded_by", "ai_proposal_records", type_="foreignkey")
         op.drop_constraint(
             "fk_ai_proposal_records_base_storyboard_version", "ai_proposal_records", type_="foreignkey"
@@ -564,6 +636,8 @@ def downgrade() -> None:
         op.drop_constraint(
             "fk_voice_profiles_selected_preview_asset", "voice_profiles", type_="foreignkey"
         )
+        op.drop_constraint("fk_voice_profiles_selected_preview", "voice_profiles", type_="foreignkey")
+        op.drop_constraint("fk_voice_profiles_voice_recipe", "voice_profiles", type_="foreignkey")
         op.drop_constraint("fk_storyboard_versions_base_version", "storyboard_versions", type_="foreignkey")
         op.drop_constraint("fk_shot_prompt_packages_provider_profile", "shot_prompt_packages", type_="foreignkey")
         op.drop_constraint("fk_stories_default_provider_profile", "stories", type_="foreignkey")
@@ -579,6 +653,7 @@ def downgrade() -> None:
     for col in [
         "rejection_reason",
         "rejected_at",
+        "applied_storyboard_version_id",
         "applied_at",
         "reviewed_at",
         "reviewed_by",
@@ -587,6 +662,10 @@ def downgrade() -> None:
         "validation_report_json",
         "validation_status",
         "content_hash",
+        "base_content_hash",
+        "payload_hash",
+        "input_context_hash",
+        "schema_version",
         "schema_name",
         "base_storyboard_version_id",
         "orchestration_run_id",
@@ -630,6 +709,15 @@ def downgrade() -> None:
     op.drop_table("project_storyboard_settings")
 
     for col in [
+        "archived_at",
+        "selected_preview_id",
+        "design_model_id",
+        "voice_description",
+        "voice_recipe_hash",
+        "voice_recipe_json",
+        "voice_recipe_id",
+        "provider_voice_id",
+        "provider_identifier",
         "provider_configuration_status",
         "style",
         "pitch",
@@ -647,6 +735,24 @@ def downgrade() -> None:
 
     op.drop_column("storyboard_versions", "content_hash")
     op.drop_column("storyboard_versions", "base_version_id")
+
+    op.drop_column("shot_prompt_packages", "provider_metadata_json")
+    op.drop_column("shot_prompt_packages", "prompt_rationale")
+    op.drop_column("shot_narrations", "narration_fit_wpm")
+    op.drop_column("shot_narrations", "narration_fit_status")
+    op.drop_column("shot_narrations", "pronunciation_notes")
+    op.drop_column("shot_narrations", "pacing_notes")
+    op.drop_column("characters", "archived_at")
+    op.drop_column("shots", "archived_at")
+    op.drop_column("shots", "motion_direction")
+    op.drop_column("shots", "camera_direction")
+    op.drop_column("scenes", "target_duration_sec")
+    op.drop_column("chapters", "dramatic_progression")
+    op.drop_column("chapters", "target_duration_sec")
+    op.drop_column("chapters", "narrative_purpose")
+    op.drop_column("stories", "duration_strategy_json")
+    op.drop_column("stories", "pacing_plan_json")
+    op.drop_column("stories", "narrative_objectives_json")
 
     op.drop_column("planning_media_assets", "archived_at")
     op.drop_column("planning_media_assets", "size_bytes")
