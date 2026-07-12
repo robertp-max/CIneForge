@@ -50,6 +50,7 @@ class HeadlessController:
         result,
         parsed: ImplementationResult | None,
         error_type: str | None = None,
+        error_detail: str | None = None,
         tests: list | None = None,
     ) -> Path:
         artifact_dir = self.state_root / "runs" / spec.run_id / spec.task_id
@@ -63,6 +64,7 @@ class HeadlessController:
                     "session_id": result.session_id,
                     "timed_out": result.timed_out,
                     "error_type": error_type,
+                    "error_detail": error_detail,
                     "result": parsed.as_dict() if parsed is not None else None,
                     "stderr": _digest_text(result.stderr),
                     "tests": [
@@ -99,7 +101,13 @@ class HeadlessController:
                 on_heartbeat=lambda: self.ledger.heartbeat(spec.task_id),
             )
             if result.exit_code != 0 or result.timed_out:
-                artifact = self._write_artifact(spec, result, None, error_type="WorkerProcessError")
+                artifact = self._write_artifact(
+                    spec,
+                    result,
+                    None,
+                    error_type="WorkerProcessError",
+                    error_detail=f"exit_code={result.exit_code}; timed_out={result.timed_out}",
+                )
                 self.ledger.complete_task(spec.task_id, result.exit_code, artifact)
                 self.ledger.transition(
                     spec.run_id,
@@ -114,7 +122,13 @@ class HeadlessController:
                 if _contains_secret(parsed_result.as_dict()):
                     raise RuntimeError("Grok result contained credential-like material")
             except BaseException as error:
-                artifact = self._write_artifact(spec, result, None, error_type=type(error).__name__)
+                artifact = self._write_artifact(
+                    spec,
+                    result,
+                    None,
+                    error_type=type(error).__name__,
+                    error_detail=str(error)[:1000],
+                )
                 self.ledger.complete_task(spec.task_id, result.exit_code, artifact)
                 raise
             artifact = self._write_artifact(spec, result, parsed_result)
