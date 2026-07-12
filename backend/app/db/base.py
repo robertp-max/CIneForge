@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, PrimaryKeyConstraint, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, PrimaryKeyConstraint, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -121,6 +121,18 @@ class ModelVariant(UUIDMixin, Base):
     quantization: Mapped[str | None] = mapped_column(Text)
     compatible_24gb_status: Mapped[str] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Storyboard Phase 1: native voice capability is a factual tri-state.
+    # "unknown" must remain distinguishable from "unsupported".
+    native_voice_capability: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
+    native_voice_capability_source: Mapped[str | None] = mapped_column(Text)
+    native_voice_capability_metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+    native_voice_capability_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "native_voice_capability IN ('supported', 'unsupported', 'unknown')",
+            name="ck_model_variants_native_voice_capability",
+        ),
+    )
 
 
 class Quantization(UUIDMixin, Base):
@@ -323,6 +335,32 @@ class AIProposalRecord(UUIDMixin, TimestampMixin, Base):
     payload: Mapped[dict] = mapped_column(json_type())
     status: Mapped[str] = mapped_column(Text, default="pending_review")
     validation_errors: Mapped[list] = mapped_column(json_type(), default=list)
+    # Storyboard Phase 1 additive audit / linkage fields (SET NULL for durability).
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="SET NULL"), index=True
+    )
+    orchestration_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orchestration_runs.id", ondelete="SET NULL", use_alter=True, name="fk_ai_proposals_orchestration_run"),
+        index=True,
+    )
+    base_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("storyboard_versions.id", ondelete="SET NULL", use_alter=True, name="fk_ai_proposals_base_version"),
+    )
+    schema_name: Mapped[str | None] = mapped_column(String(128))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    validation_status: Mapped[str | None] = mapped_column(String(32))
+    validation_report_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+    warnings_json: Mapped[list] = mapped_column(json_type(), default=list)
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_proposal_records.id", ondelete="SET NULL")
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class AutonomyRun(UUIDMixin, TimestampMixin, Base):
@@ -382,6 +420,20 @@ class StoryboardTimestampMixin(TimestampMixin):
     )
 
 
+VOICE_SETUP_MODES = (
+    "placeholder",
+    "manual",
+    "existing_provider_voice",
+    "qwen_voice_design",
+    "qwen_custom_voice",
+    "elevenlabs_voice_design",
+    "parler_local_voice_design",
+    "user_provided_consented",
+)
+
+NATIVE_VOICE_CAPABILITIES = ("supported", "unsupported", "unknown")
+
+
 class Story(UUIDMixin, StoryboardTimestampMixin, Base):
     __tablename__ = "stories"
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -397,8 +449,24 @@ class Story(UUIDMixin, StoryboardTimestampMixin, Base):
     point_of_view: Mapped[str | None] = mapped_column(Text)
     production_notes: Mapped[str | None] = mapped_column(Text)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
-    active_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    default_provider_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    active_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "storyboard_versions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_stories_active_storyboard_version",
+        ),
+    )
+    default_provider_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "provider_profiles.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_stories_default_provider_profile",
+        ),
+    )
 
 
 class PlanningMediaAsset(UUIDMixin, StoryboardTimestampMixin, Base):
@@ -414,6 +482,20 @@ class PlanningMediaAsset(UUIDMixin, StoryboardTimestampMixin, Base):
     duration_sec: Mapped[float | None] = mapped_column(Numeric)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+    original_filename: Mapped[str | None] = mapped_column(Text)
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("size_bytes IS NULL OR size_bytes >= 0", name="ck_planning_media_assets_size_bytes"),
+        Index(
+            "uq_planning_media_assets_project_sha256",
+            "project_id",
+            "sha256",
+            unique=True,
+            postgresql_where=text("sha256 IS NOT NULL"),
+            sqlite_where=text("sha256 IS NOT NULL"),
+        ),
+    )
 
 
 class VoiceProfile(UUIDMixin, StoryboardTimestampMixin, Base):
@@ -439,6 +521,31 @@ class VoiceProfile(UUIDMixin, StoryboardTimestampMixin, Base):
     consent_notes: Mapped[str | None] = mapped_column(Text)
     usage_notes: Mapped[str | None] = mapped_column(Text)
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    # Storyboard Phase 1 voice setup / design metadata (legacy columns retained).
+    setup_mode: Mapped[str] = mapped_column(String(48), default="manual", nullable=False)
+    provider_model_id: Mapped[str | None] = mapped_column(Text)
+    recipe_name: Mapped[str | None] = mapped_column(Text)
+    recipe_description: Mapped[str | None] = mapped_column(Text)
+    design_description: Mapped[str | None] = mapped_column(Text)
+    design_metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+    selected_preview_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("planning_media_assets.id", ondelete="SET NULL")
+    )
+    preview_text: Mapped[str | None] = mapped_column(Text)
+    gender_presentation: Mapped[str | None] = mapped_column(Text)
+    pitch: Mapped[str | None] = mapped_column(Text)
+    style: Mapped[str | None] = mapped_column(Text)
+    provider_configuration_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    __table_args__ = (
+        CheckConstraint(
+            "setup_mode IN ("
+            "'placeholder', 'manual', 'existing_provider_voice', "
+            "'qwen_voice_design', 'qwen_custom_voice', "
+            "'elevenlabs_voice_design', 'parler_local_voice_design', "
+            "'user_provided_consented')",
+            name="ck_voice_profiles_setup_mode",
+        ),
+    )
 
 
 class Character(UUIDMixin, StoryboardTimestampMixin, Base):
@@ -545,7 +652,15 @@ class ShotPromptPackage(UUIDMixin, StoryboardTimestampMixin, Base):
     negative_prompt: Mapped[str | None] = mapped_column(Text)
     continuity_instructions: Mapped[str | None] = mapped_column(Text)
     style_lock_prompt: Mapped[str | None] = mapped_column(Text)
-    provider_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    provider_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "provider_profiles.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_shot_prompt_packages_provider_profile",
+        ),
+    )
     provider_model_id: Mapped[str | None] = mapped_column(Text)
     proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ai_proposal_records.id", ondelete="SET NULL"))
     approval_state: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
@@ -577,6 +692,10 @@ class StoryboardVersion(UUIDMixin, StoryboardTimestampMixin, Base):
     approved_by: Mapped[str | None] = mapped_column(Text)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    base_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("storyboard_versions.id", ondelete="SET NULL")
+    )
+    content_hash: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (UniqueConstraint("story_id", "version_number", name="uq_storyboard_version"),)
 
 
@@ -590,6 +709,9 @@ class ProviderProfile(UUIDMixin, StoryboardTimestampMixin, Base):
     privacy_classification: Mapped[str | None] = mapped_column(String(64))
     capabilities_json: Mapped[dict] = mapped_column(json_type(), default=dict)
     configuration_reference: Mapped[str | None] = mapped_column(Text)
+    capabilities_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    health_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    capability_source: Mapped[str | None] = mapped_column(Text)
 
 
 class TaskProviderAssignment(UUIDMixin, StoryboardTimestampMixin, Base):
@@ -602,3 +724,267 @@ class TaskProviderAssignment(UUIDMixin, StoryboardTimestampMixin, Base):
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     __table_args__ = (UniqueConstraint("story_id", "task_type", name="uq_story_task_provider"),)
+
+
+# ---------------------------------------------------------------------------
+# Storyboard Phase 1 durable persistence
+# ---------------------------------------------------------------------------
+
+
+class ProjectStoryboardSettings(UUIDMixin, StoryboardTimestampMixin, Base):
+    """Per-project storyboard defaults. Story.target_duration_sec remains authoritative."""
+
+    __tablename__ = "project_storyboard_settings"
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
+    )
+    shot_duration_min_sec: Mapped[float] = mapped_column(Numeric, nullable=False)
+    shot_duration_max_sec: Mapped[float] = mapped_column(Numeric, nullable=False)
+    continuity_policy_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    prompting_policy_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    voice_policy_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    approval_policy_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    speaking_rate: Mapped[float] = mapped_column(Numeric, nullable=False, default=1.0)
+    aspect_ratio: Mapped[str] = mapped_column(String(32), nullable=False, default="16:9")
+    preview_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    preview_height: Mapped[int] = mapped_column(Integer, nullable=False)
+    final_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    final_height: Mapped[int] = mapped_column(Integer, nullable=False)
+    fps: Mapped[float] = mapped_column(Numeric, nullable=False)
+    captions_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    audio_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    prefer_hosted_providers: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    prefer_local_providers: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_model_download: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    allow_rendering: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    require_voice_consent: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_production_plan_approval: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    settings_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_project_storyboard_settings_project_id"),
+        CheckConstraint("shot_duration_min_sec > 0", name="ck_pss_shot_duration_min_positive"),
+        CheckConstraint("shot_duration_max_sec > 0", name="ck_pss_shot_duration_max_positive"),
+        CheckConstraint(
+            "shot_duration_min_sec <= shot_duration_max_sec",
+            name="ck_pss_shot_duration_min_le_max",
+        ),
+        CheckConstraint("speaking_rate > 0", name="ck_pss_speaking_rate_positive"),
+        CheckConstraint("preview_width > 0", name="ck_pss_preview_width_positive"),
+        CheckConstraint("preview_height > 0", name="ck_pss_preview_height_positive"),
+        CheckConstraint("final_width > 0", name="ck_pss_final_width_positive"),
+        CheckConstraint("final_height > 0", name="ck_pss_final_height_positive"),
+        CheckConstraint("fps > 0", name="ck_pss_fps_positive"),
+        CheckConstraint("settings_version > 0", name="ck_pss_settings_version_positive"),
+    )
+
+
+class OrchestrationRun(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "orchestration_runs"
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    base_storyboard_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("storyboard_versions.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    requested_by: Mapped[str | None] = mapped_column(Text)
+    routing_snapshot_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    default_provider_snapshot_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    target_duration_sec_snapshot: Mapped[float | None] = mapped_column(Numeric)
+    input_hash: Mapped[str | None] = mapped_column(String(64))
+    current_step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_steps: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    repair_budget: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    repair_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_category: Mapped[str | None] = mapped_column(String(64))
+    failure_message: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'canceled')",
+            name="ck_orchestration_runs_status",
+        ),
+        CheckConstraint("current_step >= 0", name="ck_orchestration_runs_current_step"),
+        CheckConstraint("max_steps > 0", name="ck_orchestration_runs_max_steps"),
+        CheckConstraint("repair_budget >= 0", name="ck_orchestration_runs_repair_budget"),
+        CheckConstraint("repair_used >= 0", name="ck_orchestration_runs_repair_used"),
+        CheckConstraint("repair_used <= repair_budget", name="ck_orchestration_runs_repair_used_le_budget"),
+        CheckConstraint(
+            "target_duration_sec_snapshot IS NULL OR target_duration_sec_snapshot > 0",
+            name="ck_orchestration_runs_target_duration",
+        ),
+        Index("ix_orchestration_runs_story_status", "story_id", "status"),
+        Index(
+            "uq_orchestration_runs_one_active_per_story",
+            "story_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+            sqlite_where=text("status IN ('pending', 'running')"),
+        ),
+    )
+
+
+class OrchestrationStep(UUIDMixin, StoryboardTimestampMixin, Base):
+    __tablename__ = "orchestration_steps"
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchestration_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sequence_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    provider_identifier: Mapped[str | None] = mapped_column(String(80))
+    logical_model: Mapped[str | None] = mapped_column(Text)
+    resolved_model: Mapped[str | None] = mapped_column(Text)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    input_hash: Mapped[str | None] = mapped_column(String(64))
+    output_hash: Mapped[str | None] = mapped_column(String(64))
+    proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_proposal_records.id", ondelete="SET NULL")
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_category: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence_index", "attempt_number", name="uq_orchestration_step_attempt"),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'skipped', 'canceled')",
+            name="ck_orchestration_steps_status",
+        ),
+        CheckConstraint("sequence_index >= 0", name="ck_orchestration_steps_sequence_index"),
+        CheckConstraint("attempt_number > 0", name="ck_orchestration_steps_attempt_number"),
+        Index("ix_orchestration_steps_run_sequence", "run_id", "sequence_index"),
+    )
+
+
+class OrchestrationEvent(UUIDMixin, TimestampMixin, Base):
+    __tablename__ = "orchestration_events"
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchestration_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    step_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchestration_steps.id", ondelete="SET NULL"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_reference: Mapped[str | None] = mapped_column(Text)
+    details_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    __table_args__ = (
+        Index("ix_orchestration_events_run_created", "run_id", "created_at"),
+        Index("ix_orchestration_events_step_created", "step_id", "created_at"),
+    )
+
+
+class ProviderInvocation(UUIDMixin, TimestampMixin, Base):
+    """Provider call audit trail. Never stores raw prompts, responses, credentials, or hidden reasoning."""
+
+    __tablename__ = "provider_invocations"
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchestration_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    step_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchestration_steps.id", ondelete="SET NULL"), index=True
+    )
+    provider_identifier: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_hash: Mapped[str | None] = mapped_column(String(64))
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    usage_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    provider_request_id: Mapped[str | None] = mapped_column(Text)
+    finish_category: Mapped[str | None] = mapped_column(String(64))
+    error_category: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_provider_invocations_idempotency_key"),
+        CheckConstraint(
+            "status IN ('pending', 'succeeded', 'failed', 'canceled')",
+            name="ck_provider_invocations_status",
+        ),
+        CheckConstraint("latency_ms IS NULL OR latency_ms >= 0", name="ck_provider_invocations_latency"),
+        Index("ix_provider_invocations_run_created", "run_id", "created_at"),
+    )
+
+
+class VoiceRecipe(UUIDMixin, StoryboardTimestampMixin, Base):
+    """Voice design recipe metadata only; never stores audio bytes or base64."""
+
+    __tablename__ = "voice_recipes"
+    voice_profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("voice_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)
+    recipe_name: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    seed: Mapped[int | None] = mapped_column(Integer)
+    design_metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+
+
+class VoicePreview(UUIDMixin, StoryboardTimestampMixin, Base):
+    """Managed preview reference only; never stores audio bytes or base64."""
+
+    __tablename__ = "voice_previews"
+    voice_profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("voice_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    voice_recipe_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("voice_recipes.id", ondelete="SET NULL")
+    )
+    planning_media_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("planning_media_assets.id", ondelete="SET NULL")
+    )
+    provider: Mapped[str | None] = mapped_column(String(80))
+    model: Mapped[str | None] = mapped_column(Text)
+    preview_text: Mapped[str | None] = mapped_column(Text)
+    selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    rejected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    __table_args__ = (
+        CheckConstraint("NOT (selected AND rejected)", name="ck_voice_previews_not_selected_and_rejected"),
+        Index(
+            "uq_voice_previews_one_selected_per_profile",
+            "voice_profile_id",
+            unique=True,
+            postgresql_where=text("selected IS true"),
+            sqlite_where=text("selected = 1"),
+        ),
+    )
+
+
+class GpuResourceLease(UUIDMixin, TimestampMixin, Base):
+    """GPU lease boundary only — not a render/media/provider queue."""
+
+    __tablename__ = "gpu_resource_leases"
+    resource_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    exclusive_group: Mapped[str | None] = mapped_column(String(128))
+    workload_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    workload_id: Mapped[str | None] = mapped_column(String(128))
+    owner: Mapped[str] = mapped_column(Text, nullable=False)
+    worker_id: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'released', 'expired')",
+            name="ck_gpu_resource_leases_status",
+        ),
+        Index("ix_gpu_resource_leases_status_expires", "status", "expires_at"),
+        Index(
+            "uq_gpu_resource_leases_one_active_per_resource",
+            "resource_key",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
