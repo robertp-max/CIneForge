@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
 import {
   api,
   VOICE_SETUP_MODE_LABELS,
@@ -10,6 +10,7 @@ import {
   type VoiceSetupMode,
 } from '../../api/client'
 import { formatDate } from '../../components/formatDate'
+import { Button, Icon, PageTitle, StatusPill } from '../../components/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateBlocks'
 
@@ -33,12 +34,52 @@ function voiceModeLabel(voice: Voice): string {
   return VOICE_SETUP_MODE_LABELS[voice.setup_mode as VoiceSetupMode] ?? voice.setup_mode
 }
 
+function approvalPillLabel(state: string): string {
+  const normalized = (state || 'draft').toLowerCase()
+  const labels: Record<string, string> = {
+    approved: 'Approved',
+    draft: 'Draft',
+    review: 'Review',
+    in_review: 'Review',
+    blocked: 'Blocked',
+    rejected: 'Blocked',
+    pending: 'Draft',
+  }
+  return labels[normalized] ?? state
+}
+
+function providerNote(voice: Voice): string {
+  const parts = [
+    voice.provider?.trim() || null,
+    voice.provider_configuration_status?.trim()
+      ? `config: ${voice.provider_configuration_status}`
+      : null,
+    voice.provider_voice_reference?.trim()
+      ? `ref: ${voice.provider_voice_reference}`
+      : null,
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'No provider configured'
+}
+
 type VoiceEditDraft = {
   voiceId: string
   name: string
   language: string
   notes: string
   sourceDescription: string
+}
+
+type DrawerTab = 'profile' | 'recipes' | 'create'
+
+function DecorativeWaveform({ label = 'Decorative waveform placeholder' }: { label?: string }) {
+  return (
+    <div
+      className="waveform"
+      role="img"
+      aria-label={label}
+      title="Decorative placeholder only — not real audio"
+    />
+  )
 }
 
 export function VoicesPage() {
@@ -49,6 +90,7 @@ export function VoicesPage() {
     [data?.chapters],
   )
   const [selectedVoiceId, setSelectedVoiceId] = useState('')
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>('profile')
   const effectiveSelectedVoiceId = voices.some((voice) => voice.id === selectedVoiceId)
     ? selectedVoiceId
     : voices[0]?.id ?? ''
@@ -155,9 +197,9 @@ export function VoicesPage() {
   if (!data) return null
   const loadedStoryId = data.story.id
 
-  const narrationCovered = shots.filter(
-    (shot) => Boolean(shot.narration?.trim()) || Boolean(shot.narration_exception_reason?.trim()),
-  ).length
+  const shotCoverage = shots.filter((shot) => Boolean(shot.narration_voice_profile_id)).length
+  const unresolvedShots = shots.length - shotCoverage
+  const consentHolds = voices.filter((voice) => voice.consent_required && !voice.consent_confirmed).length
   const selectedNarrations = selectedVoice
     ? shots.filter((shot) => shot.narration_voice_profile_id === selectedVoice.id).length
     : 0
@@ -172,6 +214,20 @@ export function VoicesPage() {
           sourceDescription: selectedVoice?.source_description ?? '',
         }
   const effectiveRecipeProvider = recipeProvider || selectedVoice?.provider || ''
+
+  function selectVoice(voice: Voice) {
+    setSelectedVoiceId(voice.id)
+    setEditDraft(null)
+    setRecipeProvider(voice.provider ?? '')
+    setDrawerTab('profile')
+  }
+
+  function onCardKeyDown(event: KeyboardEvent<HTMLElement>, voice: Voice) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      selectVoice(voice)
+    }
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
@@ -227,6 +283,7 @@ export function VoicesPage() {
     setSourceAssetId('')
     setSourceFile(null)
     setMode('placeholder')
+    setDrawerTab('profile')
   }
 
   async function uploadSource() {
@@ -387,298 +444,722 @@ export function VoicesPage() {
 
   return (
     <div className="stack-form" style={{ maxWidth: '100%' }}>
-      <section className="panel">
-        <div className="panel-title">
-          <div>
-            <h2>Voice coverage</h2>
-            <p>Persisted narration coverage and voice assignments across the current shot plan.</p>
+      <PageTitle
+        eyebrow="VOICE ASSIGNMENT"
+        title="Voices"
+        description="Plan narration and character delivery without cloning or generating final audio."
+        aside={
+          <div className="page-actions">
+            <Button
+              icon="lock"
+              onClick={() =>
+                setMessage(
+                  'User-provided voices require a managed source, explicit consent confirmation, and usage notes. Voice cloning and final audio generation are not exposed in Storyboard Phase 1.',
+                )
+              }
+            >
+              Consent policy
+            </Button>
+            <Button
+              variant="primary"
+              icon="plus"
+              onClick={() => {
+                setDrawerTab('create')
+                setPageNote(null)
+              }}
+            >
+              Add voice profile
+            </Button>
           </div>
-          <div className="inline-actions">
-            <span className="truth-pill">{voices.length} profiles</span>
-            <span className={`truth-pill ${narrationCovered === shots.length && shots.length ? 'verified' : 'unknown'}`}>
-              {narrationCovered}/{shots.length} narration-covered
-            </span>
-            <span className="truth-pill">{selectedNarrations} assigned to selected profile</span>
-          </div>
-        </div>
-        {pageError ? <ErrorState title="Voice workflow error" detail={pageError} /> : null}
-        {pageNote ? <p className="notice info" role="status">{pageNote}</p> : null}
-      </section>
+        }
+      />
 
-      <div className="split-2">
-        <section className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>Voice profiles</h2>
-              <p>Eight exact setup modes. Select a persisted profile to edit, review recipes, or approve it.</p>
-            </div>
-          </div>
+      <div className="summary-strip" aria-label="Voice coverage summary">
+        <div>
+          <span>Profiles</span>
+          <b>{voices.length}</b>
+        </div>
+        <div>
+          <span>Shot coverage</span>
+          <b>
+            {shotCoverage}/{shots.length}
+          </b>
+        </div>
+        <div>
+          <span>Unresolved</span>
+          <b>{unresolvedShots}</b>
+        </div>
+        <div>
+          <span>Consent holds</span>
+          <b>{consentHolds}</b>
+        </div>
+      </div>
+      <p className="form-hint" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: -4 }}>
+        <Icon name="warning" size={14} />
+        Final voice generation happens only after storyboard approval. Waveforms on this page are decorative placeholders, not audio.
+      </p>
+
+      {pageError ? <ErrorState title="Voice workflow error" detail={pageError} /> : null}
+      {pageNote ? (
+        <p className="notice info" role="status">
+          {pageNote}
+        </p>
+      ) : null}
+
+      <div className="voice-layout">
+        <div className="stack-form" style={{ maxWidth: '100%' }}>
           {!voices.length ? (
-            <EmptyState title="No voice profiles" detail="Add a planning voice using one of the eight source modes." />
+            <EmptyState
+              title="No voice profiles"
+              detail="Add a planning voice using one of the eight source modes."
+            />
           ) : (
-            <div className="people-grid">
-              {voices.map((voice) => (
-                <article key={voice.id} className={effectiveSelectedVoiceId === voice.id ? 'selected-card' : undefined}>
-                  <b>{voice.name}</b>
-                  <small>{voiceModeLabel(voice)} · {voice.approval_state}</small>
-                  <p>
-                    {voice.consent_confirmed
-                      ? 'Consent confirmed'
-                      : voice.consent_required
-                        ? 'Consent required — not confirmed'
-                        : 'No consent required for this mode'}
-                  </p>
-                  <small>Provider status: {voice.provider_configuration_status ?? 'unknown'}</small>
-                  <button
-                    type="button"
-                    className="secondary-button touch-target"
-                    aria-pressed={effectiveSelectedVoiceId === voice.id}
-                    onClick={() => {
-                      setSelectedVoiceId(voice.id)
-                      setEditDraft(null)
-                      setRecipeProvider(voice.provider ?? '')
-                    }}
+            <div className="voice-grid">
+              {voices.map((voice) => {
+                const assignedCharacter = data.characters.find(
+                  (character) => character.id === voice.character_id,
+                )
+                const linkedShots = shots.filter(
+                  (shot) => shot.narration_voice_profile_id === voice.id,
+                ).length
+                const selected = effectiveSelectedVoiceId === voice.id && drawerTab !== 'create'
+                return (
+                  <article
+                    key={voice.id}
+                    role="button"
+                    tabIndex={0}
+                    className={selected ? 'selected' : undefined}
+                    aria-pressed={selected}
+                    onClick={() => selectVoice(voice)}
+                    onKeyDown={(event) => onCardKeyDown(event, voice)}
                   >
-                    {effectiveSelectedVoiceId === voice.id ? 'Selected' : 'Manage profile'}
-                  </button>
-                </article>
-              ))}
+                    <header
+                      style={{
+                        display: 'flex',
+                        gap: 10,
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-grid',
+                          placeItems: 'center',
+                          width: 34,
+                          height: 34,
+                          borderRadius: 10,
+                          background: '#1f2a28',
+                          color: 'var(--mint, #58dda1)',
+                          flexShrink: 0,
+                        }}
+                        aria-hidden="true"
+                      >
+                        <Icon name="mic" size={16} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <small style={{ display: 'block', color: 'var(--muted)' }}>
+                          {voiceModeLabel(voice)}
+                        </small>
+                        <b style={{ display: 'block' }}>{voice.name}</b>
+                      </span>
+                      <StatusPill status={approvalPillLabel(voice.approval_state)} />
+                    </header>
+
+                    <DecorativeWaveform />
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {voice.language ? (
+                        <span className="truth-pill">{voice.language}</span>
+                      ) : null}
+                      {voice.tone ? <span className="truth-pill">{voice.tone}</span> : null}
+                      {voice.accent ? <span className="truth-pill">{voice.accent}</span> : null}
+                      {!voice.language && !voice.tone && !voice.accent ? (
+                        <span className="truth-pill">{voice.source_type || voiceModeLabel(voice)}</span>
+                      ) : null}
+                    </div>
+
+                    <dl
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                        gap: 8,
+                        margin: 0,
+                      }}
+                    >
+                      <div>
+                        <dt style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Provider</dt>
+                        <dd style={{ margin: 0 }}>{voice.provider?.trim() || 'Unassigned'}</dd>
+                      </div>
+                      <div>
+                        <dt style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Assigned</dt>
+                        <dd style={{ margin: 0 }}>{assignedCharacter?.name ?? 'Unassigned'}</dd>
+                      </div>
+                      <div>
+                        <dt style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Narration</dt>
+                        <dd style={{ margin: 0 }}>{linkedShots} shots</dd>
+                      </div>
+                    </dl>
+
+                    <p className="form-hint" style={{ margin: 0 }}>
+                      {providerNote(voice)}
+                    </p>
+
+                    <footer
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      {voice.consent_confirmed ? (
+                        <span style={{ color: 'var(--mint, #58dda1)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          <Icon name="check" size={13} />
+                          Source clear
+                        </span>
+                      ) : voice.consent_required ? (
+                        <span style={{ color: '#e0b35a', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          <Icon name="warning" size={13} />
+                          Consent required
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--muted)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          <Icon name="check" size={13} />
+                          No consent required
+                        </span>
+                      )}
+                      <small style={{ color: 'var(--muted)' }}>Decorative waveform only</small>
+                    </footer>
+                  </article>
+                )
+              })}
             </div>
           )}
-        </section>
+        </div>
 
-        <section className="panel stack-form" style={{ maxWidth: '100%' }}>
-          <div className="panel-title">
+        <aside className="entity-drawer" aria-label="Voice profile drawer">
+          <header>
             <div>
-              <h2>Selected profile</h2>
-              <p>Edits and approvals persist through the voice API.</p>
+              <span className="eyebrow">VOICE PROFILE</span>
+              <h2 style={{ marginBottom: 0 }}>
+                {drawerTab === 'create'
+                  ? 'Add voice profile'
+                  : selectedVoice?.name ?? 'No profile selected'}
+              </h2>
             </div>
+            {drawerTab !== 'create' && selectedVoice ? (
+              <StatusPill status={approvalPillLabel(selectedVoice.approval_state)} />
+            ) : null}
+          </header>
+
+          <div className="segmented" role="tablist" aria-label="Voice drawer sections">
+            <button
+              type="button"
+              className={drawerTab === 'profile' ? 'active' : undefined}
+              role="tab"
+              aria-selected={drawerTab === 'profile'}
+              onClick={() => setDrawerTab('profile')}
+            >
+              Profile
+            </button>
+            <button
+              type="button"
+              className={drawerTab === 'recipes' ? 'active' : undefined}
+              role="tab"
+              aria-selected={drawerTab === 'recipes'}
+              onClick={() => setDrawerTab('recipes')}
+              disabled={!selectedVoice}
+            >
+              Recipes
+            </button>
+            <button
+              type="button"
+              className={drawerTab === 'create' ? 'active' : undefined}
+              role="tab"
+              aria-selected={drawerTab === 'create'}
+              onClick={() => setDrawerTab('create')}
+            >
+              Add
+            </button>
           </div>
-          {!selectedVoice ? (
-            <EmptyState title="No profile selected" detail="Create or select a voice profile to manage it." />
-          ) : (
-            <>
-              <ul className="kv-list">
-                <li><span>Mode</span><strong>{voiceModeLabel(selectedVoice)}</strong></li>
-                <li><span>Status</span><strong>{selectedVoice.approval_state}</strong></li>
-                <li><span>Selected preview asset</span><strong className="mono">{selectedVoice.selected_preview_asset_id ?? 'None'}</strong></li>
-              </ul>
+
+          {drawerTab === 'create' ? (
+            <form className="stack-form" style={{ maxWidth: '100%' }} onSubmit={(event) => void onSubmit(event)}>
+              <p className="form-hint">Select one of the eight modes. Saving writes planning metadata only.</p>
+              <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
+                <legend className="eyebrow">Source mode (8)</legend>
+                <div className="mode-grid" role="group" aria-label="Voice source modes">
+                  {VOICE_SETUP_MODES.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`mode-option ${mode === item ? 'selected' : ''}`}
+                      aria-pressed={mode === item}
+                      onClick={() => {
+                        setMode(item)
+                        if (!modeRequiresConsent(item)) setConsentConfirmed(false)
+                      }}
+                      disabled={disabled}
+                    >
+                      {VOICE_SETUP_MODE_LABELS[item]}
+                      <small>{item}</small>
+                    </button>
+                  ))}
+                </div>
+                <p className="form-hint">{modeHelp}</p>
+              </fieldset>
               <label>
-                Name
-                <input value={effectiveEditDraft.name} onChange={(event) => setEditDraft({ ...effectiveEditDraft, name: event.target.value })} disabled={disabled || selectedVoiceLocked} />
+                Profile name
+                <input
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  disabled={disabled}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Character assignment
+                <select
+                  value={characterId}
+                  onChange={(event) => setCharacterId(event.target.value)}
+                  disabled={disabled}
+                >
+                  <option value="">Unassigned</option>
+                  {data.characters.map((character) => (
+                    <option key={character.id} value={character.id}>
+                      {character.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Language
-                <input value={effectiveEditDraft.language} onChange={(event) => setEditDraft({ ...effectiveEditDraft, language: event.target.value })} disabled={disabled || selectedVoiceLocked} />
-              </label>
-              <label>
-                Usage notes
-                <textarea value={effectiveEditDraft.notes} onChange={(event) => setEditDraft({ ...effectiveEditDraft, notes: event.target.value })} disabled={disabled || selectedVoiceLocked} />
-              </label>
-              <label>
-                Source description
-                <textarea value={effectiveEditDraft.sourceDescription} onChange={(event) => setEditDraft({ ...effectiveEditDraft, sourceDescription: event.target.value })} disabled={disabled || selectedVoiceLocked} />
-              </label>
-              {selectedVoiceLocked ? (
-                <p className="notice info">Approved profiles are immutable in Phase 1. Create a new profile to change identity or routing fields.</p>
-              ) : (
-                <button type="button" className="secondary-button" disabled={disabled || !effectiveEditDraft.name.trim()} onClick={() => void saveProfile()}>
-                  Save profile edits
-                </button>
-              )}
-              <button
-                type="button"
-                className="ghost-button"
-                disabled={disabled || selectedVoiceLocked}
-                title={selectedVoiceLocked ? 'Approved profiles cannot be archived while locked into production identity.' : undefined}
-                onClick={() => void archiveSelectedVoice()}
-              >
-                Archive voice profile
-              </button>
-              <label>
-                Approval audit name
-                <input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} disabled={disabled || selectedVoiceLocked} placeholder="Your name or production role" />
-              </label>
-              <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-                <input type="checkbox" checked={allowWithoutPreview} onChange={(event) => setAllowWithoutPreview(event.target.checked)} disabled={disabled || selectedVoiceLocked} style={{ width: 20, height: 20, minHeight: 20 }} />
-                <span>Allow approval without a preview when this setup mode permits it</span>
-              </label>
-              <button type="button" className="primary-button" disabled={disabled || selectedVoiceLocked || !approvedBy.trim()} onClick={() => void approveProfile()}>
-                {selectedVoiceLocked ? 'Profile approved' : 'Approve voice profile'}
-              </button>
-            </>
-          )}
-        </section>
-      </div>
-
-      <div className="split-2">
-        <form className="panel stack-form" style={{ maxWidth: '100%' }} onSubmit={(event) => void onSubmit(event)}>
-          <div className="panel-title">
-            <div>
-              <h2>Add voice profile</h2>
-              <p>Select one of the eight modes. Saving writes planning metadata only.</p>
-            </div>
-          </div>
-          <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
-            <legend className="eyebrow">Source mode (8)</legend>
-            <div className="mode-grid" role="group" aria-label="Voice source modes">
-              {VOICE_SETUP_MODES.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={`mode-option ${mode === item ? 'selected' : ''}`}
-                  aria-pressed={mode === item}
-                  onClick={() => {
-                    setMode(item)
-                    if (!modeRequiresConsent(item)) setConsentConfirmed(false)
-                  }}
+                <input
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
                   disabled={disabled}
-                >
-                  {VOICE_SETUP_MODE_LABELS[item]}
-                  <small>{item}</small>
-                </button>
-              ))}
-            </div>
-            <p className="form-hint">{modeHelp}</p>
-          </fieldset>
-          <label>
-            Profile name
-            <input required value={name} onChange={(event) => setName(event.target.value)} disabled={disabled} autoComplete="off" />
-          </label>
-          <label>
-            Character assignment
-            <select value={characterId} onChange={(event) => setCharacterId(event.target.value)} disabled={disabled}>
-              <option value="">Unassigned</option>
-              {data.characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
-            </select>
-          </label>
-          <label>
-            Language
-            <input value={language} onChange={(event) => setLanguage(event.target.value)} disabled={disabled} />
-          </label>
-          {mode === 'existing_provider_voice' ? (
-            <div className="split-2">
-              <label>
-                Provider
-                <input required value={provider} onChange={(event) => setProvider(event.target.value)} disabled={disabled} />
+                />
               </label>
-              <label>
-                Provider voice reference
-                <input required value={providerVoiceReference} onChange={(event) => setProviderVoiceReference(event.target.value)} disabled={disabled} />
-              </label>
-            </div>
-          ) : null}
-          {mode === 'qwen_custom_voice' ? (
-            <label>
-              Preset Qwen speaker identifier
-              <input required value={customVoiceSpeaker} onChange={(event) => setCustomVoiceSpeaker(event.target.value)} disabled={disabled} placeholder="Preset speaker only — no reference audio" />
-            </label>
-          ) : null}
-          {mode === 'user_provided_consented' ? (
-            <div className="notice warning stack-form" style={{ maxWidth: '100%' }}>
-              <strong>Managed consented source</strong>
-              <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-                <input type="checkbox" checked={consentConfirmed} onChange={(event) => setConsentConfirmed(event.target.checked)} disabled={disabled} style={{ width: 20, height: 20, minHeight: 20 }} />
-                <span>I confirm rights/consent for this user-provided voice sample.</span>
-              </label>
-              <label>
-                Audio source (.wav, .mp3, .ogg, or .flac; up to 50 MB)
-                <input type="file" accept="audio/wav,audio/x-wav,audio/mpeg,audio/ogg,audio/flac,.wav,.mp3,.ogg,.flac" disabled={disabled} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} />
-              </label>
-              <button type="button" className="secondary-button" disabled={disabled || !sourceFile || !consentConfirmed} onClick={() => void uploadSource()}>
-                Upload consented managed source
-              </button>
-              <label>
-                Managed source asset
-                <select value={sourceAssetId} onChange={(event) => setSourceAssetId(event.target.value)} disabled={disabled}>
-                  <option value="">No managed source selected</option>
-                  {sourceAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.original_filename ?? asset.id} · {asset.approval_state}</option>)}
-                </select>
-              </label>
-            </div>
-          ) : null}
-          <label>
-            {modeRequiresDesign(mode) ? 'Voice design description' : mode === 'user_provided_consented' ? 'Managed source description' : 'Usage notes'}
-            <textarea required={modeRequiresDesign(mode)} value={notes} onChange={(event) => setNotes(event.target.value)} disabled={disabled} />
-          </label>
-          <button type="submit" className="primary-button touch-target" disabled={disabled || !name.trim() || (consentRequired && !consentConfirmed)}>
-            Save voice profile
-          </button>
-          <p className="notice info">Voice cloning and final audio generation are not exposed in Storyboard Phase 1.</p>
-        </form>
-
-        <section className="panel stack-form" style={{ maxWidth: '100%' }}>
-          <div className="panel-title">
-            <div>
-              <h2>Recipes and persisted previews</h2>
-              <p>Recipe creation stores metadata only. Preview generation is an explicit request and currently returns the backend's truthful unavailable response.</p>
-            </div>
-          </div>
-          {!selectedVoice ? (
-            <EmptyState title="No profile selected" detail="Select a profile to inspect recipes and previews." />
-          ) : resourcesLoading ? (
-            <LoadingState title="Loading recipes and previews…" />
-          ) : (
-            <>
-              <form className="stack-form" style={{ maxWidth: '100%' }} onSubmit={(event) => void createRecipe(event)}>
-                <h3>Create recipe</h3>
+              {mode === 'existing_provider_voice' ? (
                 <div className="split-2">
                   <label>
                     Provider
-                    <input required value={effectiveRecipeProvider} onChange={(event) => setRecipeProvider(event.target.value)} disabled={disabled || selectedVoiceLocked} />
+                    <input
+                      required
+                      value={provider}
+                      onChange={(event) => setProvider(event.target.value)}
+                      disabled={disabled}
+                    />
                   </label>
                   <label>
-                    Model (optional)
-                    <input value={recipeModel} onChange={(event) => setRecipeModel(event.target.value)} disabled={disabled || selectedVoiceLocked} />
+                    Provider voice reference
+                    <input
+                      required
+                      value={providerVoiceReference}
+                      onChange={(event) => setProviderVoiceReference(event.target.value)}
+                      disabled={disabled}
+                    />
                   </label>
                 </div>
+              ) : null}
+              {mode === 'qwen_custom_voice' ? (
                 <label>
-                  Recipe name
-                  <input value={recipeName} onChange={(event) => setRecipeName(event.target.value)} disabled={disabled || selectedVoiceLocked} />
+                  Preset Qwen speaker identifier
+                  <input
+                    required
+                    value={customVoiceSpeaker}
+                    onChange={(event) => setCustomVoiceSpeaker(event.target.value)}
+                    disabled={disabled}
+                    placeholder="Preset speaker only — no reference audio"
+                  />
                 </label>
-                <label>
-                  Description
-                  <textarea value={recipeDescription} onChange={(event) => setRecipeDescription(event.target.value)} disabled={disabled || selectedVoiceLocked} />
-                </label>
-                <button type="submit" className="secondary-button" disabled={disabled || selectedVoiceLocked || !effectiveRecipeProvider.trim()}>Save recipe metadata</button>
-              </form>
-              {recipes.length ? (
-                <ul className="kv-list">
-                  {recipes.map((recipe) => (
-                    <li key={recipe.id}>
-                      <span>{recipe.recipe_name || 'Unnamed recipe'} · {recipe.provider}{recipe.model ? ` / ${recipe.model}` : ''}</span>
-                      <strong>{formatDate(recipe.created_at)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="form-hint">No recipe metadata is persisted for this profile.</p>}
-
-              <h3>Explicit preview request</h3>
+              ) : null}
+              {mode === 'user_provided_consented' ? (
+                <div className="notice warning stack-form" style={{ maxWidth: '100%' }}>
+                  <strong>Managed consented source</strong>
+                  <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={consentConfirmed}
+                      onChange={(event) => setConsentConfirmed(event.target.checked)}
+                      disabled={disabled}
+                      style={{ width: 20, height: 20, minHeight: 20 }}
+                    />
+                    <span>I confirm rights/consent for this user-provided voice sample.</span>
+                  </label>
+                  <label>
+                    Audio source (.wav, .mp3, .ogg, or .flac; up to 50 MB)
+                    <input
+                      type="file"
+                      accept="audio/wav,audio/x-wav,audio/mpeg,audio/ogg,audio/flac,.wav,.mp3,.ogg,.flac"
+                      disabled={disabled}
+                      onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={disabled || !sourceFile || !consentConfirmed}
+                    onClick={() => void uploadSource()}
+                  >
+                    Upload consented managed source
+                  </button>
+                  <label>
+                    Managed source asset
+                    <select
+                      value={sourceAssetId}
+                      onChange={(event) => setSourceAssetId(event.target.value)}
+                      disabled={disabled}
+                    >
+                      <option value="">No managed source selected</option>
+                      {sourceAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.original_filename ?? asset.id} · {asset.approval_state}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
               <label>
-                Preview text
-                <textarea value={previewText} onChange={(event) => setPreviewText(event.target.value)} disabled={disabled || selectedVoiceLocked} maxLength={2000} />
+                {modeRequiresDesign(mode)
+                  ? 'Voice design description'
+                  : mode === 'user_provided_consented'
+                    ? 'Managed source description'
+                    : 'Usage notes'}
+                <textarea
+                  required={modeRequiresDesign(mode)}
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  disabled={disabled}
+                />
               </label>
-              <button type="button" className="secondary-button" disabled={disabled || selectedVoiceLocked || !previewText.trim()} onClick={() => void requestPreview()}>
-                Request provider-safe preview
-              </button>
-              <p className="form-hint">The public backend currently responds 503 until a durable isolated preview worker is configured. This action never falls back to in-process generation.</p>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={disabled || !name.trim() || (consentRequired && !consentConfirmed)}
+              >
+                Save voice profile
+              </Button>
+              <p className="notice info">
+                Voice cloning and final audio generation are not exposed in Storyboard Phase 1.
+              </p>
+            </form>
+          ) : null}
 
-              <h3>Persisted preview records</h3>
-              {previews.length ? (
+          {drawerTab === 'profile' ? (
+            !selectedVoice ? (
+              <EmptyState
+                title="No profile selected"
+                detail="Create or select a voice profile to manage it."
+              />
+            ) : (
+              <div className="stack-form" style={{ maxWidth: '100%' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'auto 1fr',
+                    gap: 12,
+                    alignItems: 'center',
+                    marginBottom: 4,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-grid',
+                      placeItems: 'center',
+                      width: 48,
+                      height: 48,
+                      borderRadius: 12,
+                      background: '#1f2a28',
+                      color: 'var(--mint, #58dda1)',
+                    }}
+                    aria-hidden="true"
+                  >
+                    <Icon name="mic" size={24} />
+                  </span>
+                  <DecorativeWaveform label="Decorative waveform for selected voice" />
+                </div>
+
                 <ul className="kv-list">
-                  {previews.map((preview) => (
-                    <li key={preview.id}>
-                      <span>{preview.provider ?? 'Unknown provider'} · {preview.preview_text ?? 'No preview text'} · asset {preview.planning_media_asset_id ?? 'missing'}</span>
-                      <button type="button" className="ghost-button" disabled={disabled || selectedVoiceLocked || preview.rejected || !preview.planning_media_asset_id} aria-pressed={preview.selected} onClick={() => void togglePreview(preview)}>
-                        {preview.rejected ? 'Rejected' : preview.selected ? 'Clear selection' : 'Select preview'}
-                      </button>
-                    </li>
-                  ))}
+                  <li>
+                    <span>Mode</span>
+                    <strong>{voiceModeLabel(selectedVoice)}</strong>
+                  </li>
+                  <li>
+                    <span>Status</span>
+                    <strong>{selectedVoice.approval_state}</strong>
+                  </li>
+                  <li>
+                    <span>Shot assignments</span>
+                    <strong>{selectedNarrations}</strong>
+                  </li>
+                  <li>
+                    <span>Provider notes</span>
+                    <strong>{providerNote(selectedVoice)}</strong>
+                  </li>
+                  <li>
+                    <span>Selected preview asset</span>
+                    <strong className="mono">
+                      {selectedVoice.selected_preview_asset_id ?? 'None'}
+                    </strong>
+                  </li>
                 </ul>
-              ) : <p className="form-hint">No preview records exist for this profile. Nothing is synthesized automatically.</p>}
-            </>
-          )}
-        </section>
+
+                <label>
+                  Name
+                  <input
+                    value={effectiveEditDraft.name}
+                    onChange={(event) =>
+                      setEditDraft({ ...effectiveEditDraft, name: event.target.value })
+                    }
+                    disabled={disabled || selectedVoiceLocked}
+                  />
+                </label>
+                <label>
+                  Language
+                  <input
+                    value={effectiveEditDraft.language}
+                    onChange={(event) =>
+                      setEditDraft({ ...effectiveEditDraft, language: event.target.value })
+                    }
+                    disabled={disabled || selectedVoiceLocked}
+                  />
+                </label>
+                <label>
+                  Usage notes
+                  <textarea
+                    value={effectiveEditDraft.notes}
+                    onChange={(event) =>
+                      setEditDraft({ ...effectiveEditDraft, notes: event.target.value })
+                    }
+                    disabled={disabled || selectedVoiceLocked}
+                  />
+                </label>
+                <label>
+                  Source description
+                  <textarea
+                    value={effectiveEditDraft.sourceDescription}
+                    onChange={(event) =>
+                      setEditDraft({
+                        ...effectiveEditDraft,
+                        sourceDescription: event.target.value,
+                      })
+                    }
+                    disabled={disabled || selectedVoiceLocked}
+                  />
+                </label>
+
+                {selectedVoiceLocked ? (
+                  <p className="notice info">
+                    Approved profiles are immutable in Phase 1. Create a new profile to change identity
+                    or routing fields.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={disabled || !effectiveEditDraft.name.trim()}
+                    onClick={() => void saveProfile()}
+                  >
+                    Save profile edits
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={disabled || selectedVoiceLocked}
+                  title={
+                    selectedVoiceLocked
+                      ? 'Approved profiles cannot be archived while locked into production identity.'
+                      : undefined
+                  }
+                  onClick={() => void archiveSelectedVoice()}
+                >
+                  Archive voice profile
+                </button>
+
+                <label>
+                  Approval audit name
+                  <input
+                    value={approvedBy}
+                    onChange={(event) => setApprovedBy(event.target.value)}
+                    disabled={disabled || selectedVoiceLocked}
+                    placeholder="Your name or production role"
+                  />
+                </label>
+                <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={allowWithoutPreview}
+                    onChange={(event) => setAllowWithoutPreview(event.target.checked)}
+                    disabled={disabled || selectedVoiceLocked}
+                    style={{ width: 20, height: 20, minHeight: 20 }}
+                  />
+                  <span>Allow approval without a preview when this setup mode permits it</span>
+                </label>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={disabled || selectedVoiceLocked || !approvedBy.trim()}
+                  onClick={() => void approveProfile()}
+                >
+                  {selectedVoiceLocked ? 'Profile approved' : 'Approve voice profile'}
+                </button>
+              </div>
+            )
+          ) : null}
+
+          {drawerTab === 'recipes' ? (
+            !selectedVoice ? (
+              <EmptyState
+                title="No profile selected"
+                detail="Select a profile to inspect recipes and previews."
+              />
+            ) : resourcesLoading ? (
+              <LoadingState title="Loading recipes and previews…" />
+            ) : (
+              <div className="stack-form" style={{ maxWidth: '100%' }}>
+                <form
+                  className="stack-form"
+                  style={{ maxWidth: '100%' }}
+                  onSubmit={(event) => void createRecipe(event)}
+                >
+                  <h3>Create recipe</h3>
+                  <p className="form-hint">
+                    Recipe creation stores metadata only. Preview generation is an explicit request and
+                    currently returns the backend&apos;s truthful unavailable response when no durable
+                    worker is configured.
+                  </p>
+                  <div className="split-2">
+                    <label>
+                      Provider
+                      <input
+                        required
+                        value={effectiveRecipeProvider}
+                        onChange={(event) => setRecipeProvider(event.target.value)}
+                        disabled={disabled || selectedVoiceLocked}
+                      />
+                    </label>
+                    <label>
+                      Model (optional)
+                      <input
+                        value={recipeModel}
+                        onChange={(event) => setRecipeModel(event.target.value)}
+                        disabled={disabled || selectedVoiceLocked}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Recipe name
+                    <input
+                      value={recipeName}
+                      onChange={(event) => setRecipeName(event.target.value)}
+                      disabled={disabled || selectedVoiceLocked}
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <textarea
+                      value={recipeDescription}
+                      onChange={(event) => setRecipeDescription(event.target.value)}
+                      disabled={disabled || selectedVoiceLocked}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="secondary-button"
+                    disabled={
+                      disabled || selectedVoiceLocked || !effectiveRecipeProvider.trim()
+                    }
+                  >
+                    Save recipe metadata
+                  </button>
+                </form>
+
+                {recipes.length ? (
+                  <ul className="kv-list">
+                    {recipes.map((recipe) => (
+                      <li key={recipe.id}>
+                        <span>
+                          {recipe.recipe_name || 'Unnamed recipe'} · {recipe.provider}
+                          {recipe.model ? ` / ${recipe.model}` : ''}
+                        </span>
+                        <strong>{formatDate(recipe.created_at)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="form-hint">No recipe metadata is persisted for this profile.</p>
+                )}
+
+                <h3>Explicit preview request</h3>
+                <label>
+                  Preview text
+                  <textarea
+                    value={previewText}
+                    onChange={(event) => setPreviewText(event.target.value)}
+                    disabled={disabled || selectedVoiceLocked}
+                    maxLength={2000}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={disabled || selectedVoiceLocked || !previewText.trim()}
+                  onClick={() => void requestPreview()}
+                >
+                  Request provider-safe preview
+                </button>
+                <p className="form-hint">
+                  The public backend currently responds 503 until a durable isolated preview worker is
+                  configured. This action never falls back to in-process generation and never clones a
+                  voice.
+                </p>
+
+                <h3>Persisted preview records</h3>
+                {previews.length ? (
+                  <ul className="kv-list">
+                    {previews.map((preview) => (
+                      <li key={preview.id}>
+                        <span>
+                          {preview.provider ?? 'Unknown provider'} ·{' '}
+                          {preview.preview_text ?? 'No preview text'} · asset{' '}
+                          {preview.planning_media_asset_id ?? 'missing'}
+                        </span>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={
+                            disabled ||
+                            selectedVoiceLocked ||
+                            preview.rejected ||
+                            !preview.planning_media_asset_id
+                          }
+                          aria-pressed={preview.selected}
+                          onClick={() => void togglePreview(preview)}
+                        >
+                          {preview.rejected
+                            ? 'Rejected'
+                            : preview.selected
+                              ? 'Clear selection'
+                              : 'Select preview'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="form-hint">
+                    No preview records exist for this profile. Nothing is synthesized automatically.
+                  </p>
+                )}
+              </div>
+            )
+          ) : null}
+        </aside>
       </div>
     </div>
   )

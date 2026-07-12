@@ -4,6 +4,7 @@ import {
   type ProjectStoryboardSettings,
   type ProjectStoryboardSettingsUpdate,
 } from '../../api/client'
+import { Button, PageTitle, Section } from '../../components/ui'
 import { useStudio } from '../StudioState'
 import { ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
@@ -49,6 +50,16 @@ const DEFAULT_DRAFT: ProjectStoryboardSettingsUpdate = {
   require_production_plan_approval: true,
 }
 
+const PREVIEW_RESOLUTIONS = [
+  { label: '1280 × 720', width: 1280, height: 720 },
+  { label: '1920 × 1080', width: 1920, height: 1080 },
+] as const
+
+const FINAL_RESOLUTIONS = [
+  { label: '1920 × 1080', width: 1920, height: 1080 },
+  { label: '3840 × 2160', width: 3840, height: 2160 },
+] as const
+
 function editableSettings(settings: ProjectStoryboardSettings): ProjectStoryboardSettingsUpdate {
   return {
     shot_duration_min_sec: settings.shot_duration_min_sec,
@@ -73,6 +84,51 @@ function editableSettings(settings: ProjectStoryboardSettings): ProjectStoryboar
     require_voice_consent: settings.require_voice_consent,
     require_production_plan_approval: settings.require_production_plan_approval,
   }
+}
+
+function policyFlag(policy: Record<string, unknown>, key: string): boolean {
+  return Boolean(policy[key])
+}
+
+function resolutionValue(width: number, height: number): string {
+  return `${width}x${height}`
+}
+
+function parseResolution(value: string): { width: number; height: number } | null {
+  const match = /^(\d+)x(\d+)$/.exec(value)
+  if (!match) return null
+  return { width: Number(match[1]), height: Number(match[2]) }
+}
+
+type ToggleRowProps = {
+  label: string
+  checked: boolean
+  disabled?: boolean
+  locked?: boolean
+  onChange?: (checked: boolean) => void
+}
+
+function ToggleRow({ label, checked, disabled, locked, onChange }: ToggleRowProps) {
+  return (
+    <label className="toggle-row">
+      <span>
+        {label}
+        {locked ? <small style={{ display: 'block', color: 'var(--muted)' }}>Locked off in Phase A planning</small> : null}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled || locked}
+        aria-disabled={locked || disabled ? true : undefined}
+        onChange={
+          locked || !onChange
+            ? undefined
+            : (event) => onChange(event.target.checked)
+        }
+        style={{ width: 20, height: 20, minHeight: 20 }}
+      />
+    </label>
+  )
 }
 
 export function SettingsPage() {
@@ -169,140 +225,434 @@ export function SettingsPage() {
 
   const savingDisabled = saving || busy
 
+  const setPolicyFlag = (
+    bucket: 'continuity_policy_json' | 'prompting_policy_json' | 'voice_policy_json' | 'approval_policy_json',
+    key: string,
+    value: boolean,
+  ) => {
+    setDraft({
+      ...draft,
+      [bucket]: {
+        ...draft[bucket],
+        [key]: value,
+      },
+    })
+  }
+
+  const previewResolution = resolutionValue(draft.preview_width, draft.preview_height)
+  const finalResolution = resolutionValue(draft.final_width, draft.final_height)
+  const previewKnown = PREVIEW_RESOLUTIONS.some(
+    (item) => item.width === draft.preview_width && item.height === draft.preview_height,
+  )
+  const finalKnown = FINAL_RESOLUTIONS.some(
+    (item) => item.width === draft.final_width && item.height === draft.final_height,
+  )
+
   return (
-    <form className="panel stack-form" style={{ maxWidth: 760 }} onSubmit={(event) => void onSave(event)}>
-      <div className="panel-title">
+    <form className="page settings-page" onSubmit={(event) => void onSave(event)}>
+      <PageTitle
+        eyebrow="PROJECT CONFIGURATION"
+        title="Project settings"
+        description="Control planning rules, output defaults, provider preferences, and safety gates for this project."
+        aside={
+          <div className="page-actions">
+            <Button
+              icon="spark"
+              onClick={() => void load()}
+              disabled={savingDisabled}
+            >
+              Refresh
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              icon="check"
+              disabled={savingDisabled}
+            >
+              {saving ? 'Saving…' : 'Save settings'}
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="panel-title" style={{ marginBottom: 12 }}>
         <div>
-          <h2>Project storyboard settings</h2>
-          <p>
-            Project <span className="mono">{data.story.project_id}</span> · settings version{' '}
-            {settings?.settings_version ?? 'new'}.
+          <p className="form-hint" style={{ margin: 0 }}>
+            Project <span className="mono">{data.story.project_id}</span>
+            {' · '}settings version {settings?.settings_version ?? 'new'}
+            {' · '}<span className="truth-pill">Server-backed · revision-aware PUT</span>
           </p>
         </div>
-        <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={savingDisabled}>
-          Refresh
-        </button>
       </div>
 
       {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
 
-      <div className="split-2">
-        <label>
-          Shot duration min (sec)
-          <input
-            type="number"
-            min={0.1}
-            step={0.1}
-            value={draft.shot_duration_min_sec}
-            onChange={(event) => setDraft({ ...draft, shot_duration_min_sec: Number(event.target.value) })}
-            disabled={savingDisabled}
-          />
-        </label>
-        <label>
-          Shot duration max (sec)
-          <input
-            type="number"
-            min={0.1}
-            step={0.1}
-            value={draft.shot_duration_max_sec}
-            onChange={(event) => setDraft({ ...draft, shot_duration_max_sec: Number(event.target.value) })}
-            disabled={savingDisabled}
-          />
-        </label>
+      <div className="settings-grid">
+        <Section title="Storyboard" subtitle="Duration, approval, continuity, and prompting policies.">
+          <div className="stack-form" style={{ maxWidth: '100%' }}>
+            <div className="split-2">
+              <label>
+                Minimum shot (sec)
+                <input
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={draft.shot_duration_min_sec}
+                  onChange={(event) =>
+                    setDraft({ ...draft, shot_duration_min_sec: Number(event.target.value) })
+                  }
+                  disabled={savingDisabled}
+                />
+              </label>
+              <label>
+                Maximum shot (sec)
+                <input
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={draft.shot_duration_max_sec}
+                  onChange={(event) =>
+                    setDraft({ ...draft, shot_duration_max_sec: Number(event.target.value) })
+                  }
+                  disabled={savingDisabled}
+                />
+              </label>
+            </div>
+            <label>
+              Speaking rate
+              <input
+                type="number"
+                min={0.1}
+                step={0.05}
+                value={draft.speaking_rate}
+                onChange={(event) => setDraft({ ...draft, speaking_rate: Number(event.target.value) })}
+                disabled={savingDisabled}
+              />
+            </label>
+            <ToggleRow
+              label="Require exact reconciled story duration"
+              checked={policyFlag(draft.approval_policy_json, 'require_exact_duration')}
+              disabled={savingDisabled}
+              onChange={(checked) => setPolicyFlag('approval_policy_json', 'require_exact_duration', checked)}
+            />
+            <ToggleRow
+              label="Require at least one chapter"
+              checked={policyFlag(draft.approval_policy_json, 'require_at_least_one_chapter')}
+              disabled={savingDisabled}
+              onChange={(checked) => setPolicyFlag('approval_policy_json', 'require_at_least_one_chapter', checked)}
+            />
+            <ToggleRow
+              label="Require at least one scene"
+              checked={policyFlag(draft.approval_policy_json, 'require_at_least_one_scene')}
+              disabled={savingDisabled}
+              onChange={(checked) => setPolicyFlag('approval_policy_json', 'require_at_least_one_scene', checked)}
+            />
+            <ToggleRow
+              label="Require at least one shot"
+              checked={policyFlag(draft.approval_policy_json, 'require_at_least_one_shot')}
+              disabled={savingDisabled}
+              onChange={(checked) => setPolicyFlag('approval_policy_json', 'require_at_least_one_shot', checked)}
+            />
+            <ToggleRow
+              label="Require narration or exception"
+              checked={policyFlag(draft.approval_policy_json, 'require_narration_or_exception')}
+              disabled={savingDisabled}
+              onChange={(checked) => setPolicyFlag('approval_policy_json', 'require_narration_or_exception', checked)}
+            />
+            <ToggleRow
+              label="Block approval when any shot is blocked"
+              checked={policyFlag(draft.approval_policy_json, 'block_on_shot_blocked')}
+              disabled={savingDisabled}
+              onChange={(checked) => setPolicyFlag('approval_policy_json', 'block_on_shot_blocked', checked)}
+            />
+            <ToggleRow
+              label="Require starting image when a shot is flagged"
+              checked={policyFlag(draft.continuity_policy_json, 'require_starting_image_when_flagged')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('continuity_policy_json', 'require_starting_image_when_flagged', checked)
+              }
+            />
+            <ToggleRow
+              label="Allow cross-scene continuity"
+              checked={policyFlag(draft.continuity_policy_json, 'allow_cross_scene_continuity')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('continuity_policy_json', 'allow_cross_scene_continuity', checked)
+              }
+            />
+            <ToggleRow
+              label="Require visual description on shots"
+              checked={policyFlag(draft.prompting_policy_json, 'require_visual_description')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('prompting_policy_json', 'require_visual_description', checked)
+              }
+            />
+            <ToggleRow
+              label="Require story purpose on shots"
+              checked={policyFlag(draft.prompting_policy_json, 'require_story_purpose')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('prompting_policy_json', 'require_story_purpose', checked)
+              }
+            />
+            <ToggleRow
+              label="Allow placeholder voices for approval"
+              checked={policyFlag(draft.voice_policy_json, 'allow_placeholder_for_approval')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('voice_policy_json', 'allow_placeholder_for_approval', checked)
+              }
+            />
+            <ToggleRow
+              label="Allow manual voices for approval"
+              checked={policyFlag(draft.voice_policy_json, 'allow_manual_for_approval')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('voice_policy_json', 'allow_manual_for_approval', checked)
+              }
+            />
+            <ToggleRow
+              label="Require consent when voice policy marks it required"
+              checked={policyFlag(draft.voice_policy_json, 'require_consent_when_required')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('voice_policy_json', 'require_consent_when_required', checked)
+              }
+            />
+            <ToggleRow
+              label="Block unresolved provider voices"
+              checked={policyFlag(draft.voice_policy_json, 'block_unresolved_provider_voices')}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setPolicyFlag('voice_policy_json', 'block_unresolved_provider_voices', checked)
+              }
+            />
+          </div>
+        </Section>
+
+        <Section title="Output" subtitle="Preview and final production targets.">
+          <div className="stack-form" style={{ maxWidth: '100%' }}>
+            <div className="split-2">
+              <label>
+                Aspect ratio
+                <select
+                  value={draft.aspect_ratio}
+                  onChange={(event) => setDraft({ ...draft, aspect_ratio: event.target.value })}
+                  disabled={savingDisabled}
+                >
+                  <option value="16:9">16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="1:1">1:1</option>
+                  <option value="2.39:1">2.39:1</option>
+                </select>
+              </label>
+              <label>
+                Frames per second
+                <select
+                  value={String(draft.fps)}
+                  onChange={(event) => setDraft({ ...draft, fps: Number(event.target.value) })}
+                  disabled={savingDisabled}
+                >
+                  <option value="24">24 fps</option>
+                  <option value="25">25 fps</option>
+                  <option value="30">30 fps</option>
+                  <option value="60">60 fps</option>
+                  {!['24', '25', '30', '60'].includes(String(draft.fps)) ? (
+                    <option value={String(draft.fps)}>{draft.fps} fps (current)</option>
+                  ) : null}
+                </select>
+              </label>
+            </div>
+            <label>
+              Preview resolution
+              <select
+                value={previewKnown ? previewResolution : 'custom'}
+                onChange={(event) => {
+                  if (event.target.value === 'custom') return
+                  const parsed = parseResolution(event.target.value)
+                  if (!parsed) return
+                  setDraft({
+                    ...draft,
+                    preview_width: parsed.width,
+                    preview_height: parsed.height,
+                  })
+                }}
+                disabled={savingDisabled}
+              >
+                {PREVIEW_RESOLUTIONS.map((item) => (
+                  <option key={item.label} value={resolutionValue(item.width, item.height)}>
+                    {item.label}
+                  </option>
+                ))}
+                {!previewKnown ? (
+                  <option value="custom">
+                    {draft.preview_width} × {draft.preview_height} (current)
+                  </option>
+                ) : null}
+              </select>
+            </label>
+            <label>
+              Final target resolution
+              <select
+                value={finalKnown ? finalResolution : 'custom'}
+                onChange={(event) => {
+                  if (event.target.value === 'custom') return
+                  const parsed = parseResolution(event.target.value)
+                  if (!parsed) return
+                  setDraft({
+                    ...draft,
+                    final_width: parsed.width,
+                    final_height: parsed.height,
+                  })
+                }}
+                disabled={savingDisabled}
+              >
+                {FINAL_RESOLUTIONS.map((item) => (
+                  <option key={item.label} value={resolutionValue(item.width, item.height)}>
+                    {item.label}
+                  </option>
+                ))}
+                {!finalKnown ? (
+                  <option value="custom">
+                    {draft.final_width} × {draft.final_height} (current)
+                  </option>
+                ) : null}
+              </select>
+            </label>
+            <div className="split-2">
+              <label>
+                Preview width
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={draft.preview_width}
+                  onChange={(event) =>
+                    setDraft({ ...draft, preview_width: Number(event.target.value) })
+                  }
+                  disabled={savingDisabled}
+                />
+              </label>
+              <label>
+                Preview height
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={draft.preview_height}
+                  onChange={(event) =>
+                    setDraft({ ...draft, preview_height: Number(event.target.value) })
+                  }
+                  disabled={savingDisabled}
+                />
+              </label>
+            </div>
+            <div className="split-2">
+              <label>
+                Final width
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={draft.final_width}
+                  onChange={(event) =>
+                    setDraft({ ...draft, final_width: Number(event.target.value) })
+                  }
+                  disabled={savingDisabled}
+                />
+              </label>
+              <label>
+                Final height
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={draft.final_height}
+                  onChange={(event) =>
+                    setDraft({ ...draft, final_height: Number(event.target.value) })
+                  }
+                  disabled={savingDisabled}
+                />
+              </label>
+            </div>
+            <ToggleRow
+              label="Captions enabled"
+              checked={draft.captions_enabled}
+              disabled={savingDisabled}
+              onChange={(checked) => setDraft({ ...draft, captions_enabled: checked })}
+            />
+            <ToggleRow
+              label="Audio enabled"
+              checked={draft.audio_enabled}
+              disabled={savingDisabled}
+              onChange={(checked) => setDraft({ ...draft, audio_enabled: checked })}
+            />
+          </div>
+        </Section>
+
+        <Section title="Providers" subtitle="Planning preferences only—no credentials are stored here.">
+          <div className="stack-form" style={{ maxWidth: '100%' }}>
+            <ToggleRow
+              label="Prefer local providers"
+              checked={draft.prefer_local_providers}
+              disabled={savingDisabled}
+              onChange={(checked) => setDraft({ ...draft, prefer_local_providers: checked })}
+            />
+            <ToggleRow
+              label="Prefer hosted providers"
+              checked={draft.prefer_hosted_providers}
+              disabled={savingDisabled}
+              onChange={(checked) => setDraft({ ...draft, prefer_hosted_providers: checked })}
+            />
+            <p className="form-hint">
+              These flags influence planning routing preference metadata only. They do not store API
+              keys, open provider sessions, or start planning runs.
+            </p>
+          </div>
+        </Section>
+
+        <Section title="Safety" subtitle="Explicit approval gates for consequential actions.">
+          <div className="stack-form" style={{ maxWidth: '100%' }}>
+            <ToggleRow
+              label="Require voice consent"
+              checked={draft.require_voice_consent}
+              disabled={savingDisabled}
+              onChange={(checked) => setDraft({ ...draft, require_voice_consent: checked })}
+            />
+            <ToggleRow
+              label="Require production-plan approval"
+              checked={draft.require_production_plan_approval}
+              disabled={savingDisabled}
+              onChange={(checked) =>
+                setDraft({ ...draft, require_production_plan_approval: checked })
+              }
+            />
+            <ToggleRow
+              label="Allow model download"
+              checked={false}
+              locked
+              disabled={savingDisabled}
+            />
+            <ToggleRow
+              label="Allow rendering"
+              checked={false}
+              locked
+              disabled={savingDisabled}
+            />
+            <p className="form-hint">
+              Rendering and model downloads remain forced off on every save in Phase A, regardless of
+              server or draft values.
+            </p>
+          </div>
+        </Section>
       </div>
 
-      <div className="split-2">
-        <label>
-          Aspect ratio
-          <select
-            value={draft.aspect_ratio}
-            onChange={(event) => setDraft({ ...draft, aspect_ratio: event.target.value })}
-            disabled={savingDisabled}
-          >
-            <option value="16:9">16:9</option>
-            <option value="9:16">9:16</option>
-            <option value="1:1">1:1</option>
-            <option value="2.39:1">2.39:1</option>
-          </select>
-        </label>
-        <label>
-          Frames per second
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={draft.fps}
-            onChange={(event) => setDraft({ ...draft, fps: Number(event.target.value) })}
-            disabled={savingDisabled}
-          />
-        </label>
-      </div>
-
-      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-        <input
-          type="checkbox"
-          checked={Boolean(draft.approval_policy_json.require_exact_duration)}
-          onChange={(event) => setDraft({
-            ...draft,
-            approval_policy_json: {
-              ...draft.approval_policy_json,
-              require_exact_duration: event.target.checked,
-            },
-          })}
-          disabled={savingDisabled}
-          style={{ width: 20, height: 20, minHeight: 20 }}
-        />
-        <span>Require exact reconciled story duration</span>
-      </label>
-
-      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-        <input
-          type="checkbox"
-          checked={Boolean(draft.continuity_policy_json.require_starting_image_when_flagged)}
-          onChange={(event) => setDraft({
-            ...draft,
-            continuity_policy_json: {
-              ...draft.continuity_policy_json,
-              require_starting_image_when_flagged: event.target.checked,
-            },
-          })}
-          disabled={savingDisabled}
-          style={{ width: 20, height: 20, minHeight: 20 }}
-        />
-        <span>Require a starting image when a shot is flagged</span>
-      </label>
-
-      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-        <input
-          type="checkbox"
-          checked={draft.require_voice_consent}
-          onChange={(event) => setDraft({ ...draft, require_voice_consent: event.target.checked })}
-          disabled={savingDisabled}
-          style={{ width: 20, height: 20, minHeight: 20 }}
-        />
-        <span>Require voice consent</span>
-      </label>
-
-      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-        <input
-          type="checkbox"
-          checked={draft.require_production_plan_approval}
-          onChange={(event) => setDraft({ ...draft, require_production_plan_approval: event.target.checked })}
-          disabled={savingDisabled}
-          style={{ width: 20, height: 20, minHeight: 20 }}
-        />
-        <span>Require production-plan approval</span>
-      </label>
-
-      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-        <input type="checkbox" checked={false} disabled aria-disabled="true" style={{ width: 20, height: 20, minHeight: 20 }} />
-        <span>Rendering and model downloads — locked off in Phase A planning</span>
-      </label>
-
-      <div className="inline-actions">
-        <button type="submit" className="primary-button touch-target" disabled={savingDisabled}>
+      <div className="inline-actions" style={{ marginTop: 16 }}>
+        <Button type="submit" variant="primary" icon="check" disabled={savingDisabled}>
           {saving ? 'Saving…' : 'Save settings'}
-        </button>
+        </Button>
         <span className="truth-pill">Server-backed · revision-aware PUT</span>
       </div>
 

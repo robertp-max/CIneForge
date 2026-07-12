@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from './api/client'
+import { api, type Project } from './api/client'
 import { AppShell, type PageId } from './components/AppShell'
 import { StoryboardStudio } from './pages/StoryboardStudio'
 import { StudioProvider } from './studio/StudioContext'
@@ -75,20 +75,31 @@ function StudioAppShell({
   activePage,
   backendStatus,
   projectId,
+  projects,
+  projectsError,
+  runtimeLabel,
+  runtimeDetail,
   onNavigate,
+  onSelectProject,
   onRefreshStatus,
   children,
 }: {
   activePage: PageId
   backendStatus: string
   projectId: string
+  projects: Project[]
+  projectsError: string | null
+  runtimeLabel: string
+  runtimeDetail: string
   onNavigate: (page: PageId) => void
+  onSelectProject: (projectId: string) => void
   onRefreshStatus?: () => void
   children: React.ReactNode
 }) {
   const { data, setAnimaticOpen, setMessage } = useStudio()
   const shotCount = useMemo(() => (data ? countShots(data.chapters) : undefined), [data])
-  const projectName = data?.story.title ?? 'A New Journey'
+  const apiProjectName = projects.find((project) => project.id === projectId)?.name
+  const projectName = data?.story.title ?? apiProjectName ?? 'A New Journey'
 
   return (
     <AppShell
@@ -96,8 +107,13 @@ function StudioAppShell({
       backendStatus={backendStatus}
       projectId={projectId}
       projectName={projectName}
+      projects={projects}
+      projectsError={projectsError}
       shotCount={shotCount}
+      runtimeLabel={runtimeLabel}
+      runtimeDetail={runtimeDetail}
       onNavigate={onNavigate}
+      onSelectProject={onSelectProject}
       onRefreshStatus={onRefreshStatus}
       onSaveDraft={() =>
         setMessage('Draft state is current in this browser session. Server data remains canonical when connected.')
@@ -112,11 +128,16 @@ function StudioAppShell({
 function App() {
   const [routeState, setRouteState] = useState(readStudioRoute)
   const [backendStatus, setBackendStatus] = useState('checking')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectsError, setProjectsError] = useState<string | null>(null)
+  const [runtimeLabel, setRuntimeLabel] = useState('Runtime status')
+  const [runtimeDetail, setRuntimeDetail] = useState('Checking backend…')
   const activePage = routeState.page
 
   const navigate = useCallback(
-    (page: PageId, options?: { replace?: boolean }) => {
-      const next = { projectId: routeState.projectId || DEFAULT_PROJECT_ID, page }
+    (page: PageId, options?: { replace?: boolean; projectId?: string }) => {
+      const nextProjectId = options?.projectId || routeState.projectId || DEFAULT_PROJECT_ID
+      const next = { projectId: nextProjectId, page }
       const path = studioPath(next.projectId, page)
       const method = options?.replace ? 'replaceState' : 'pushState'
       if (window.location.pathname !== path) {
@@ -127,12 +148,54 @@ function App() {
     [routeState.projectId],
   )
 
+  const selectProject = useCallback(
+    (nextProjectId: string) => {
+      navigate(activePage, { projectId: nextProjectId })
+    },
+    [activePage, navigate],
+  )
+
   const refreshBackendStatus = useCallback(async () => {
     try {
-      const health = await api.health()
-      setBackendStatus(normalizeBackendStatus(health.status))
+      const [health, runtime] = await Promise.all([
+        api.health(),
+        api.runtimeStatus().catch(() => null),
+      ])
+      setBackendStatus(normalizeBackendStatus(runtime?.status || health.status))
+      if (runtime) {
+        const comfy = String(runtime.comfyui?.status ?? 'unknown')
+        const gpu = runtime.gpu && typeof runtime.gpu === 'object' ? runtime.gpu : null
+        const gpuName =
+          gpu && 'name' in gpu && typeof gpu.name === 'string'
+            ? gpu.name
+            : gpu && 'gpu_name' in gpu && typeof gpu.gpu_name === 'string'
+              ? gpu.gpu_name
+              : null
+        setRuntimeLabel(comfy === 'ok' || comfy === 'healthy' ? 'ComfyUI reachable' : `ComfyUI ${comfy}`)
+        setRuntimeDetail(gpuName ? `${gpuName}` : `Phase ${runtime.current_phase ?? 'unknown'}`)
+      } else {
+        setRuntimeLabel(`Backend ${normalizeBackendStatus(health.status)}`)
+        setRuntimeDetail('Runtime status unavailable')
+      }
     } catch {
       setBackendStatus('unavailable')
+      setRuntimeLabel('Backend unavailable')
+      setRuntimeDetail('Start API or use local demo plan')
+    }
+  }, [])
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      const list = await api.listProjects()
+      setProjects(list)
+      setProjectsError(null)
+    } catch (error) {
+      setProjects([])
+      setProjectsError(
+        error instanceof Error
+          ? `Projects API unavailable: ${error.message}`
+          : 'Projects API unavailable.',
+      )
     }
   }, [])
 
@@ -149,7 +212,10 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const initial = window.setTimeout(() => void refreshBackendStatus(), 0)
+    const initial = window.setTimeout(() => {
+      void refreshBackendStatus()
+      void refreshProjects()
+    }, 0)
     const timer = window.setInterval(() => {
       void refreshBackendStatus()
     }, 30_000)
@@ -157,7 +223,7 @@ function App() {
       window.clearTimeout(initial)
       window.clearInterval(timer)
     }
-  }, [refreshBackendStatus])
+  }, [refreshBackendStatus, refreshProjects])
 
   return (
     <StudioProvider backendStatus={backendStatus} onNavigate={navigate}>
@@ -165,8 +231,16 @@ function App() {
         activePage={activePage}
         backendStatus={backendStatus}
         projectId={routeState.projectId}
+        projects={projects}
+        projectsError={projectsError}
+        runtimeLabel={runtimeLabel}
+        runtimeDetail={runtimeDetail}
         onNavigate={navigate}
-        onRefreshStatus={() => void refreshBackendStatus()}
+        onSelectProject={selectProject}
+        onRefreshStatus={() => {
+          void refreshBackendStatus()
+          void refreshProjects()
+        }}
       >
         <StoryboardStudio page={activePage} backendStatus={backendStatus} onNavigate={navigate} />
       </StudioAppShell>

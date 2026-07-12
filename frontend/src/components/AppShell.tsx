@@ -1,5 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
+import type { Project } from '../api/client'
 import { StatusBadge } from './StatusBadge'
+import { Icon, type IconName } from './ui'
 
 export type PageId =
   | 'overview'
@@ -17,17 +19,17 @@ const primaryNav: {
   id: Exclude<PageId, 'settings'>
   label: string
   short: string
-  icon: string
+  icon: IconName
 }[] = [
-  { id: 'overview', label: 'Overview', short: 'Overview', icon: '▦' },
-  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: '▤' },
-  { id: 'story', label: 'Story & chapters', short: 'Story', icon: '▱' },
-  { id: 'characters', label: 'Characters', short: 'Cast', icon: '♙' },
-  { id: 'voices', label: 'Voices', short: 'Voices', icon: '♬' },
-  { id: 'images', label: 'Starting images', short: 'Images', icon: '▧' },
-  { id: 'routing', label: 'Model routing', short: 'Routing', icon: '◈' },
-  { id: 'workflows', label: 'Workflows', short: 'Flows', icon: '◇' },
-  { id: 'exports', label: 'Exports', short: 'Export', icon: '↓' },
+  { id: 'overview', label: 'Overview', short: 'Overview', icon: 'grid' },
+  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: 'film' },
+  { id: 'story', label: 'Story & chapters', short: 'Story', icon: 'book' },
+  { id: 'characters', label: 'Characters', short: 'Cast', icon: 'people' },
+  { id: 'voices', label: 'Voices', short: 'Voices', icon: 'mic' },
+  { id: 'images', label: 'Starting images', short: 'Images', icon: 'image' },
+  { id: 'routing', label: 'Model routing', short: 'Routing', icon: 'cpu' },
+  { id: 'workflows', label: 'Workflows', short: 'Flows', icon: 'layers' },
+  { id: 'exports', label: 'Exports', short: 'Export', icon: 'download' },
 ]
 
 const pageLabels: Record<PageId, string> = {
@@ -48,14 +50,28 @@ type AppShellProps = {
   backendStatus: string
   projectId: string
   projectName?: string
+  projects?: Project[]
+  projectsError?: string | null
   shotCount?: number
   runtimeLabel?: string
   runtimeDetail?: string
   onNavigate: (page: PageId) => void
+  onSelectProject?: (projectId: string) => void
   onRefreshStatus?: () => void
   onSaveDraft?: () => void
   onPreviewAnimatic?: () => void
   children: ReactNode
+}
+
+function projectInitials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('') || 'PR'
+  )
 }
 
 export function AppShell({
@@ -63,10 +79,13 @@ export function AppShell({
   backendStatus,
   projectId,
   projectName = 'A New Journey',
+  projects = [],
+  projectsError = null,
   shotCount,
-  runtimeLabel = 'ComfyUI ready',
-  runtimeDetail = 'RTX 5090 Laptop · 24 GB',
+  runtimeLabel = 'Runtime status',
+  runtimeDetail = 'Checking backend…',
   onNavigate,
+  onSelectProject,
   onRefreshStatus,
   onSaveDraft,
   onPreviewAnimatic,
@@ -75,33 +94,31 @@ export function AppShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const navId = useId()
   const activeLabel = pageLabels[activePage] ?? 'Studio'
-  const initials = projectName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('') || 'AJ'
+  const initials = projectInitials(projectName)
 
   useEffect(() => {
-    if (!mobileNavOpen && !searchOpen && !notificationsOpen) return
+    if (!mobileNavOpen && !searchOpen && !notificationsOpen && !projectMenuOpen) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMobileNavOpen(false)
         setSearchOpen(false)
         setNotificationsOpen(false)
+        setProjectMenuOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mobileNavOpen, searchOpen, notificationsOpen])
+  }, [mobileNavOpen, searchOpen, notificationsOpen, projectMenuOpen])
 
   const handleNavigate = (page: PageId) => {
     onNavigate(page)
     setMobileNavOpen(false)
     setSearchOpen(false)
     setNotificationsOpen(false)
+    setProjectMenuOpen(false)
   }
 
   return (
@@ -113,7 +130,7 @@ export function AppShell({
       <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''}`} aria-label="Studio sidebar">
         <button type="button" className="brand" onClick={() => handleNavigate('overview')}>
           <span className="brand-mark" aria-hidden="true">
-            ▷
+            <Icon name="play" size={15} />
           </span>
           <span>
             <strong>CineForge</strong>
@@ -125,17 +142,56 @@ export function AppShell({
           aria-label="Close navigation"
           onClick={() => setMobileNavOpen(false)}
         >
-          ×
+          <Icon name="close" size={16} />
         </button>
 
-        <button type="button" className="project-switcher touch-target" title={projectId}>
-          <span className="project-avatar">{initials}</span>
-          <span>
-            <strong>{projectName}</strong>
-            <small>Storyboard Phase A</small>
-          </span>
-          <span aria-hidden="true">⌄</span>
-        </button>
+        <div className="project-switch-wrap">
+          <button
+            type="button"
+            className="project-switcher touch-target"
+            title={projectId}
+            aria-expanded={projectMenuOpen}
+            onClick={() => setProjectMenuOpen((open) => !open)}
+          >
+            <span className="project-avatar">{initials}</span>
+            <span>
+              <strong>{projectName}</strong>
+              <small>Storyboard Phase A</small>
+            </span>
+            <Icon name="chevron" size={14} />
+          </button>
+          {projectMenuOpen ? (
+            <div className="popover project-pop" role="menu">
+              {projects.length ? (
+                projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    role="menuitem"
+                    className={project.id === projectId ? 'active' : ''}
+                    onClick={() => {
+                      onSelectProject?.(project.id)
+                      setProjectMenuOpen(false)
+                    }}
+                  >
+                    <span className="project-avatar">{projectInitials(project.name)}</span>
+                    <span>
+                      <b>{project.name}</b>
+                      <small className="mono">{project.id.slice(0, 8)}…</small>
+                    </span>
+                    {project.id === projectId ? <Icon name="check" size={14} /> : null}
+                  </button>
+                ))
+              ) : (
+                <p className="form-hint" style={{ padding: 10, margin: 0 }}>
+                  {projectsError
+                    ? projectsError
+                    : 'No projects returned from GET /projects. Demo plan remains available offline.'}
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
 
         <nav id={navId} aria-label="Primary navigation">
           <span className="sidebar-section-label">Project</span>
@@ -151,7 +207,7 @@ export function AppShell({
                 onClick={() => handleNavigate(item.id)}
               >
                 <span className="nav-icon" aria-hidden="true">
-                  {item.icon}
+                  <Icon name={item.icon} size={16} />
                 </span>
                 <span className="nav-label-full">{item.label}</span>
                 <span className="nav-label-short">{item.short}</span>
@@ -169,7 +225,7 @@ export function AppShell({
             aria-current={activePage === 'settings' ? 'page' : undefined}
           >
             <span className="nav-icon" aria-hidden="true">
-              ⚙
+              <Icon name="settings" size={16} />
             </span>
             <span>Project settings</span>
           </button>
@@ -186,7 +242,7 @@ export function AppShell({
               <strong>Robert</strong>
               <small>Producer</small>
             </span>
-            <span aria-hidden="true">•••</span>
+            <Icon name="more" size={14} />
           </div>
         </div>
       </aside>
@@ -211,13 +267,13 @@ export function AppShell({
               onClick={() => setMobileNavOpen((open) => !open)}
             >
               <span className="sr-only">Open navigation</span>
-              <span aria-hidden="true">☰</span>
+              <Icon name="menu" size={18} />
             </button>
             <div className="breadcrumb" aria-label="Breadcrumb">
               <span>Projects</span>
-              <span aria-hidden="true">›</span>
+              <Icon name="chevron" size={13} />
               <span>{projectName}</span>
-              <span aria-hidden="true">›</span>
+              <Icon name="chevron" size={13} />
               <strong>{activeLabel}</strong>
               <span className="phase-badge">Phase A</span>
             </div>
@@ -232,7 +288,7 @@ export function AppShell({
                 setNotificationsOpen(false)
               }}
             >
-              ⌕
+              <Icon name="search" size={16} />
             </button>
             <button
               type="button"
@@ -243,7 +299,7 @@ export function AppShell({
                 setSearchOpen(false)
               }}
             >
-              ◦
+              <Icon name="bell" size={16} />
             </button>
             {onSaveDraft ? (
               <button type="button" className="secondary-button touch-target" onClick={onSaveDraft}>
@@ -252,7 +308,7 @@ export function AppShell({
             ) : null}
             {onPreviewAnimatic ? (
               <button type="button" className="primary-button touch-target" onClick={onPreviewAnimatic}>
-                ▷ Preview animatic
+                <Icon name="play" size={14} /> Preview animatic
               </button>
             ) : null}
             <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} />
@@ -277,12 +333,12 @@ export function AppShell({
                 aria-label="Close notifications"
                 onClick={() => setNotificationsOpen(false)}
               >
-                ×
+                <Icon name="close" size={16} />
               </button>
             </header>
             <button type="button" onClick={() => handleNavigate('images')}>
               <span className="note-icon warning" aria-hidden="true">
-                !
+                <Icon name="warning" size={14} />
               </span>
               <span>
                 <b>Starting image blocked</b>
@@ -291,7 +347,7 @@ export function AppShell({
             </button>
             <button type="button" onClick={() => handleNavigate('voices')}>
               <span className="note-icon" aria-hidden="true">
-                ♬
+                <Icon name="mic" size={14} />
               </span>
               <span>
                 <b>Voice consent missing</b>
@@ -300,11 +356,11 @@ export function AppShell({
             </button>
             <button type="button" onClick={() => handleNavigate('routing')}>
               <span className="note-icon" aria-hidden="true">
-                ◈
+                <Icon name="cpu" size={14} />
               </span>
               <span>
                 <b>Model gap detected</b>
-                <small>One recommended checkpoint is not installed.</small>
+                <small>Check routing catalog for missing evidence.</small>
               </span>
             </button>
           </aside>
@@ -327,13 +383,11 @@ export function AppShell({
                   aria-label="Close search"
                   onClick={() => setSearchOpen(false)}
                 >
-                  ×
+                  <Icon name="close" size={16} />
                 </button>
               </header>
               <div className="modal-body">
-                <p className="form-hint">
-                  Jump to a studio surface. Full entity search requires loaded planning data.
-                </p>
+                <p className="form-hint">Jump to a studio surface.</p>
                 <div className="search-results">
                   {primaryNav.map((item) => (
                     <button key={item.id} type="button" onClick={() => handleNavigate(item.id)}>
@@ -341,7 +395,7 @@ export function AppShell({
                         <b>{item.label}</b>
                         <small>Page</small>
                       </span>
-                      <span aria-hidden="true">→</span>
+                      <Icon name="arrow" size={14} />
                     </button>
                   ))}
                 </div>

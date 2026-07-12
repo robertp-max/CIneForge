@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, planningAssetContentUrl, type PlanningMediaAsset } from '../../api/client'
+import { PageTitle, StatusPill } from '../../components/ui'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
@@ -7,6 +8,11 @@ const GENERATION_DISABLED_REASON =
   'Image generation is disabled in Phase 1 planning; no render or ComfyUI submission endpoint is exposed.'
 
 type RequirementFilter = 'all' | 'required' | 'missing' | 'assigned'
+
+type ShotLike = {
+  starting_image_required: boolean
+  starting_image_asset_id: string | null
+}
 
 function formatBytes(value: number | null): string {
   if (value == null) return 'Unknown size'
@@ -19,6 +25,32 @@ function errorText(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
     : 'Failed to load managed starting-image assets.'
+}
+
+function tileStatus(shot: ShotLike, asset: PlanningMediaAsset | null | undefined): string {
+  if (asset?.approval_state) return asset.approval_state
+  if (shot.starting_image_required && !shot.starting_image_asset_id) return 'missing'
+  if (shot.starting_image_asset_id) return 'draft'
+  return shot.starting_image_required ? 'required' : 'draft'
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'in_review':
+      return 'Review'
+    case 'missing':
+      return 'Missing'
+    case 'required':
+      return 'Required'
+    case 'approved':
+      return 'Approved'
+    case 'blocked':
+      return 'Blocked'
+    case 'draft':
+      return 'Draft'
+    default:
+      return status.replace(/_/g, ' ')
+  }
 }
 
 export function ImagesPage() {
@@ -49,6 +81,23 @@ export function ImagesPage() {
   const selectedRow =
     shotRows.find((row) => row.shot.id === selectedShotId) ?? shotRows[0] ?? null
 
+  const requirementCounts = useMemo(() => {
+    let required = 0
+    let missing = 0
+    let assigned = 0
+    for (const { shot } of shotRows) {
+      if (shot.starting_image_required) required += 1
+      if (shot.starting_image_required && !shot.starting_image_asset_id) missing += 1
+      if (shot.starting_image_asset_id) assigned += 1
+    }
+    return {
+      all: shotRows.length,
+      required,
+      missing,
+      assigned,
+    }
+  }, [shotRows])
+
   const load = useCallback(async () => {
     if (!data) return
     setLoading(true)
@@ -77,6 +126,7 @@ export function ImagesPage() {
   if (!data) return null
 
   const assetsById = new Map(items?.map((asset) => [asset.id, asset]) ?? [])
+
   const filteredRows = shotRows.filter(({ shot, scene, chapter }) => {
     const matchesRequirement =
       requirementFilter === 'all' ||
@@ -102,9 +152,20 @@ export function ImagesPage() {
   const selectedAssignedAsset = selectedShot?.starting_image_asset_id
     ? assetsById.get(selectedShot.starting_image_asset_id) ?? null
     : null
+  const selectedPreviewAsset =
+    selectedAssetId && assetsById.get(selectedAssetId)
+      ? assetsById.get(selectedAssetId) ?? null
+      : selectedAssignedAsset
+  const selectedStatus = selectedShot
+    ? tileStatus(selectedShot, selectedAssignedAsset)
+    : 'draft'
   const selectedReadiness = selectedShot
     ? (readiness?.reasons.filter((reason) => reason.entity_id === selectedShot.id) ?? [])
     : []
+  const selectedCharacters =
+    selectedShot?.characters
+      ?.map((link) => data.characters.find((character) => character.id === link.character_id)?.name)
+      .filter(Boolean) ?? []
 
   const onUpload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -193,141 +254,407 @@ export function ImagesPage() {
     }
   }
 
+  const actionsBusy = approvalSaving || saving || busy
+
   return (
-    <div className="split-2">
-      <section className="panel">
-        <div className="panel-title">
-          <div>
-            <h2>Starting-image plan</h2>
-            <p>Every shot shows its persisted requirement, assignment, prompt, continuity, recommendation, and readiness state.</p>
+    <div>
+      <PageTitle
+        eyebrow="STARTING-IMAGE PLAN"
+        title="Starting images"
+        description="Plan and approve the visual anchor for every generation-ready shot."
+        aside={
+          <div className="page-actions">
+            <button
+              type="button"
+              className="ghost-button touch-target"
+              onClick={() => void load()}
+              disabled={loading || busy}
+            >
+              Refresh assets
+            </button>
+            <button
+              type="button"
+              className="btn primary touch-target"
+              disabled
+              title={GENERATION_DISABLED_REASON}
+            >
+              Generate candidate
+            </button>
           </div>
-          <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={loading || busy}>Refresh assets</button>
-        </div>
+        }
+      />
 
-        <div className="filters-row">
-          <label>
-            Requirement
-            <select value={requirementFilter} onChange={(event) => setRequirementFilter(event.target.value as RequirementFilter)}>
-              <option value="all">All shots</option>
-              <option value="required">Image required</option>
-              <option value="missing">Required and missing</option>
-              <option value="assigned">Asset assigned</option>
-            </select>
-          </label>
-          <label>
-            Assigned asset approval
-            <select value={approvalFilter} onChange={(event) => setApprovalFilter(event.target.value)}>
-              <option value="all">Any state</option>
-              <option value="draft">Draft</option>
-              <option value="in_review">In review</option>
-              <option value="approved">Approved</option>
-              <option value="blocked">Blocked</option>
-            </select>
-          </label>
-          <label>Search<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Shot, scene, or chapter" /></label>
-        </div>
-
-        {loading ? <LoadingState title="Loading managed starting images…" /> : null}
-        {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
-        {!available && !loading ? <UnavailableState title="Managed assets API unavailable" detail="No local path, candidate, or generated-image claim is substituted." /> : null}
-
-        {!filteredRows.length && !loading ? <EmptyState title="No shots match these filters" detail="Change a filter or add shots to the storyboard." /> : null}
-        {filteredRows.length ? (
-          <div className="card-grid">
-            {filteredRows.map(({ chapter, scene, shot }) => {
-              const asset = shot.starting_image_asset_id
-                ? assetsById.get(shot.starting_image_asset_id) ?? null
-                : null
-              const promptReady = Boolean(shot.prompt_positive || shot.prompt_video)
-              const reasons = readiness?.reasons.filter((reason) => reason.entity_id === shot.id) ?? []
-              return (
-                <article key={shot.id}>
-                  {asset?.mime_type?.startsWith('image/') ? <img src={planningAssetContentUrl(asset.id)} alt={`Starting image for ${shot.title}`} width="200" height="113" loading="lazy" /> : null}
-                  <b>{shot.title}</b>
-                  <small>{chapter.title} · {scene.title}</small>
-                  <ul className="kv-list">
-                    <li><span>Requirement</span><strong>{shot.starting_image_required ? 'Required' : 'Optional'}</strong></li>
-                    <li><span>Candidate</span><strong>{asset?.original_filename ?? (shot.starting_image_asset_id ? 'Assigned asset not in active list' : 'Missing')}</strong></li>
-                    <li><span>Asset approval</span><strong>{asset?.approval_state ?? 'Not assigned'}</strong></li>
-                    <li><span>Prompt</span><strong>{promptReady ? shot.prompt_approval_state ?? 'draft' : 'Missing'}</strong></li>
-                    <li><span>Continuity</span><strong>{shot.continuity_source_type || 'none'}</strong></li>
-                    <li><span>Recommendations</span><strong>{shot.recommendations?.length ?? 0}</strong></li>
-                    <li><span>Readiness</span><strong>{reasons.length ? `${reasons.length} issue(s)` : 'No shot-specific blocker'}</strong></li>
-                  </ul>
-                  <button type="button" className={selectedShot?.id === shot.id ? 'primary-button touch-target' : 'secondary-button touch-target'} onClick={() => setSelectedShotId(shot.id)}>{selectedShot?.id === shot.id ? 'Selected' : 'Review shot'}</button>
-                </article>
-              )
-            })}
+      <div className="image-layout">
+        <div>
+          <div className="segmented" role="tablist" aria-label="Filter shots by starting-image requirement">
+            {(
+              [
+                ['all', 'All'],
+                ['required', 'Required'],
+                ['missing', 'Missing'],
+                ['assigned', 'Assigned'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={requirementFilter === id}
+                className={requirementFilter === id ? 'active' : ''}
+                onClick={() => setRequirementFilter(id)}
+              >
+                {label} <em>{requirementCounts[id]}</em>
+              </button>
+            ))}
           </div>
-        ) : null}
-      </section>
 
-      <div className="stack-form">
-        {selectedShot ? (
-          <section className="panel stack-form">
-            <div className="panel-title"><div><h2>{selectedShot.title}</h2><p>{selectedRow?.chapter.title} · {selectedRow?.scene.title} · {selectedShot.duration_sec}s</p></div></div>
-            <ul className="kv-list">
-              <li><span>Starting image</span><strong>{selectedShot.starting_image_required ? 'Required' : 'Optional'}</strong></li>
-              <li><span>Current asset</span><strong>{selectedAssignedAsset?.original_filename ?? selectedShot.starting_image_asset_id ?? 'None'}</strong></li>
-              <li><span>Current approval</span><strong>{selectedAssignedAsset?.approval_state ?? 'Not assigned'}</strong></li>
-              <li><span>Continuity source</span><strong>{selectedShot.continuity_source_type || 'none'}</strong></li>
-              <li><span>Source shot</span><strong>{selectedShot.continuity_source_shot_id ?? 'None'}</strong></li>
-            </ul>
-            <label>
-              Candidate asset
-              <select value={selectedAssetId} onChange={(event) => setAssetDraft({ shotId: selectedShot.id, assetId: event.target.value })} disabled={approvalSaving || saving || busy || !available}>
-                <option value="">No starting image</option>
-                {items?.map((asset) => <option key={asset.id} value={asset.id}>{asset.original_filename ?? asset.id} · {asset.approval_state}</option>)}
-              </select>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 10,
+              alignItems: 'flex-end',
+              marginBottom: 14,
+            }}
+          >
+            <div
+              className="segmented"
+              role="tablist"
+              aria-label="Filter by assigned asset approval"
+              style={{ marginBottom: 0 }}
+            >
+              {(
+                [
+                  ['all', 'All'],
+                  ['draft', 'Draft'],
+                  ['in_review', 'Review'],
+                  ['approved', 'Approved'],
+                  ['blocked', 'Blocked'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={approvalFilter === id}
+                  className={approvalFilter === id ? 'active' : ''}
+                  onClick={() => setApprovalFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label style={{ margin: 0, minWidth: 180, flex: '1 1 180px' }}>
+              Search
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Shot, scene, or chapter"
+              />
             </label>
-            <button type="button" className="primary-button touch-target" onClick={() => void onAssign()} disabled={approvalSaving || saving || busy || selectedAssetId === (selectedShot.starting_image_asset_id ?? '')}>{saving ? 'Saving…' : selectedAssetId ? 'Assign candidate' : 'Clear assignment'}</button>
-            {selectedAssignedAsset && selectedAssignedAsset.approval_state !== 'approved' ? (
-              <button type="button" className="secondary-button touch-target" onClick={() => void onApprove()} disabled={approvalSaving || saving || busy}>{approvalSaving ? 'Approving…' : 'Approve candidate'}</button>
-            ) : null}
+          </div>
 
-            <h3>Prompt package</h3>
-            <p>{selectedShot.prompt_positive || 'No image prompt recorded.'}</p>
-            {selectedShot.prompt_video ? <p><strong>Video:</strong> {selectedShot.prompt_video}</p> : null}
-            {selectedShot.prompt_negative ? <p><strong>Negative:</strong> {selectedShot.prompt_negative}</p> : null}
-            <p><strong>Continuity instructions:</strong> {selectedShot.prompt_continuity_instructions || 'None recorded.'}</p>
-            <p><strong>Style lock:</strong> {selectedShot.prompt_style_lock || 'None recorded.'}</p>
+          {loading ? <LoadingState title="Loading managed starting images…" /> : null}
+          {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
+          {!available && !loading ? (
+            <UnavailableState
+              title="Managed assets API unavailable"
+              detail="No local path, candidate, or generated-image claim is substituted."
+            />
+          ) : null}
 
-            <h3>Model / workflow recommendations</h3>
-            {selectedShot.recommendations?.length ? (
+          {!filteredRows.length && !loading ? (
+            <EmptyState
+              title="No shots match these filters"
+              detail="Change a filter or add shots to the storyboard."
+            />
+          ) : null}
+
+          {filteredRows.length ? (
+            <div className="image-grid" role="list" aria-label="Starting-image shot tiles">
+              {filteredRows.map(({ chapter, scene, shot }) => {
+                const asset = shot.starting_image_asset_id
+                  ? assetsById.get(shot.starting_image_asset_id) ?? null
+                  : null
+                const status = tileStatus(shot, asset)
+                const selected = selectedShot?.id === shot.id
+                const hasImage = Boolean(asset?.mime_type?.startsWith('image/'))
+                return (
+                  <button
+                    key={shot.id}
+                    type="button"
+                    role="listitem"
+                    className={selected ? 'image-tile selected' : 'image-tile'}
+                    onClick={() => setSelectedShotId(shot.id)}
+                    aria-pressed={selected}
+                    style={{ width: '100%', padding: 0 }}
+                  >
+                    <div className="thumb" style={{ position: 'relative', overflow: 'hidden' }}>
+                      {hasImage && asset ? (
+                        <img
+                          src={planningAssetContentUrl(asset.id)}
+                          alt=""
+                          loading="lazy"
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{
+                            position: 'relative',
+                            zIndex: 1,
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(0,0,0,.55)',
+                            fontSize: '0.7rem',
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {shot.starting_image_required && !shot.starting_image_asset_id
+                            ? 'Image required'
+                            : shot.starting_image_asset_id
+                              ? 'Assigned asset'
+                              : 'No candidate'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="body">
+                      <small>
+                        {chapter.title} · {scene.title} · {shot.duration_sec}s
+                      </small>
+                      <b>{shot.title}</b>
+                      <StatusPill status={statusLabel(status)} />
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        <aside
+          className="image-review"
+          aria-label="Image review"
+          style={{ maxHeight: 'calc(100dvh - 140px)', overflow: 'auto' }}
+        >
+          {selectedShot && selectedRow ? (
+            <>
+              <header style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <span className="eyebrow">IMAGE REVIEW</span>
+                  <h2 style={{ margin: '4px 0 0' }}>{selectedShot.title}</h2>
+                  <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
+                    {selectedRow.chapter.title} · {selectedRow.scene.title} · {selectedShot.duration_sec}s
+                  </p>
+                </div>
+                <StatusPill status={statusLabel(selectedStatus)} />
+              </header>
+
+              <div className="review-canvas">
+                {selectedPreviewAsset?.mime_type?.startsWith('image/') ? (
+                  <img
+                    src={planningAssetContentUrl(selectedPreviewAsset.id)}
+                    alt={`Starting image for ${selectedShot.title}`}
+                  />
+                ) : (
+                  <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 16 }}>
+                    <b style={{ display: 'block', color: 'var(--text)', marginBottom: 6 }}>
+                      {selectedShot.starting_image_required ? 'No candidates yet' : 'Optional starting image'}
+                    </b>
+                    <small>CURRENT SELECTED IMAGE</small>
+                  </div>
+                )}
+              </div>
+
               <ul className="kv-list">
-                {selectedShot.recommendations.map((recommendation) => (
-                  <li key={recommendation.id}>
-                    <span>{recommendation.recommendation_type} · {recommendation.rationale ?? 'No rationale'}</span>
-                    <strong>{recommendation.availability_status} / {recommendation.benchmark_status}</strong>
-                  </li>
-                ))}
+                <li>
+                  <span>Requirement</span>
+                  <strong>{selectedShot.starting_image_required ? 'Required' : 'Optional'}</strong>
+                </li>
+                <li>
+                  <span>Current asset</span>
+                  <strong>
+                    {selectedAssignedAsset?.original_filename ??
+                      selectedShot.starting_image_asset_id ??
+                      'None'}
+                  </strong>
+                </li>
+                <li>
+                  <span>Asset approval</span>
+                  <strong>{selectedAssignedAsset?.approval_state ?? 'Not assigned'}</strong>
+                </li>
+                <li>
+                  <span>Continuity source</span>
+                  <strong>{selectedShot.continuity_source_type || 'none'}</strong>
+                </li>
+                <li>
+                  <span>Source shot</span>
+                  <strong>{selectedShot.continuity_source_shot_id ?? 'None'}</strong>
+                </li>
+                <li>
+                  <span>Location</span>
+                  <strong>{selectedShot.location || 'None recorded'}</strong>
+                </li>
+                <li>
+                  <span>Characters</span>
+                  <strong>{selectedCharacters.length ? selectedCharacters.join(', ') : 'None linked'}</strong>
+                </li>
               </ul>
-            ) : <p className="form-hint">No model or workflow recommendation is persisted for this shot.</p>}
 
-            <h3>Readiness</h3>
-            {selectedReadiness.length ? selectedReadiness.map((reason) => <p className="notice warning" key={`${reason.code}-${reason.entity_id}`}>{reason.message}</p>) : <p className="notice success">No shot-specific blocking reason is currently reported.</p>}
+              <div className="stack-form" style={{ marginTop: 12 }}>
+                <label>
+                  Candidate asset
+                  <select
+                    value={selectedAssetId}
+                    onChange={(event) =>
+                      setAssetDraft({ shotId: selectedShot.id, assetId: event.target.value })
+                    }
+                    disabled={actionsBusy || !available}
+                  >
+                    <option value="">No starting image</option>
+                    {items?.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.original_filename ?? asset.id} · {asset.approval_state}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="primary-button touch-target"
+                  onClick={() => void onAssign()}
+                  disabled={
+                    actionsBusy || selectedAssetId === (selectedShot.starting_image_asset_id ?? '')
+                  }
+                >
+                  {saving ? 'Saving…' : selectedAssetId ? 'Assign candidate' : 'Clear assignment'}
+                </button>
+                {selectedAssignedAsset && selectedAssignedAsset.approval_state !== 'approved' ? (
+                  <button
+                    type="button"
+                    className="secondary-button touch-target"
+                    onClick={() => void onApprove()}
+                    disabled={actionsBusy}
+                  >
+                    {approvalSaving ? 'Approving…' : 'Approve candidate'}
+                  </button>
+                ) : null}
 
-            <button type="button" className="primary-button touch-target" disabled title={GENERATION_DISABLED_REASON}>Generate candidate — disabled</button>
-            <p className="form-hint">{GENERATION_DISABLED_REASON}</p>
-          </section>
-        ) : null}
+                <h3>Image prompt</h3>
+                <p>{selectedShot.prompt_positive || 'No image prompt recorded.'}</p>
+                {selectedShot.prompt_video ? (
+                  <p>
+                    <strong>Video:</strong> {selectedShot.prompt_video}
+                  </p>
+                ) : null}
+                <h3>Negative prompt</h3>
+                <p>{selectedShot.prompt_negative || 'None recorded.'}</p>
+                <h3>Style lock</h3>
+                <p>{selectedShot.prompt_style_lock || 'None recorded.'}</p>
+                <h3>Continuity instructions</h3>
+                <p>{selectedShot.prompt_continuity_instructions || 'None recorded.'}</p>
 
-        <form className="panel stack-form" onSubmit={(event) => void onUpload(event)}>
-          <div className="panel-title"><div><h2>Upload existing candidate</h2><p>Creates a server-managed starting-image asset from explicit user bytes.</p></div></div>
-          <label>Starting-image file<input key={fileInputKey} type="file" accept="image/*" required onChange={(event) => setFile(event.target.files?.[0] ?? null)} disabled={saving || busy} /></label>
-          {file ? <p className="form-hint">{file.name} · {formatBytes(file.size)}</p> : null}
-          <button type="submit" className="secondary-button touch-target" disabled={saving || busy || !file}>{saving ? 'Uploading…' : 'Upload managed candidate'}</button>
-          <p className="form-hint">Upload never starts generation, rendering, installation, or queue submission.</p>
-        </form>
+                <h3>Model / workflow recommendations</h3>
+                {selectedShot.recommendations?.length ? (
+                  <ul className="kv-list">
+                    {selectedShot.recommendations.map((recommendation) => (
+                      <li key={recommendation.id}>
+                        <span>
+                          {recommendation.recommendation_type} ·{' '}
+                          {recommendation.rationale ?? 'No rationale'}
+                        </span>
+                        <strong>
+                          {recommendation.availability_status} / {recommendation.benchmark_status}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="form-hint">No model or workflow recommendation is persisted for this shot.</p>
+                )}
 
-        {items?.length ? (
-          <section className="panel">
-            <h2>Candidate inventory</h2>
-            <ul className="kv-list">
-              {items.map((asset) => <li key={asset.id}><span>{asset.original_filename ?? asset.id} · {formatBytes(asset.size_bytes)}</span><strong>{asset.approval_state}</strong></li>)}
-            </ul>
-          </section>
-        ) : null}
+                <h3>Readiness</h3>
+                {selectedReadiness.length ? (
+                  selectedReadiness.map((reason) => (
+                    <p className="notice warning" key={`${reason.code}-${reason.entity_id}`}>
+                      {reason.message}
+                    </p>
+                  ))
+                ) : (
+                  <p className="notice success">No shot-specific blocking reason is currently reported.</p>
+                )}
+
+                <form className="stack-form" onSubmit={(event) => void onUpload(event)}>
+                  <h3>Upload existing candidate</h3>
+                  <p className="form-hint">
+                    Creates a server-managed starting-image asset from explicit user bytes. Upload never
+                    starts generation.
+                  </p>
+                  <label>
+                    Starting-image file
+                    <input
+                      key={fileInputKey}
+                      type="file"
+                      accept="image/*"
+                      required
+                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                      disabled={saving || busy}
+                    />
+                  </label>
+                  {file ? (
+                    <p className="form-hint">
+                      {file.name} · {formatBytes(file.size)}
+                    </p>
+                  ) : null}
+                  <button
+                    type="submit"
+                    className="secondary-button touch-target"
+                    disabled={saving || busy || !file}
+                  >
+                    {saving ? 'Uploading…' : 'Upload managed candidate'}
+                  </button>
+                </form>
+
+                {items?.length ? (
+                  <div>
+                    <h3>Candidate inventory</h3>
+                    <ul className="kv-list">
+                      {items.map((asset) => (
+                        <li key={asset.id}>
+                          <span>
+                            {asset.original_filename ?? asset.id} · {formatBytes(asset.size_bytes)}
+                          </span>
+                          <strong>{asset.approval_state}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="primary-button touch-target"
+                  disabled
+                  title={GENERATION_DISABLED_REASON}
+                >
+                  Generate candidate — disabled
+                </button>
+                <p className="form-hint">{GENERATION_DISABLED_REASON}</p>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              title="No shot selected"
+              detail="Add shots to the storyboard to plan starting images."
+            />
+          )}
+        </aside>
       </div>
     </div>
   )
