@@ -13,14 +13,80 @@ from backend.app.queue.state_machine import JobState
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
 from backend.app.services.queue.service import QueueService, SubmissionReadinessResult
 from backend.app.services.runtime.gpu_leases import VIDEO_GPU_WORKLOADS
+from backend.app.services.workflows.template_service import sha256_json
 
 
 class ControlledSubmissionError(CineForgeError):
     pass
 
 
+_PROMPT_SUBMISSION_PERMIT_TOKEN = object()
+
+
+class WorkerPromptSubmissionPermit:
+    """Ephemeral capability proving the controlled service passed all prompt gates."""
+
+    def __init__(
+        self,
+        *,
+        job_id: UUID,
+        worker_id: str,
+        gpu_lease_id: UUID,
+        submission_mode: Literal["queue_worker", "hardware_operator"],
+        client_id: str,
+        workflow_sha256: str,
+        issued_at: datetime,
+        _token: object,
+    ) -> None:
+        self.job_id = job_id
+        self.worker_id = worker_id
+        self.gpu_lease_id = gpu_lease_id
+        self.submission_mode = submission_mode
+        self.client_id = client_id
+        self.workflow_sha256 = workflow_sha256
+        self.issued_at = issued_at
+        self._token = _token
+
+    def require_valid(self, *, prompt: dict[str, Any], client_id: str) -> None:
+        if self._token is not _PROMPT_SUBMISSION_PERMIT_TOKEN:
+            raise ControlledSubmissionError(
+                "CONTROLLED_SUBMISSION_PERMIT_REQUIRED: Comfy /prompt calls require a permit issued by the controlled submission service"
+            )
+        if client_id != self.client_id:
+            raise ControlledSubmissionError("CONTROLLED_SUBMISSION_PERMIT_MISMATCH: client_id differs from the permitted submission")
+        if sha256_json(prompt) != self.workflow_sha256:
+            raise ControlledSubmissionError("CONTROLLED_SUBMISSION_PERMIT_MISMATCH: workflow hash differs from the permitted submission")
+
+
+def _issue_prompt_submission_permit(
+    *,
+    job_id: UUID,
+    worker_id: str,
+    gpu_lease_id: UUID,
+    submission_mode: Literal["queue_worker", "hardware_operator"],
+    client_id: str,
+    workflow: dict[str, Any],
+) -> WorkerPromptSubmissionPermit:
+    return WorkerPromptSubmissionPermit(
+        job_id=job_id,
+        worker_id=worker_id,
+        gpu_lease_id=gpu_lease_id,
+        submission_mode=submission_mode,
+        client_id=client_id,
+        workflow_sha256=sha256_json(workflow),
+        issued_at=datetime.now(UTC),
+        _token=_PROMPT_SUBMISSION_PERMIT_TOKEN,
+    )
+
+
 class PromptSubmissionAdapter(Protocol):
-    async def submit_prompt(self, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
+    async def submit_prompt(
+        self,
+        prompt: dict[str, Any],
+        client_id: str,
+        *,
+        permit: WorkerPromptSubmissionPermit | None = None,
+    ) -> dict[str, Any]:
         """Submit a prompt from the approved worker/runtime path only."""
 
 
@@ -49,7 +115,18 @@ class ComfyWorkerPromptSubmissionAdapter:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def submit_prompt(self, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
+    async def submit_prompt(
+        self,
+        prompt: dict[str, Any],
+        client_id: str,
+        *,
+        permit: WorkerPromptSubmissionPermit | None = None,
+    ) -> dict[str, Any]:
+        if permit is None or not isinstance(permit, WorkerPromptSubmissionPermit):
+            raise ControlledSubmissionError(
+                "CONTROLLED_SUBMISSION_PERMIT_REQUIRED: Comfy /prompt calls require a permit issued by the controlled submission service"
+            )
+        permit.require_valid(prompt=prompt, client_id=client_id)
         response = await self._client.post("/prompt", json={"prompt": prompt, "client_id": client_id})
         response.raise_for_status()
         return response.json()
@@ -152,10 +229,19 @@ class ControlledComfySubmissionService:
 
         job = self._require_job(db, context.job_id)
         workflow_run = self._require_workflow_run(db, job.workflow_run_id)
+        permit = _issue_prompt_submission_permit(
+            job_id=context.job_id,
+            worker_id=context.worker_id,
+            gpu_lease_id=context.gpu_lease_id,
+            submission_mode=context.submission_mode,
+            client_id=context.client_id,
+            workflow=workflow_run.patched_workflow_json,
+        )
         try:
             response = await self.submission_adapter.submit_prompt(
                 workflow_run.patched_workflow_json,
                 context.client_id,
+                permit=permit,
             )
         except Exception as exc:
             self._mark_submission_failure(

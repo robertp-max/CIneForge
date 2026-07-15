@@ -37,6 +37,12 @@ def health() -> dict:
         "env": settings.env,
         "queue_worker_enabled": settings.queue_worker_enabled,
         "hardware_operator_enabled": settings.hardware_operator_enabled,
+        "controlled_submission_enabled": settings.queue_worker_enabled or settings.hardware_operator_enabled,
+        "controlled_submission_modes": {
+            "queue_worker": settings.queue_worker_enabled,
+            "hardware_operator": settings.hardware_operator_enabled,
+        },
+        "public_submission_enabled": False,
         "autonomy_mode": settings.autonomy_mode,
         "runtime_isolation": "comfyui_external_http_only",
         "database_required": False,
@@ -103,7 +109,11 @@ async def runtime_status() -> dict:
             "submission_enabled": False,
             "database_required": False,
             "local_state_mode": "file_backed",
-            "controlled_submission_enabled": settings.hardware_operator_enabled,
+            "controlled_submission_enabled": settings.queue_worker_enabled or settings.hardware_operator_enabled,
+            "controlled_submission_modes": {
+                "queue_worker": settings.queue_worker_enabled,
+                "hardware_operator": settings.hardware_operator_enabled,
+            },
             "public_submission_enabled": False,
             "supported_states": [
                 "pending",
@@ -130,9 +140,11 @@ async def runtime_status() -> dict:
         },
         "disabled_actions": {
             "public_submit_prompt": "disabled",
+            "queue_worker_submit": "enabled" if settings.queue_worker_enabled else "disabled",
             "hardware_operator_submit": "enabled" if settings.hardware_operator_enabled else "disabled",
-            "websocket_monitor": "disabled_until_future_phase",
-            "output_collection": "disabled_until_future_phase",
+            "worker_websocket_monitor": "worker_only" if settings.queue_worker_enabled or settings.hardware_operator_enabled else "disabled",
+            "worker_runtime_control": "worker_only" if settings.queue_worker_enabled or settings.hardware_operator_enabled else "disabled",
+            "output_collection": "worker_only" if settings.queue_worker_enabled or settings.hardware_operator_enabled else "disabled",
             "ffmpeg_assembly": "disabled_until_future_phase",
         },
     }

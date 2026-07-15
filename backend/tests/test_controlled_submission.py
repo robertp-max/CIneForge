@@ -1,5 +1,7 @@
 from collections.abc import Generator
 from typing import Any
+
+import httpx
 from uuid import uuid4
 
 import pytest
@@ -16,6 +18,7 @@ from backend.app.services.comfy.submission import (
     ComfyWorkerPromptSubmissionAdapter,
     ControlledComfySubmissionService,
     ControlledSubmissionError,
+    WorkerPromptSubmissionPermit,
     WorkerSubmissionContext,
 )
 from backend.app.services.queue.worker import QueueWorker
@@ -29,7 +32,8 @@ class FakePromptSubmissionAdapter:
         self.error = error
         self.calls: list[tuple[dict[str, Any], str]] = []
 
-    async def submit_prompt(self, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
+    async def submit_prompt(self, prompt: dict[str, Any], client_id: str, *, permit=None) -> dict[str, Any]:
+        assert permit is not None
         self.calls.append((prompt, client_id))
         if self.error is not None:
             raise self.error
@@ -103,8 +107,9 @@ def create_ready_reserved_job(
     *,
     status: QueueStatus = QueueStatus.reserved,
     worker_id: str | None = "worker-1",
+    workflow: dict | None = None,
 ) -> ComfyJob:
-    workflow = _ready_workflow()
+    workflow = workflow or _ready_workflow()
     template = WorkflowTemplate(
         name=f"controlled-submission-template-{uuid4()}",
         version="1",
@@ -312,6 +317,39 @@ async def test_controlled_submission_rejects_released_or_wrong_worker_gpu_lease(
 
 
 @pytest.mark.asyncio
+async def test_controlled_submission_enforces_static_security_scan_before_prompt_call(db_session):
+    workflow = {
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "prompt"}},
+        "3": {"class_type": "KSampler", "inputs": {"seed": 1}},
+        "99": {"class_type": "PythonScript", "inputs": {"script": "print('unsafe')"}},
+    }
+    job = create_ready_reserved_job(db_session, workflow=workflow)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService({**_ready_object_info(), "PythonScript": {"input": {"required": {"script": ["STRING", {}]}}}}),
+            gpu_lease_id=lease.id,
+        ),
+    )
+
+    db_session.expire_all()
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert result.submitted is False
+    assert result.code == "preflight_failed"
+    assert any("FORBIDDEN_WORKFLOW_NODE" in error for error in (result.errors or []))
+    assert adapter.calls == []
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
+
+
+@pytest.mark.asyncio
 async def test_queue_worker_gate_can_submit_when_hardware_operator_gate_is_off(db_session):
     job = create_ready_reserved_job(db_session)
     adapter = FakePromptSubmissionAdapter()
@@ -453,6 +491,30 @@ async def test_controlled_submission_rejection_is_classified_safely(db_session):
 
 
 @pytest.mark.asyncio
+async def test_worker_controlled_submission_once_acquires_lease_when_missing(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+
+    result = await QueueWorker("worker-1").controlled_submission_once(
+        db_session,
+        job.id,
+        "client-1",
+        ObjectInfoCacheService(_ready_object_info()),
+        service,
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    leases = list(db_session.scalars(select(GpuResourceLease)).all())
+    assert result.submitted is True
+    assert persisted_job is not None
+    assert (persisted_job.recovery_metadata or {}).get("gpu_lease_id") == str(leases[0].id)
+    assert leases[0].status == "active"
+    assert adapter.calls == [(_ready_workflow(), "client-1")]
+
+
+@pytest.mark.asyncio
 async def test_worker_controlled_submission_once_is_approved_context(db_session):
     job = create_ready_reserved_job(db_session)
     adapter = FakePromptSubmissionAdapter()
@@ -476,6 +538,52 @@ async def test_worker_controlled_submission_once_is_approved_context(db_session)
 def test_worker_prompt_submission_adapter_rejects_untracked_direct_construction():
     with pytest.raises(ControlledSubmissionError, match="UNTRACKED_DIRECT_COMFY_SUBMISSION"):
         ComfyWorkerPromptSubmissionAdapter("http://comfy.test")
+
+
+def test_worker_prompt_submission_permit_has_no_public_issuer():
+    assert not hasattr(WorkerPromptSubmissionPermit, "issue")
+
+
+@pytest.mark.asyncio
+async def test_worker_prompt_submission_adapter_requires_controlled_permit():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"prompt_id": "prompt-1"})
+
+    async with ComfyWorkerPromptSubmissionAdapter(
+        "http://comfy.test",
+        tracked_worker_submission=True,
+        transport=httpx.MockTransport(handler),
+    ) as adapter:
+        with pytest.raises(ControlledSubmissionError, match="CONTROLLED_SUBMISSION_PERMIT_REQUIRED"):
+            await adapter.submit_prompt({"1": {"class_type": "KSampler"}}, "client-1")
+
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_worker_prompt_submission_adapter_rejects_forged_permit_without_http_call():
+    calls = []
+
+    class ForgedPermit:
+        def require_valid(self, **_kwargs):
+            return None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"prompt_id": "prompt-1"})
+
+    async with ComfyWorkerPromptSubmissionAdapter(
+        "http://comfy.test",
+        tracked_worker_submission=True,
+        transport=httpx.MockTransport(handler),
+    ) as adapter:
+        with pytest.raises(ControlledSubmissionError, match="CONTROLLED_SUBMISSION_PERMIT_REQUIRED"):
+            await adapter.submit_prompt({"1": {"class_type": "KSampler"}}, "client-1", permit=ForgedPermit())
+
+    assert calls == []
 
 
 def test_public_prompt_route_remains_unavailable():

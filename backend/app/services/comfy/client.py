@@ -1,3 +1,5 @@
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -13,6 +15,44 @@ class ComfyMutationBlocked(RuntimeError):
 
 class ComfyRuntimeRouteBlocked(RuntimeError):
     pass
+
+
+_RUNTIME_CONTROL_PERMIT_TOKEN = object()
+
+
+class WorkerRuntimeControlPermit:
+    """Ephemeral capability for tracked worker-only runtime control routes."""
+
+    def __init__(
+        self,
+        *,
+        worker_id: str,
+        job_id: str,
+        prompt_id: str | None,
+        issued_at: datetime,
+        _token: object,
+    ) -> None:
+        self.worker_id = worker_id
+        self.job_id = job_id
+        self.prompt_id = prompt_id
+        self.issued_at = issued_at
+        self._token = _token
+
+    def require_valid(self) -> None:
+        if self._token is not _RUNTIME_CONTROL_PERMIT_TOKEN:
+            raise ComfyRuntimeRouteBlocked(
+                "WORKER_RUNTIME_CONTROL_PERMIT_REQUIRED: Comfy runtime control routes require a tracked worker permit"
+            )
+
+
+def _issue_runtime_control_permit(*, worker_id: str, job_id: str, prompt_id: str | None = None) -> WorkerRuntimeControlPermit:
+    return WorkerRuntimeControlPermit(
+        worker_id=worker_id,
+        job_id=job_id,
+        prompt_id=prompt_id,
+        issued_at=datetime.now(UTC),
+        _token=_RUNTIME_CONTROL_PERMIT_TOKEN,
+    )
 
 
 def _safe_view_filename(value: str) -> str:
@@ -137,6 +177,7 @@ class ComfyWorkerRuntimeClient:
         timeout: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
         tracked_worker_runtime: bool = False,
+        progress_connector: Callable[[str], Awaitable[Any]] | None = None,
     ) -> None:
         if not tracked_worker_runtime:
             raise ComfyRuntimeRouteBlocked(
@@ -144,6 +185,7 @@ class ComfyWorkerRuntimeClient:
             )
         self.base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, transport=transport)
+        self._progress_connector = progress_connector
 
     async def __aenter__(self) -> "ComfyWorkerRuntimeClient":
         return self
@@ -174,3 +216,52 @@ class ComfyWorkerRuntimeClient:
         response = await self._client.get("/view", params=params)
         response.raise_for_status()
         return response.content
+
+    async def connect_progress_websocket(
+        self,
+        client_id: str,
+        *,
+        permit: WorkerRuntimeControlPermit | None = None,
+    ) -> Any:
+        self._require_control_permit(permit)
+        if self._progress_connector is None:
+            raise ComfyRuntimeRouteBlocked("Worker progress websocket connector is not configured")
+        return await self._progress_connector(_safe_view_filename(client_id))
+
+    async def interrupt(self, *, permit: WorkerRuntimeControlPermit | None = None) -> dict[str, Any]:
+        self._require_control_permit(permit)
+        response = await self._client.post("/interrupt")
+        response.raise_for_status()
+        return response.json() if response.content else {"status": "ok"}
+
+    async def delete_queue_items(
+        self,
+        delete_ids: list[str],
+        *,
+        permit: WorkerRuntimeControlPermit | None = None,
+    ) -> dict[str, Any]:
+        self._require_control_permit(permit)
+        safe_ids = [_safe_view_filename(prompt_id) for prompt_id in delete_ids]
+        response = await self._client.post("/queue", json={"delete": safe_ids})
+        response.raise_for_status()
+        return response.json() if response.content else {"status": "ok"}
+
+    async def free_memory(
+        self,
+        *,
+        unload_models: bool = True,
+        free_memory: bool = True,
+        permit: WorkerRuntimeControlPermit | None = None,
+    ) -> dict[str, Any]:
+        self._require_control_permit(permit)
+        response = await self._client.post("/free", json={"unload_models": unload_models, "free_memory": free_memory})
+        response.raise_for_status()
+        return response.json() if response.content else {"status": "ok"}
+
+    @staticmethod
+    def _require_control_permit(permit: WorkerRuntimeControlPermit | None) -> None:
+        if permit is None or not isinstance(permit, WorkerRuntimeControlPermit):
+            raise ComfyRuntimeRouteBlocked(
+                "WORKER_RUNTIME_CONTROL_PERMIT_REQUIRED: Comfy runtime control routes require a tracked worker permit"
+            )
+        permit.require_valid()

@@ -67,6 +67,25 @@ class WorkflowAdmissionService:
         admitted = not findings and record.implemented and record.dependency_verified and bool(record.api_graph_path)
         return AdmissionResult(archetype_id=archetype_id, admitted_for_local_execution=admitted, findings=findings)
 
+    def static_workflow_findings_for_workflow(self, workflow: dict[str, Any]) -> list[AdmissionFinding]:
+        findings: list[AdmissionFinding] = []
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict):
+                continue
+            class_type = str(node.get("class_type") or "")
+            class_lower = class_type.lower().replace("_", "")
+            if any(token in class_lower for token in _FORBIDDEN_CLASS_TOKENS):
+                findings.append(
+                    AdmissionFinding(
+                        "FORBIDDEN_WORKFLOW_NODE",
+                        f"Node {node_id} class {class_type} appears to execute scripts, commands, downloads, installs, or URLs",
+                    )
+                )
+            inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+            for input_name, value in inputs.items():
+                findings.extend(self._scan_input_value(str(node_id), class_type, str(input_name), value))
+        return findings
+
     def evaluate_all(self, object_info: dict[str, Any] | None = None) -> list[AdmissionResult]:
         return [self.evaluate(record.archetype_id, object_info=object_info) for record in self.registry.load()]
 
@@ -103,23 +122,7 @@ class WorkflowAdmissionService:
             workflow = json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
             return [AdmissionFinding("WORKFLOW_STATIC_SCAN_FAILED", f"Workflow API graph unreadable: {exc}")]
-        findings: list[AdmissionFinding] = []
-        for node_id, node in workflow.items():
-            if not isinstance(node, dict):
-                continue
-            class_type = str(node.get("class_type") or "")
-            class_lower = class_type.lower().replace("_", "")
-            if any(token in class_lower for token in _FORBIDDEN_CLASS_TOKENS):
-                findings.append(
-                    AdmissionFinding(
-                        "FORBIDDEN_WORKFLOW_NODE",
-                        f"Node {node_id} class {class_type} appears to execute scripts, commands, downloads, installs, or URLs",
-                    )
-                )
-            inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
-            for input_name, value in inputs.items():
-                findings.extend(self._scan_input_value(str(node_id), class_type, str(input_name), value))
-        return findings
+        return self.static_workflow_findings_for_workflow(workflow)
 
     def _scan_input_value(self, node_id: str, class_type: str, input_name: str, value: Any) -> list[AdmissionFinding]:
         findings: list[AdmissionFinding] = []

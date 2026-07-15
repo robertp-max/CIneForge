@@ -37,9 +37,15 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def expire_stale_leases(db: Session, *, now: datetime | None = None) -> int:
     """Mark active leases past expires_at as expired. Returns count expired."""
-    ts = now or _utcnow()
+    ts = _as_utc(now) if now is not None else _utcnow()
     stmt = select(GpuResourceLease).where(
         GpuResourceLease.status == "active",
         GpuResourceLease.expires_at.is_not(None),
@@ -132,7 +138,8 @@ def heartbeat_lease(
         raise GpuLeaseError(f"GPU lease {lease_id} is not active (status={lease.status}).")
 
     now = _utcnow()
-    if lease.expires_at is not None and lease.expires_at <= now:
+    expires_at = _as_utc(lease.expires_at) if lease.expires_at is not None else None
+    if expires_at is not None and expires_at <= now:
         lease.status = "expired"
         lease.released_at = now
         db.add(lease)

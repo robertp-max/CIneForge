@@ -9,6 +9,7 @@ from backend.app.core.errors import CineForgeError
 from backend.app.db.base import AuditLog, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun, WorkflowTemplate
 from backend.app.queue.state_machine import FAILURE_STATES, InvalidTransition, JobState, transition
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
+from backend.app.services.workflows.admission import WorkflowAdmissionService
 from backend.app.services.workflows.template_service import WorkflowManifest
 
 
@@ -30,6 +31,9 @@ class SubmissionReadinessResult:
 
 
 class QueueService:
+    def __init__(self, admission_service: WorkflowAdmissionService | None = None) -> None:
+        self.admission_service = admission_service or WorkflowAdmissionService()
+
     def evaluate_submission_readiness(
         self,
         db: Session,
@@ -70,6 +74,13 @@ class QueueService:
             return self._submission_readiness_result(job_id, worker_id, checked_at, errors)
         if not workflow_template.manifest_json:
             errors.append("WorkflowTemplate is missing manifest_json")
+
+        if workflow_run.patched_workflow_json:
+            static_findings = self.admission_service.static_workflow_findings_for_workflow(workflow_run.patched_workflow_json)
+            errors.extend(
+                f"Static workflow admission failed: {finding.code}: {finding.message}"
+                for finding in static_findings
+            )
 
         if workflow_run.patched_workflow_json and workflow_template.manifest_json:
             try:

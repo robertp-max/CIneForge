@@ -200,6 +200,37 @@ def test_worker_heartbeat_once_delegates_safely(db_session):
     assert persisted_job.websocket_events == []
 
 
+def test_worker_acquires_and_heartbeats_gpu_lease_for_owned_reserved_job(db_session):
+    job = create_comfy_job(db_session, QueueStatus.reserved, worker_id="worker-1")
+    worker = QueueWorker("worker-1")
+
+    lease = worker.acquire_gpu_lease_once(db_session, job.id, ttl_seconds=120)
+    assert lease is not None
+    first_heartbeat = lease.heartbeat_at
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert persisted_job is not None
+    assert (persisted_job.recovery_metadata or {}).get("gpu_lease_id") == str(lease.id)
+
+    refreshed = worker.heartbeat_gpu_lease_once(db_session, job.id, extend_seconds=240)
+
+    db_session.expire_all()
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert refreshed is not None
+    assert persisted_lease is not None
+    assert persisted_lease.status == "active"
+    assert persisted_lease.heartbeat_at >= first_heartbeat
+    assert any(log.action == "gpu_lease_heartbeat" for log in audit_logs(db_session))
+
+
+def test_worker_gpu_lease_acquisition_ignores_unowned_job(db_session):
+    job = create_comfy_job(db_session, QueueStatus.reserved, worker_id="worker-2")
+
+    lease = QueueWorker("worker-1").acquire_gpu_lease_once(db_session, job.id)
+
+    assert lease is None
+    assert db_session.scalars(select(GpuResourceLease)).first() is None
+
+
 def test_worker_timeout_job_once_marks_terminal_and_releases_lease(db_session):
     job = create_comfy_job(db_session, QueueStatus.running, worker_id="worker-1")
     lease = bind_lease(db_session, job)
@@ -233,6 +264,76 @@ def test_worker_interrupt_and_cancel_terminal_helpers(db_session):
     assert canceled is not None
     assert db_session.get(ComfyJob, running.id).status == QueueStatus.interrupted
     assert db_session.get(ComfyJob, pending.id).status == QueueStatus.canceled
+
+
+class FakeRuntimeClient:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def interrupt(self, *, permit):
+        self.calls.append(("interrupt", permit.worker_id, permit.job_id, permit.prompt_id))
+        return {"interrupt": "ok"}
+
+    async def delete_queue_items(self, delete_ids, *, permit):
+        self.calls.append(("delete_queue_items", list(delete_ids), permit.worker_id, permit.prompt_id))
+        return {"queue": "ok"}
+
+    async def free_memory(self, *, permit):
+        self.calls.append(("free_memory", permit.worker_id, permit.prompt_id))
+        return {"free": "ok"}
+
+    async def connect_progress_websocket(self, client_id, *, permit):
+        self.calls.append(("connect_progress_websocket", client_id, permit.worker_id, permit.prompt_id))
+        return {"connected": client_id}
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_control_wrappers_require_owned_active_job_and_release_on_interrupt(db_session):
+    job = create_comfy_job(db_session, QueueStatus.running, worker_id="worker-1")
+    job.prompt_id = "prompt-1"
+    job.client_id = "client-1"
+    db_session.commit()
+    lease = bind_lease(db_session, job)
+    runtime_client = FakeRuntimeClient()
+
+    worker = QueueWorker("worker-1")
+    progress = await worker.connect_progress_once(db_session, job.id, runtime_client)
+    cleanup = await worker.cleanup_runtime_queue_once(db_session, job.id, runtime_client)
+    free = await worker.free_runtime_memory_once(db_session, job.id, runtime_client)
+    interrupted = await worker.interrupt_runtime_once(db_session, job.id, runtime_client, "operator stopped runtime")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert progress == {"connected": "client-1"}
+    assert cleanup == {"queue": "ok"}
+    assert free == {"free": "ok"}
+    assert interrupted == {"interrupt": "ok"}
+    assert runtime_client.calls == [
+        ("connect_progress_websocket", "client-1", "worker-1", "prompt-1"),
+        ("delete_queue_items", ["prompt-1"], "worker-1", "prompt-1"),
+        ("free_memory", "worker-1", "prompt-1"),
+        ("interrupt", "worker-1", str(job.id), "prompt-1"),
+    ]
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.interrupted
+    assert persisted_job.error_message == "operator stopped runtime"
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_control_wrappers_ignore_unowned_or_not_submitted_jobs(db_session):
+    unowned = create_comfy_job(db_session, QueueStatus.running, worker_id="worker-2")
+    pending = create_comfy_job(db_session, QueueStatus.pending, worker_id="worker-1")
+    runtime_client = FakeRuntimeClient()
+    worker = QueueWorker("worker-1")
+
+    assert await worker.interrupt_runtime_once(db_session, unowned.id, runtime_client) is None
+    assert await worker.cleanup_runtime_queue_once(db_session, pending.id, runtime_client) is None
+    assert await worker.free_runtime_memory_once(db_session, pending.id, runtime_client) is None
+    assert await worker.connect_progress_once(db_session, pending.id, runtime_client) is None
+    assert runtime_client.calls == []
 
 
 def test_worker_terminal_helpers_ignore_jobs_owned_by_other_workers(db_session):

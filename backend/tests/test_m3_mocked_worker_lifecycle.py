@@ -22,7 +22,8 @@ class FakePromptSubmissionAdapter:
     def __init__(self) -> None:
         self.calls: list[tuple[dict[str, Any], str]] = []
 
-    async def submit_prompt(self, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
+    async def submit_prompt(self, prompt: dict[str, Any], client_id: str, *, permit=None) -> dict[str, Any]:
+        assert permit is not None
         self.calls.append((prompt, client_id))
         return {"prompt_id": "prompt-1", "number": 1, "node_errors": {}}
 
