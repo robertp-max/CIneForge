@@ -32,6 +32,20 @@ class PostProductionPlanErrorRecord(BaseModel):
     ffmpeg_job_id: UUID | None = None
 
 
+class PostProductionRecipeCommandSuccessRecord(BaseModel):
+    output_sha256: str
+    final_probe_json: dict[str, Any]
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class PostProductionRecipeCommandErrorRecord(BaseModel):
+    error: str | None = Field(default=None, max_length=10_000)
+    error_message: str | None = Field(default=None, max_length=10_000)
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
 class PostProductionPlanManifest(BaseModel):
     plan_id: UUID
     state: str = "planned_offline"

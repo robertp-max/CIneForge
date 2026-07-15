@@ -1,10 +1,16 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from backend.app.core.errors import UnsafePathError, ValidationError
-from backend.app.schemas.post_production import PostProductionPlanErrorRecord, PostProductionPlanSuccessRecord
+from backend.app.schemas.post_production import (
+    PostProductionPlanErrorRecord,
+    PostProductionPlanSuccessRecord,
+    PostProductionRecipeCommandErrorRecord,
+    PostProductionRecipeCommandSuccessRecord,
+)
 from backend.app.schemas.production import AspectRatio, FFmpegAssemblyInput, GeometryProfile, OutputProfile
 from backend.app.services.ffmpeg.service import FFmpegService, RecipeCommandBuildResult, sha256_file
 from backend.app.services.post_production import PostProductionService
@@ -211,6 +217,114 @@ def test_post_production_plan_store_persists_generic_recipe_command_manifest_wit
     assert store.get_recipe_command(manifest.plan_id) == manifest
     assert store.list_recipe_commands()[0].plan_id == manifest.plan_id
     assert store.list() == []
+
+
+def test_post_production_plan_store_records_generic_recipe_command_success_without_execution(monkeypatch, tmp_path: Path):
+    video_path = tmp_path / "video.mp4"
+    audio_path = tmp_path / "mix.wav"
+    video_path.write_bytes(b"video")
+    audio_path.write_bytes(b"audio")
+    ffmpeg = FFmpegService(storage_root=tmp_path)
+    command_result = ffmpeg.build_audio_mux_command(
+        "video.mp4",
+        "mix.wav",
+        "delivery/final.mp4",
+        video_sha256="b" * 64,
+        audio_sha256="c" * 64,
+    )
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("recipe command result recording must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.post_production.subprocess.run", forbidden_run)
+    store = PostProductionPlanStore(root=tmp_path / "plans", service=PostProductionService(ffmpeg))
+    manifest = store.create_from_recipe_command(command_result)
+
+    recorded_updated_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    recorded_completed_at = datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC)
+    completed = store.record_recipe_command_success(
+        manifest.plan_id,
+        PostProductionRecipeCommandSuccessRecord(
+            output_sha256="D" * 64,
+            final_probe_json={"streams": [{"codec_type": "video", "width": 1280, "height": 720}]},
+            updated_at=recorded_updated_at,
+            completed_at=recorded_completed_at,
+        ),
+    )
+
+    assert completed.state == "completed_offline_recorded"
+    assert completed.execution_submitted is False
+    assert completed.output_sha256 == "d" * 64
+    assert completed.final_probe_json["streams"][0]["codec_type"] == "video"
+    assert completed.error is None
+    assert completed.updated_at == recorded_updated_at
+    assert completed.completed_at == recorded_completed_at
+    assert store.get_recipe_command(manifest.plan_id) == completed
+    assert store.list_recipe_commands()[0] == completed
+    assert (tmp_path / "plans" / "recipe_commands" / "events.jsonl").read_text(encoding="utf-8").count(
+        "post_production_recipe_command_plan_"
+    ) == 2
+
+
+def test_post_production_plan_store_records_generic_recipe_command_error_clears_stale_output(monkeypatch, tmp_path: Path):
+    video_path = tmp_path / "video.mp4"
+    audio_path = tmp_path / "mix.wav"
+    video_path.write_bytes(b"video")
+    audio_path.write_bytes(b"audio")
+    ffmpeg = FFmpegService(storage_root=tmp_path)
+    command_result = ffmpeg.build_audio_mux_command(
+        "video.mp4",
+        "mix.wav",
+        "delivery/final.mp4",
+        video_sha256="b" * 64,
+        audio_sha256="c" * 64,
+    )
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("recipe command error recording must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.post_production.subprocess.run", forbidden_run)
+    store = PostProductionPlanStore(root=tmp_path / "plans", service=PostProductionService(ffmpeg))
+    manifest = store.create_from_recipe_command(command_result)
+    store.record_recipe_command_success(
+        manifest.plan_id,
+        PostProductionRecipeCommandSuccessRecord(output_sha256="d" * 64, final_probe_json={"streams": []}),
+    )
+
+    failed = store.record_recipe_command_error(
+        manifest.plan_id,
+        PostProductionRecipeCommandErrorRecord(error="  mux validation failed  "),
+    )
+
+    assert failed.state == "failed_offline_recorded"
+    assert failed.execution_submitted is False
+    assert failed.output_sha256 is None
+    assert failed.final_probe_json is None
+    assert failed.error == "mux validation failed"
+    assert failed.completed_at is not None
+    assert store.get_recipe_command(manifest.plan_id).error == "mux validation failed"
+    assert store.list_recipe_commands()[0].output_sha256 is None
+
+
+def test_post_production_plan_store_rejects_invalid_generic_recipe_command_success_hash(tmp_path: Path):
+    clip_path = tmp_path / "clip.mp4"
+    clip_path.write_bytes(b"clip")
+    ffmpeg = FFmpegService(storage_root=tmp_path)
+    command_result = ffmpeg.build_decode_validate_command("clip.mp4", "a" * 64)
+    store = PostProductionPlanStore(root=tmp_path / "plans", service=PostProductionService(ffmpeg))
+    manifest = store.create_from_recipe_command(command_result)
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        store.record_recipe_command_success(
+            manifest.plan_id,
+            PostProductionRecipeCommandSuccessRecord(output_sha256="bad", final_probe_json={"streams": []}),
+        )
+
+    stored = store.get_recipe_command(manifest.plan_id)
+    assert stored.state == "planned_offline"
+    assert stored.output_sha256 is None
+    assert stored.final_probe_json is None
+
 
 
 def test_post_production_plan_store_rejects_invalid_generic_recipe_manifest(tmp_path: Path):

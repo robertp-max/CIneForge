@@ -20,7 +20,9 @@ from backend.app.schemas.post_production import (
     PostProductionPlanErrorRecord,
     PostProductionPlanManifest,
     PostProductionPlanSuccessRecord,
+    PostProductionRecipeCommandErrorRecord,
     PostProductionRecipeCommandManifest,
+    PostProductionRecipeCommandSuccessRecord,
 )
 from backend.app.schemas.production import FFmpegAssemblyPlan
 from backend.app.services.ffmpeg.service import RecipeCommandBuildResult, validate_sha256_hex
@@ -150,6 +152,73 @@ class PostProductionPlanStore:
                 break
             manifests.append(_RECIPE_COMMAND_MANIFEST_ADAPTER.validate_json(path.read_text(encoding="utf-8")))
         return manifests
+
+    def record_recipe_command_success(
+        self,
+        plan_id: UUID,
+        record: PostProductionRecipeCommandSuccessRecord,
+    ) -> PostProductionRecipeCommandManifest:
+        manifest = self.get_recipe_command(plan_id)
+        now = datetime.now(UTC)
+        updated_at = record.updated_at or now
+        completed_at = record.completed_at or updated_at
+        updated = manifest.model_copy(
+            update={
+                "state": "completed_offline_recorded",
+                "updated_at": updated_at,
+                "completed_at": completed_at,
+                "execution_submitted": False,
+                "output_sha256": validate_sha256_hex(record.output_sha256),
+                "final_probe_json": record.final_probe_json,
+                "error": None,
+            }
+        )
+        self._write_recipe_command_manifest(updated)
+        self._append_recipe_command_event(
+            {
+                "event": "post_production_recipe_command_plan_result_recorded",
+                "plan_id": str(plan_id),
+                "state": updated.state,
+                "output_sha256": updated.output_sha256,
+                "recorded_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_recipe_command_error(
+        self,
+        plan_id: UUID,
+        record: PostProductionRecipeCommandErrorRecord,
+    ) -> PostProductionRecipeCommandManifest:
+        manifest = self.get_recipe_command(plan_id)
+        error = (record.error_message if record.error_message is not None else record.error) or ""
+        error = error.strip()
+        if not error:
+            raise ValidationError("Post-production recipe command error cannot be blank")
+        now = datetime.now(UTC)
+        updated_at = record.updated_at or now
+        completed_at = record.completed_at or updated_at
+        updated = manifest.model_copy(
+            update={
+                "state": "failed_offline_recorded",
+                "updated_at": updated_at,
+                "completed_at": completed_at,
+                "execution_submitted": False,
+                "output_sha256": None,
+                "final_probe_json": None,
+                "error": error,
+            }
+        )
+        self._write_recipe_command_manifest(updated)
+        self._append_recipe_command_event(
+            {
+                "event": "post_production_recipe_command_plan_error_recorded",
+                "plan_id": str(plan_id),
+                "state": updated.state,
+                "recorded_at": now.isoformat(),
+            }
+        )
+        return updated
 
     def list(self, limit: int = 25) -> list[PostProductionPlanManifest]:
         if limit < 1 or not self.root.is_dir():
