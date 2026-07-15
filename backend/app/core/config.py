@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     allow_absolute_input_paths: bool = False
     queue_worker_enabled: bool = False
     hardware_operator_enabled: bool = False
+    m4_hardware_probe_approved: bool = False
     autonomy_mode: str = "scaffold_only"
     cors_allowed_origins: list[str] = [
         "http://127.0.0.1:5180",
