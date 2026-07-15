@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from backend.app.core.config import Settings
+from backend.app.main import app
 from backend.app.core.errors import ValidationError
 from backend.app.services.benchmarks.ladder import BenchmarkLadderService, write_ladder_manifest
 
@@ -66,6 +68,20 @@ def test_m4_ladder_rejects_deferred_or_out_of_scope_archetypes(tmp_path: Path):
 
     with pytest.raises(ValidationError, match="deferred archetype"):
         BenchmarkLadderService(Settings(storage_root=tmp_path), ladder_path=path).get_m4_ladder()
+
+
+def test_m4_ladder_route_returns_read_only_manifest():
+    response = TestClient(app).get("/local-runtime/m4-ladder")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["phase"] == "M4"
+    assert payload["allowed_stage_numbers"] == [0, 1, 2, 3, 7]
+    assert payload["deferred_stage_numbers"] == [4, 5, 6]
+    assert payload["public_generation_enabled"] is False
+    assert payload["requires_serial_execution"] is True
+    assert all(stage["live_action_approved"] is False for stage in payload["stages"])
+    assert "does not run ComfyUI" in payload["evidence_note"]
 
 
 def test_m4_ladder_requires_stage_7_after_stage_1_success(tmp_path: Path):

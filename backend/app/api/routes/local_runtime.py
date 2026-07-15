@@ -5,12 +5,15 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from backend.app.core.config import get_settings
+from backend.app.core.errors import ValidationError
+from backend.app.schemas.benchmark_ladder import BenchmarkLadderManifest
 from backend.app.schemas.local_runtime import LocalRuntimeCatalog, OutputPolicy
 from backend.app.schemas.local_runtime_evidence import LocalRuntimeEvidence
 from backend.app.schemas.local_runtime_m4 import M4HardwarePreflightReport
 from backend.app.services.local_runtime import local_runtime_catalog, output_policy
 from backend.app.services.local_runtime_evidence import LocalRuntimeEvidenceService
 from backend.app.services.local_runtime_m4 import M4HardwarePreflightService
+from backend.app.services.benchmarks.ladder import BenchmarkLadderService
 
 
 router = APIRouter(prefix="/local-runtime", tags=["local-runtime"])
@@ -34,6 +37,22 @@ def list_local_runtime_evidence() -> list[LocalRuntimeEvidence]:
 @router.get("/m4-preflight", response_model=M4HardwarePreflightReport)
 def get_m4_hardware_preflight() -> M4HardwarePreflightReport:
     return M4HardwarePreflightService(get_settings()).report()
+
+
+@router.get("/m4-ladder", response_model=BenchmarkLadderManifest)
+def get_m4_benchmark_ladder() -> BenchmarkLadderManifest:
+    try:
+        return BenchmarkLadderService(get_settings()).get_m4_ladder()
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"M4 benchmark ladder manifest not found: {exc.filename}",
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/evidence/cf-vid-01-smoke", response_model=LocalRuntimeEvidence)
