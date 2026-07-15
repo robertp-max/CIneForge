@@ -61,11 +61,11 @@ class ProductionGateService:
                 record = self.registry.get(shot.video_archetype_id)
                 if record is None or not record.implemented:
                     reasons.append(self._reason(GateCode.workflow_not_admitted, f"{shot.video_archetype_id} is not implemented", subject=shot.shot_id))
-                elif record.blocked_reasons or not (record.dependency_verified and record.locally_tested):
+                elif not self._record_ready_for_production(record):
                     reasons.append(
                         self._reason(
                             GateCode.workflow_not_admitted,
-                            f"{shot.video_archetype_id} is not admitted for local production: {'; '.join(record.blocked_reasons) or record.readiness}",
+                            f"{shot.video_archetype_id} is not ready for local production: {self._record_block_message(record)}",
                             subject=shot.shot_id,
                         )
                     )
@@ -93,11 +93,11 @@ class ProductionGateService:
             else:
                 if record.api_graph_path and "smoke" in str(record.api_graph_path).lower():
                     reasons.append(self._reason(GateCode.smoke_workflow_forbidden, "Production request cannot use a smoke workflow"))
-                if record.blocked_reasons or not (record.implemented and record.dependency_verified and record.locally_tested):
+                if not self._record_ready_for_production(record):
                     reasons.append(
                         self._reason(
                             GateCode.workflow_not_admitted,
-                            f"{record.archetype_id} is not locally admitted: {'; '.join(record.blocked_reasons) or record.readiness}",
+                            f"{record.archetype_id} is not production-ready: {self._record_block_message(record)}",
                         )
                     )
             try:
@@ -113,6 +113,30 @@ class ProductionGateService:
             if request.output_profile == OutputProfile.final_candidate and request.upscale_factor < 2:
                 reasons.append(self._reason(GateCode.upscale_stage_missing, "Final profile cannot bypass required 2x upscale"))
         return ProductionGateReport(allowed=not reasons, blocking_reasons=reasons)
+
+    @staticmethod
+    def _record_ready_for_production(record) -> bool:
+        return bool(
+            record.implemented
+            and record.dependency_verified
+            and record.locally_tested
+            and record.benchmark_passed
+            and record.human_approved
+            and record.readiness == "ready"
+            and not record.blocked_reasons
+        )
+
+    @staticmethod
+    def _record_block_message(record) -> str:
+        if record.blocked_reasons:
+            return "; ".join(record.blocked_reasons)
+        missing = []
+        for field in ("implemented", "dependency_verified", "locally_tested", "benchmark_passed", "human_approved"):
+            if not getattr(record, field, False):
+                missing.append(field)
+        if getattr(record, "readiness", None) != "ready":
+            missing.append(f"readiness={getattr(record, 'readiness', None)}")
+        return ", ".join(missing) or "unknown readiness block"
 
     @staticmethod
     def direct_comfy_submission_blocked(reason: str = "Only tracked backend worker submissions are allowed") -> ProductionGateReport:
