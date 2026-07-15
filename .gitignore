@@ -9,6 +9,10 @@ __pycache__/
 storage/*.db
 storage/*.db-*
 storage/workflow_snapshots/*.json
+storage/local_jobs/
+storage/projects/
+storage/runtime/*
+!storage/runtime/cf_vid_01_smoke_evidence.json
 storage/probes/*.json
 storage/logs/*.json
 storage/logs/*.jsonl

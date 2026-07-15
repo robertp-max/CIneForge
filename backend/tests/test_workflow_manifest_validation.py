@@ -50,10 +50,10 @@ def test_workflow_manifest_valid_case(tmp_path):
     result = service.apply_patch_and_snapshot(
         workflow,
         manifest,
-        {"positive_prompt": "new prompt", "output_prefix": "run 01"},
+        {"positive_prompt": "new prompt", "output_prefix": "Project A/run 01"},
     )
     assert result.patched_workflow["6"]["inputs"]["text"] == "new prompt"
-    assert result.patched_workflow["99"]["inputs"]["filename_prefix"] == "run_01"
+    assert result.patched_workflow["99"]["inputs"]["filename_prefix"] == "Project_A/run_01"
     assert result.snapshot_path.exists()
 
 

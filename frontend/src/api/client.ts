@@ -71,6 +71,149 @@ export type Job = {
   error_message: string | null
 }
 
+export type LocalArtifactRecord = {
+  key: string
+  role: string
+  path: string
+  path_exists: boolean
+  size_bytes: number | null
+  expected_size_bytes: number
+  sha256: string
+  precision: string
+  readiness: string
+  fp8_method?: string | null
+  header_identity?: string | null
+  notes?: string | null
+}
+
+export type LocalRuntimeCatalog = {
+  model_key: string
+  display_name: string
+  default_video_model: boolean
+  fp8_method: string
+  generation_enabled: boolean
+  public_generation_enabled: boolean
+  queue_worker_enabled: boolean
+  database_required: boolean
+  readiness: string
+  artifacts: LocalArtifactRecord[]
+  output_policy: {
+    output_root: string
+    filename_prefix_shape: string
+    one_folder_per_project: boolean
+  }
+}
+
+export type LocalPreset = {
+  preset_id: string
+  name: string
+  modality: string
+  model_key: string
+  default_archetype_id: string
+  quality_profile: string
+  readiness: string
+  enabled: boolean
+  notes: string
+}
+
+export type LocalArchetype = {
+  archetype_id: string
+  name: string
+  modality: string
+  source_kind: string
+  source_path: string | null
+  source_exists: boolean
+  default_model_key: string | null
+  quality_profiles: string[]
+  readiness: string
+  enabled: boolean
+  notes: string
+}
+
+export type LocalJobManifest = {
+  job_id: string
+  state: string
+  created_at: string
+  project_key: string
+  project_folder: string
+  run_stem: string
+  output_root: string
+  project_output_dir: string
+  filename_prefix: string
+  manifest_path: string
+  preset_id: string
+  preset_readiness: string
+  archetype_id: string
+  model_key: string
+  quality_profile: string
+  fp8_artifact_sha256: string
+  generation_submitted: boolean
+  comfy_prompt_id: string | null
+  workflow_template_id: string | null
+  workflow_template_version: string | null
+  workflow_snapshot_path: string | null
+  runtime_patch_payload: Record<string, unknown> | null
+  prompt: string
+  negative_prompt: string
+  seed: number | null
+  width: number | null
+  height: number | null
+  frames: number | null
+  fps: number | null
+  steps: number | null
+}
+
+export type LocalRuntimeEvidence = {
+  evidence_id: string
+  archetype_id: string
+  template_id: string
+  template_version: string
+  readiness_after_evidence: string
+  model_key: string
+  checkpoint_filename: string
+  text_encoder_filename: string
+  workflow_api_sha256: string
+  comfyui_version: string
+  ltxvideo_node_sha: string
+  res4lyf_sha: string | null
+  object_info_required_classes_missing: string[]
+  smoke_parameters: Record<string, number>
+  outputs: Array<{
+    prompt_id: string
+    path: string
+    sha256: string
+    size_bytes: number
+    video_codec: string
+    width: number
+    height: number
+    frames: number
+    fps: string
+    audio_codec: string | null
+    elapsed_sec: number | null
+    peak_memory_used_mib: number | null
+    peak_gpu_util_percent: number | null
+    peak_temperature_c: number | null
+  }>
+  queue_empty_after: boolean
+  remaining_gates: string[]
+}
+
+export type LocalJobCreatePayload = {
+  project_key: string
+  run_stem: string
+  preset_id?: string
+  model_key?: string
+  quality_profile?: string
+  prompt?: string
+  negative_prompt?: string
+  seed?: number | null
+  width?: number | null
+  height?: number | null
+  frames?: number | null
+  fps?: number | null
+  steps?: number | null
+}
+
 export type HealthResponse = Record<string, unknown> & {
   status?: string
 }
@@ -101,6 +244,7 @@ export type RuntimeStatus = {
   ffmpeg: HealthResponse
   queue: {
     worker_enabled: boolean
+    hardware_operator_enabled: boolean
     submission_enabled: boolean
     controlled_submission_enabled: boolean
     public_submission_enabled: boolean
@@ -1425,6 +1569,15 @@ export const api = {
   gpuHealth: () => request<HealthResponse>('/health/gpu'),
   ffmpegHealth: () => request<HealthResponse>('/health/ffmpeg'),
   runtimeStatus: () => request<RuntimeStatus>('/runtime/status'),
+  localRuntimeCatalog: () => request<LocalRuntimeCatalog>('/local-runtime/catalog'),
+  localOutputPolicy: () => request<LocalRuntimeCatalog['output_policy']>('/local-runtime/output-policy'),
+  listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
+  listLocalPresets: () => request<LocalPreset[]>('/local-presets'),
+  listLocalArchetypes: () => request<LocalArchetype[]>('/local-archetypes'),
+  listLocalJobs: (limit = 25) => request<LocalJobManifest[]>(`/local-jobs?limit=${limit}`),
+  getLocalJob: (jobId: string) => request<LocalJobManifest>(`/local-jobs/${jobId}`),
+  createLocalJob: (payload: LocalJobCreatePayload) =>
+    request<LocalJobManifest>('/local-jobs', { method: 'POST', body: JSON.stringify(payload) }),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (payload: { name: string; description?: string | null }) =>

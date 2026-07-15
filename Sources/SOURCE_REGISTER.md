@@ -2,6 +2,8 @@
 
 This investigation prioritizes official model cards, official repositories, ComfyUI documentation/source, maintained custom-node repositories, Hugging Face model pages, and reproducible workflows. Claims that are not directly verified are labeled as test-required.
 
+**2026-07 product-source policy:** the default video lane is `ltx2_3_22b_distilled_1_1_fp8`, meaning official LTX-2.3 22B Distilled **1.1** identity plus a proven FP8 runtime method. The official Distilled 1.1 BF16 checkpoint is not assumed to be FP8, and non-1.1 FP8 files are not valid substitutes unless the product contract is explicitly changed. Wan sources remain secondary/historical evidence.
+
 ## Primary Sources
 
 | Source | URL | Used For | Evidence Level |
@@ -10,18 +12,20 @@ This investigation prioritizes official model cards, official repositories, Comf
 | Lightricks LTX-Video HF API | https://huggingface.co/api/models/Lightricks/LTX-Video?blobs=true | File-size verification for listed LTX artifacts | Verified official documentation |
 | Lightricks LTX-2 model card | https://huggingface.co/Lightricks/LTX-2 | LTX-2 19B model family, text encoder, offload examples, precision variants | Verified official documentation |
 | Lightricks LTX-2 HF API | https://huggingface.co/api/models/Lightricks/LTX-2?blobs=true | LTX-2 file-size verification | Verified official documentation |
-| Lightricks LTX-2.3 model card | https://huggingface.co/Lightricks/LTX-2.3 | LTX-2.3 22B references and distilled variants | Verified official documentation |
+| Lightricks LTX-2.3 model card | https://huggingface.co/Lightricks/LTX-2.3 | LTX-2.3 22B references and official Distilled 1.1 source identity | Verified official documentation |
+| Lightricks LTX-2.3-fp8 model card | https://huggingface.co/Lightricks/LTX-2.3-fp8 | Official FP8 lineage check; **not** a silent substitute for Distilled 1.1 unless identity is proven or contract changes | Verified official documentation, blocked for product key without identity proof |
 | Lightricks ComfyUI-LTXVideo | https://github.com/Lightricks/ComfyUI-LTXVideo | Official ComfyUI support, workflows, low-VRAM loaders, LTX nodes | Verified maintainer repo |
+| Lightricks ComfyUI-LTXVideo 2.3 example workflows | https://github.com/Lightricks/ComfyUI-LTXVideo/tree/main/example_workflows/2.3 | Source for official LTX-2.3 single-stage, two-stage, control, and lipdub graph admission candidates | Verified maintainer repo |
 | Lightricks LTXVideo Q8 Kernels | https://github.com/Lightricks/LTXVideo-Q8-Kernels | Q8 kernel path and LTX Q8 behavior | Verified maintainer repo |
-| Wan2.1 T2V 1.3B | https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B | Wan 1.3B model scope and official memory guidance | Verified official documentation |
-| Wan2.1 T2V 14B | https://huggingface.co/Wan-AI/Wan2.1-T2V-14B | Wan 14B model scope, official inference constraints | Verified official documentation |
-| Wan2.1 I2V 14B 720P | https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P | Wan I2V constraints and model family | Verified official documentation |
-| Wan2.2 T2V A14B | https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B | Wan2.2 A14B architecture and official high-memory expectations | Verified official documentation |
-| ComfyUI Wan examples | https://comfyanonymous.github.io/ComfyUI_examples/wan/ | Native ComfyUI Wan2.1 workflows, fp16/bf16/fp8 quality ranking | Verified official documentation |
-| ComfyUI Wan2.2 docs | https://docs.comfy.org/tutorials/video/wan/wan2_2 | Wan2.2 ComfyUI setup, model file placement, FP8 workflow references | Verified official documentation |
-| ComfyUI Wan2.2 examples | https://comfyanonymous.github.io/ComfyUI_examples/wan22/ | Wan2.2 workflow templates and ComfyUI examples | Verified official documentation |
-| Comfy-Org Wan2.1 repackaged HF API | https://huggingface.co/api/models/Comfy-Org/Wan_2.1_ComfyUI_repackaged?blobs=true | ComfyUI repackaged Wan file names and sizes | Verified official documentation |
-| Comfy-Org Wan2.2 repackaged HF API | https://huggingface.co/api/models/Comfy-Org/Wan_2.2_ComfyUI_Repackaged?blobs=true | ComfyUI repackaged Wan2.2 high/low FP8 files, VAEs, text encoder | Verified official documentation |
+| Wan2.1 T2V 1.3B | https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B | Secondary/historical Wan 1.3B model scope and official memory guidance | Verified official documentation; optional lane only |
+| Wan2.1 T2V 14B | https://huggingface.co/Wan-AI/Wan2.1-T2V-14B | Secondary/historical Wan 14B model scope and official inference constraints | Verified official documentation; optional lane only |
+| Wan2.1 I2V 14B 720P | https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P | Secondary/historical Wan I2V constraints and model family | Verified official documentation; optional lane only |
+| Wan2.2 T2V A14B | https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B | Secondary/historical Wan2.2 A14B architecture and official high-memory expectations | Verified official documentation; optional lane only |
+| ComfyUI Wan examples | https://comfyanonymous.github.io/ComfyUI_examples/wan/ | Secondary/historical native ComfyUI Wan2.1 workflows, fp16/bf16/fp8 quality ranking | Verified official documentation; optional lane only |
+| ComfyUI Wan2.2 docs | https://docs.comfy.org/tutorials/video/wan/wan2_2 | Secondary/historical Wan2.2 ComfyUI setup, model file placement, FP8 workflow references | Verified official documentation; optional lane only |
+| ComfyUI Wan2.2 examples | https://comfyanonymous.github.io/ComfyUI_examples/wan22/ | Secondary/historical Wan2.2 workflow templates and ComfyUI examples | Verified official documentation; optional lane only |
+| Comfy-Org Wan2.1 repackaged HF API | https://huggingface.co/api/models/Comfy-Org/Wan_2.1_ComfyUI_repackaged?blobs=true | Secondary/historical ComfyUI repackaged Wan file names and sizes | Verified official documentation; optional lane only |
+| Comfy-Org Wan2.2 repackaged HF API | https://huggingface.co/api/models/Comfy-Org/Wan_2.2_ComfyUI_Repackaged?blobs=true | Secondary/historical ComfyUI repackaged Wan2.2 high/low FP8 files, VAEs, text encoder | Verified official documentation; optional lane only |
 | ComfyUI server routes docs | https://docs.comfy.org/development/comfyui-server/comms_routes | API routes and communication architecture | Verified official documentation |
 | ComfyUI message docs | https://docs.comfy.org/development/comfyui-server/comms_messages | WebSocket event types and progress messages | Verified official documentation |
 | ComfyUI server source | https://github.com/Comfy-Org/ComfyUI/blob/master/server.py | Endpoint behavior, queue/history/view/upload/free/interrupt routes | Verified maintainer repo |
@@ -48,4 +52,4 @@ This investigation prioritizes official model cards, official repositories, Comf
 
 ## Evidence Caveat
 
-Community reports of 24GB feasibility for large Wan/LTX workflows are useful as test leads, not production facts. For this laptop, every large-model recommendation must pass the local benchmark suite in `Benchmarks/BENCHMARK_PROTOCOL.md`.
+Community reports of 24GB feasibility for large Wan/LTX workflows are useful as test leads, not production facts. Community or local LTX-2.3 Distilled 1.1 FP8 derivatives are leads only until conversion provenance, hashes, graph admission, and operator approval are recorded. For this laptop, every large-model recommendation must pass the local benchmark suite in `Benchmarks/BENCHMARK_PROTOCOL.md`.

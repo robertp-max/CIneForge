@@ -25,9 +25,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = DEFAULT_DATABASE_URL
     comfyui_base_url: AnyHttpUrl = "http://127.0.0.1:8188"
+    comfyui_output_root: Path = Field(default=Path("C:/AI/ComfyUI_windows_portable/ComfyUI/output"))
     storage_root: Path = Field(default=DEFAULT_STORAGE_ROOT)
     allow_absolute_input_paths: bool = False
     queue_worker_enabled: bool = False
+    hardware_operator_enabled: bool = False
     autonomy_mode: str = "scaffold_only"
     cors_allowed_origins: list[str] = [
         "http://127.0.0.1:5180",

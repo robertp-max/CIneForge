@@ -14,6 +14,9 @@ What works now:
 - SQLAlchemy schema foundation aligned to the research packet.
 - Queue state machine primitives.
 - Workflow manifest validation and immutable snapshot writing.
+- DB-free local runtime catalog for the selected LTX-2.3 Distilled 1.1 FP8 artifact.
+- Local archetype catalog (`CF-VID-01`..`CF-VID-04`, `CF-IMG-01`) and exactly 64 disabled/gated presets.
+- File-backed local job manifests that create ComfyUI project output folders and offline workflow snapshots without submitting prompts.
 - Path safety helpers.
 - Offline-safe ComfyUI client wrapper.
 - `nvidia-smi` parser for benchmark telemetry.
@@ -26,13 +29,26 @@ What works now:
 
 What does not work yet:
 
-- No real video generation.
-- No model downloads.
-- No ComfyUI installation or mutation.
+- No general user-facing or preset-enabled production video generation.
 - No autonomous production execution.
-- No GPU queue worker yet.
+- No full benchmark ladder, recovery/OOM exercise, or human QA sign-off.
+- No app-level ComfyUI Manager/download/update enforcement yet.
+- A GPU queue-worker skeleton exists (`backend/app/services/queue/worker.py`), but it is not production-enabled for public/preset generation.
 - No image/video generation is triggered by Storyboard Phase A approval.
-- Project, campaign, and job APIs are validation stubs, not fully DB-backed.
+- Project and campaign APIs are still planning/scaffold surfaces; the new `/local-jobs` path is file-backed but generation-disabled.
+
+## Default video policy (2026-07)
+
+- Product key: `ltx2_3_22b_distilled_1_1_fp8`.
+- Source identity: official LTX-2.3 22B Distilled **1.1**; the BF16 source checkpoint is not itself an FP8 artifact.
+- Runtime precision: proven FP8 only via a recorded method (`loader_level`, `converted_derivative`, or `official_artifact`); never silently substitute a non-1.1 FP8 file.
+- M0 records a local full-checkpoint FP8 artifact as `converted_derivative`; CF-VID-01 has passed a minimal local T2V smoke, but admission remains `benchmark_required` until conversion provenance, full benchmark evidence, recovery behavior, and human QA are recorded.
+- `/local-runtime/catalog` exposes the DB-free local model/output contract; `/local-presets`, `/local-archetypes`, and `/local-jobs` expose the local file-backed ComfyUI lane.
+- Outputs are saved under the local ComfyUI output root (`C:\AI\ComfyUI_windows_portable\ComfyUI\output` by default), with one sanitized folder per CineForge project and safe `filename_prefix=<project-folder>/<run-stem>`.
+- Wan and older LTXV lanes are historical or optional secondary evidence, disabled by default.
+- Storyboard approval does not automatically start generation.
+
+See `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md`, `Models/MODEL_FEASIBILITY_MATRIX.md`, `Benchmarks/BENCHMARK_PROTOCOL.md`, `docs/RUNTIME_INVENTORY.md`, and `docs/CFVID01_RUNTIME_SMOKE.md`.
 
 ## Local Setup
 
@@ -68,14 +84,18 @@ Run tests:
 
 ## Key Architecture Docs
 
-- `Architecture/ARCHITECTURE_BLUEPRINT.md`
-- `MVP/MVP_ARCHITECTURE.md`
+- `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md` — current corrected ComfyUI/LTX implementation authority.
+- `docs/RUNTIME_INVENTORY.md` — M0 local runtime and artifact inventory; not a readiness claim.
+- `Models/MODEL_FEASIBILITY_MATRIX.md`
+- `Benchmarks/BENCHMARK_PROTOCOL.md`
+- `Sources/SOURCE_REGISTER.md`
+- `Architecture/ARCHITECTURE_BLUEPRINT.md` — historical architecture research, superseded for default video policy.
+- `MVP/MVP_ARCHITECTURE.md` — historical MVP research, superseded for default video policy.
 - `API/BACKEND_API_FLOW.md`
 - `Runtime/RUNTIME_ISOLATION_AND_QUEUEING.md`
 - `Workflows/WORKFLOW_JSON_MUTATION_STRATEGY.md`
 - `ComfyUI/HEADLESS_COMFYUI_API.md`
 - `Database/POSTGRES_SCHEMA.sql`
-- `Benchmarks/BENCHMARK_PROTOCOL.md`
 - `FFmpeg/FFMPEG_STRATEGY_COMMAND_LIBRARY.md`
 - `Orchestration/OPTIONAL_AI_ORCHESTRATION_LAYER.md`
 - `Orchestration/AUTONOMOUS_PRODUCTION_ARCHITECTURE.md`
@@ -83,7 +103,7 @@ Run tests:
 
 ## Safety Boundary
 
-CineForge is intended to remain the deterministic execution engine. AI modules are advisory only in Sprint 1A and cannot directly mutate workflow JSON, queue state, database records, model registries, ComfyUI submissions, asset paths, or FFmpeg commands.
+CineForge is intended to remain the deterministic execution engine. AI modules are advisory only in Sprint 1A and cannot directly mutate workflow JSON, queue state, local state records, model registries, ComfyUI submissions, asset paths, or FFmpeg commands.
 
 See `docs/STORYBOARD_PHASE_A_SPEC.md` for the planning boundary and `docs/PRODUCT_VISION.md` for current product direction. Older sprint documents are historical implementation records, not product direction.
 

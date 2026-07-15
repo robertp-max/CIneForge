@@ -1,0 +1,242 @@
+{
+  "template_id": "cf_vid_01_ltx23_single_stage",
+  "archetype_id": "CF-VID-01",
+  "version": "0.1.0-local-ui-candidate",
+  "source_format": "comfyui_ui",
+  "original_workflow_sha256": "c607c3e9134876e1128809fdb37d02111208e0fef2f495b4293c6d0c4605a9b0",
+  "comfyui_snapshot_ref": "portable-0.19.3-b435ed4a97cbbe9e66017370d1ac2ca49b7270c2-ltxvideo-229437c6b65796d6a7a63ae34be2bd5ba31fa543",
+  "selected_model_key": "ltx2_3_22b_distilled_1_1_fp8",
+  "readiness": "candidate_only_no_generation",
+  "blockers": [
+    "Source workflow is UI-format, not API prompt export; API conversion/runtime admission still required.",
+    "Source workflow originally references ltx-2.3-22b-dev.safetensors and distilled LoRA nodes; patched preview binds the selected local FP8 checkpoint but does not prove runtime correctness.",
+    "No ComfyUI launch, object_info check, prompt submission, generation, or 24GB benchmark has been run."
+  ],
+  "nodes": {
+    "positive_prompt": {
+      "node_id": 2483,
+      "class_type": "CLIPTextEncode",
+      "widget_index": 0,
+      "runtime_parameter": "prompt",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "negative_prompt": {
+      "node_id": 2612,
+      "class_type": "CLIPTextEncode",
+      "widget_index": 0,
+      "runtime_parameter": "negative_prompt",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "width": {
+      "node_id": 3059,
+      "class_type": "EmptyLTXVLatentVideo",
+      "widget_index": 0,
+      "runtime_parameter": "width",
+      "value_schema": {
+        "type": "integer",
+        "min": 1,
+        "max": 4096
+      },
+      "required": true,
+      "notes": ""
+    },
+    "height": {
+      "node_id": 3059,
+      "class_type": "EmptyLTXVLatentVideo",
+      "widget_index": 1,
+      "runtime_parameter": "height",
+      "value_schema": {
+        "type": "integer",
+        "min": 1,
+        "max": 4096
+      },
+      "required": true,
+      "notes": ""
+    },
+    "frames_video_latent": {
+      "node_id": 4979,
+      "class_type": "PrimitiveInt",
+      "widget_index": 0,
+      "runtime_parameter": "frames",
+      "value_schema": {
+        "type": "integer",
+        "min": 1,
+        "max": 4096
+      },
+      "required": true,
+      "notes": ""
+    },
+    "fps_float": {
+      "node_id": 4978,
+      "class_type": "PrimitiveFloat",
+      "widget_index": 0,
+      "runtime_parameter": "fps",
+      "value_schema": {
+        "type": "number",
+        "min": 1,
+        "max": 120
+      },
+      "required": true,
+      "notes": ""
+    },
+    "seed_stage_1": {
+      "node_id": 4814,
+      "class_type": "RandomNoise",
+      "widget_index": 0,
+      "runtime_parameter": "seed",
+      "value_schema": {
+        "type": "integer",
+        "min": 0,
+        "max": 9223372036854775807
+      },
+      "required": true,
+      "notes": ""
+    },
+    "seed_stage_2": {
+      "node_id": 4832,
+      "class_type": "RandomNoise",
+      "widget_index": 0,
+      "runtime_parameter": "seed",
+      "value_schema": {
+        "type": "integer",
+        "min": 0,
+        "max": 9223372036854775807
+      },
+      "required": true,
+      "notes": ""
+    },
+    "checkpoint_loader": {
+      "node_id": 3940,
+      "class_type": "CheckpointLoaderSimple",
+      "widget_index": 0,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "audio_vae_loader": {
+      "node_id": 4010,
+      "class_type": "LTXVAudioVAELoader",
+      "widget_index": 0,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "gemma_positive_model_a": {
+      "node_id": 4923,
+      "class_type": "GemmaAPITextEncode",
+      "widget_index": 2,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "gemma_positive_model_b": {
+      "node_id": 4923,
+      "class_type": "GemmaAPITextEncode",
+      "widget_index": 3,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "text_encoder_ltx_model": {
+      "node_id": 4960,
+      "class_type": "LTXAVTextEncoderLoader",
+      "widget_index": 1,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "gemma_negative_model": {
+      "node_id": 4961,
+      "class_type": "GemmaAPITextEncode",
+      "widget_index": 3,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "save_video_stage_f_prefix": {
+      "node_id": 4823,
+      "class_type": "SaveVideo",
+      "widget_index": 0,
+      "runtime_parameter": "output_prefix",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "save_video_stage_d_prefix": {
+      "node_id": 4852,
+      "class_type": "SaveVideo",
+      "widget_index": 0,
+      "runtime_parameter": "output_prefix",
+      "value_schema": {
+        "type": "string"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "bypass_i2v": {
+      "node_id": 4977,
+      "class_type": "PrimitiveBoolean",
+      "widget_index": 0,
+      "runtime_parameter": "bypass_i2v",
+      "value_schema": {
+        "type": "boolean"
+      },
+      "required": true,
+      "notes": ""
+    },
+    "lora_stage_1_strength": {
+      "node_id": 4922,
+      "class_type": "LoraLoaderModelOnly",
+      "widget_index": 1,
+      "runtime_parameter": "lora_stage_1_strength",
+      "value_schema": {
+        "type": "number",
+        "min": 0,
+        "max": 1
+      },
+      "required": false,
+      "notes": ""
+    },
+    "lora_stage_2_strength": {
+      "node_id": 4968,
+      "class_type": "LoraLoaderModelOnly",
+      "widget_index": 1,
+      "runtime_parameter": "lora_stage_2_strength",
+      "value_schema": {
+        "type": "number",
+        "min": 0,
+        "max": 1
+      },
+      "required": false,
+      "notes": ""
+    }
+  }
+}

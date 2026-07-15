@@ -1,5 +1,7 @@
 # MVP Prototype Architecture
 
+> **Policy supersession (2026-07):** This document is retained as historical MVP research. The default video lane is now governed by `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md`: LTX-2.3 22B Distilled **1.1** at proven FP8 runtime precision (`ltx2_3_22b_distilled_1_1_fp8`). Wan presets below are optional/historical and disabled by default.
+
 Goal: fastest reliable local prototype that proves workflow automation, reproducibility, queueing, and FFmpeg assembly before chasing final quality.
 
 The MVP does not depend on AI agents. CineForge remains the deterministic execution engine for state, validation, queueing, ComfyUI submission, telemetry, FFmpeg assembly, and provenance.
@@ -10,9 +12,9 @@ The MVP does not depend on AI agents. CineForge remains the deterministic execut
 |---|---|---|---|---|
 | ComfyUI runtime | Windows portable or isolated venv, headless | Fastest local setup, isolated from app | Dependency drift | Clone-based upgrade lane |
 | Backend | Python FastAPI or Node service | Easy HTTP/WebSocket orchestration | Long tasks need worker discipline | Add durable workers |
-| DB | PostgreSQL if available; SQLite acceptable for first spike | Provenance and queryability | SQLite concurrency limits | Move to Postgres |
-| Queue | DB-backed single GPU worker | Avoids overloading 24GB VRAM | Lower throughput | Redis/RQ or Celery later |
-| Prototype model | Wan2.1 1.3B and/or LTXV 2B | Lower VRAM risk | Lower final quality | Promote Wan2.2 5B/14B after benchmark |
+| State store | Local JSON/YAML/JSONL files under `storage/`; generated media under ComfyUI `output/<project-folder>/` | Local-first and no external DB requirement | Needs disciplined file locking/atomic writes | Optional SQLite/Postgres only if later needed |
+| Queue | Local file-backed single GPU worker | Avoids overloading 24GB VRAM without external services | Lower throughput | Redis/RQ/Celery only if later needed |
+| Prototype model | Current default contract: LTX-2.3 Distilled 1.1 FP8 (`ltx2_3_22b_distilled_1_1_fp8`), blocked until M0 admission; Wan2.1/LTXV only optional smoke lanes | Aligns with corrected product policy while preserving lower-risk historical test leads | LTX 22B on 24GB is experimental and benchmark-required | Admit FP8 method, then promote only after serialized ladder |
 | Quant | FP16 for small if it fits; FP8 for larger | Verified paths | Quality/speed tradeoffs | GGUF/Q only if needed |
 | Clip length | 3-5 seconds | Faster iteration | More stitching | I2V continuity later |
 | Frame count | 49-81 initial | Lower VRAM and faster | Less temporal context | 121 after benchmark |
@@ -31,7 +33,9 @@ Create campaign -> create 10-sec timeline slots -> generate 3-5 sec preview cand
 -> run validation/probe -> archive manifest
 ```
 
-## MVP Presets
+## MVP Presets (Historical / Optional Secondary)
+
+The rows below are historical research presets. They must not override the LTX-2.3 Distilled 1.1 FP8 default contract and remain disabled unless explicitly admitted as optional secondary lanes.
 
 | Prototype Preset | Model | Quant | Resolution | Frames | Duration | Steps | Sampler/Scheduler | Expected Speed | VRAM Risk | Use Case |
 |---|---|---|---:|---:|---:|---:|---|---|---|---|
@@ -56,7 +60,7 @@ An AI Orchestration Layer may be added after the MVP is functional, but it is ad
 | Review continuity | Optional | CineForge stores notes/proposals, not direct asset changes |
 | Recommend next actions | Optional | Human or policy approval before CineForge execution |
 | Direct workflow JSON mutation by agent | No | Forbidden |
-| Direct queue/database/model registry mutation by agent | No | Forbidden |
+| Direct queue/local-state/model registry mutation by agent | No | Forbidden |
 | Direct FFmpeg command execution by agent | No | Forbidden |
 
 This keeps the MVP execution path deterministic and reproducible while leaving room for provider-agnostic local or hosted agents later.

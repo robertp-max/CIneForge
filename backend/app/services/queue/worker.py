@@ -118,12 +118,14 @@ class QueueWorker:
         client_id: str,
         object_info_cache: ObjectInfoCacheService,
         submission_service: ControlledComfySubmissionService,
+        gpu_lease_id: UUID | None = None,
     ) -> ControlledSubmissionResult:
         context = WorkerSubmissionContext(
             job_id=job_id,
             worker_id=self.worker_id,
             client_id=client_id,
             object_info_cache=object_info_cache,
+            gpu_lease_id=gpu_lease_id,
         )
         return await submission_service.submit_reserved_job(db, context)
 

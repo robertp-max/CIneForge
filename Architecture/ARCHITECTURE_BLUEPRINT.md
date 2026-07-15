@@ -1,19 +1,21 @@
 # Architecture Blueprint
 
+> **Policy supersession (2026-07):** This document is retained as historical architecture research. The default video lane is superseded by `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md`: LTX-2.3 22B Distilled **1.1** at proven FP8 runtime precision (`ltx2_3_22b_distilled_1_1_fp8`). Wan remains historical/optional secondary evidence, disabled by default.
+
 ## Executive Summary
 
-Build the system as a local orchestration app that controls an isolated ComfyUI worker over HTTP/WebSocket, stores every generation input/output in a database, and uses FFmpeg for deterministic media assembly. Do not embed ComfyUI in the app process. Do not run concurrent GPU video generations on the 24GB GPU.
+Build the system as a local orchestration app that controls an isolated ComfyUI worker over HTTP/WebSocket, stores local manifests/provenance on the filesystem, saves generated media under ComfyUI `output/<project-folder>/`, and uses FFmpeg for deterministic media assembly. Do not embed ComfyUI in the app process. Do not run concurrent GPU video generations on the 24GB GPU.
 
 CineForge is the deterministic execution engine. An optional AI Orchestration Layer may assist with creative planning, prompt drafting, continuity review, failure diagnosis, and next-action recommendations, but it does not replace CineForge and is not an MVP dependency. AI agents may propose changes; CineForge validates and executes them.
 
 A future Autonomous Production Layer may let CineForge produce a complete short film from a user brief, but only as a policy-governed extension. It does not change the MVP execution path: ComfyUI remains isolated, the backend owns the queue, GPU video generation remains serialized, and agents remain proposal-only.
 
-Recommended MVP path:
+Current default-video path:
 
-- Prototype models: Wan2.1 1.3B and LTXV 2B.
-- First larger candidate: Wan2.2 5B or Wan2.1/2.2 14B FP8 after benchmarks.
-- Final-candidate lane: Wan2.2 A14B FP8 only after 81-frame 480p/720p local tests pass.
-- LTX-2.x: research/elite lane until 24GB laptop benchmarks prove stable.
+- Default contract: LTX-2.3 22B Distilled **1.1** at proven FP8 runtime precision, product key `ltx2_3_22b_distilled_1_1_fp8`.
+- Admission is blocked until M0 records the FP8 method (`loader_level`, `converted_derivative`, or `official_artifact`), exact hashes, isolated runtime pins, and serialized 24GB benchmark/recovery evidence.
+- Wan2.x and older LTXV notes in this document are retained only as historical or optional secondary lanes, disabled by default.
+- No model lane is production-ready from documentation alone.
 
 ## System Diagram
 
@@ -28,8 +30,8 @@ Local Backend API
   - workflow mutation service
   - queue scheduler
         |
-        +--> PostgreSQL or SQLite/Postgres-compatible DB
-        +--> Asset Store: inputs, workflow snapshots, outputs, probes, logs
+        +--> Local State Store: JSON/YAML/JSONL manifests, workflow snapshots, probes, logs
+        +--> ComfyUI Output Store: output/<project-folder>/ generated media
         +--> ComfyUI Worker Supervisor
         |       |
         |       +--> Headless ComfyUI HTTP/WebSocket API
@@ -100,6 +102,8 @@ Future Autonomous Production Layer
 
 ## LTX vs Wan
 
+This comparison is historical research. It no longer chooses the default video lane; the current default contract is LTX-2.3 Distilled 1.1 at proven FP8 runtime precision, with Wan disabled by default unless explicitly admitted as an optional secondary lane.
+
 | Dimension | LTX | Wan | Winner for RTX 5090 Laptop Prototype | Winner for Final Quality | Evidence |
 |---|---|---|---|---|---|
 | Small-model lane | LTXV 2B | Wan2.1 1.3B | Tie | Depends prompt | Official model cards |
@@ -130,7 +134,7 @@ The AI Orchestration Layer is swappable and provider-agnostic. It can use local 
 Hard boundary:
 
 - Agents may propose shot lists, prompt repairs, continuity notes, failed-shot diagnoses, and next actions.
-- Agents must not directly mutate workflow JSON, queue state, database records, model registry entries, or FFmpeg commands.
+- Agents must not directly mutate workflow JSON, queue state, local state records, model registry entries, or FFmpeg commands.
 - CineForge remains responsible for validation, execution, provenance, telemetry, and audit records.
 
 Detailed extension design: `Orchestration/OPTIONAL_AI_ORCHESTRATION_LAYER.md`.

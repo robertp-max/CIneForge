@@ -36,8 +36,12 @@ def health() -> dict:
         "status": "ok",
         "env": settings.env,
         "queue_worker_enabled": settings.queue_worker_enabled,
+        "hardware_operator_enabled": settings.hardware_operator_enabled,
         "autonomy_mode": settings.autonomy_mode,
         "runtime_isolation": "comfyui_external_http_only",
+        "database_required": False,
+        "local_state_mode": "file_backed",
+        "comfyui_output_root": str(settings.comfyui_output_root),
     }
 
 
@@ -95,8 +99,11 @@ async def runtime_status() -> dict:
         "ffmpeg": health_ffmpeg(),
         "queue": {
             "worker_enabled": settings.queue_worker_enabled,
+            "hardware_operator_enabled": settings.hardware_operator_enabled,
             "submission_enabled": False,
-            "controlled_submission_enabled": True,
+            "database_required": False,
+            "local_state_mode": "file_backed",
+            "controlled_submission_enabled": settings.hardware_operator_enabled,
             "public_submission_enabled": False,
             "supported_states": [
                 "pending",
@@ -116,8 +123,14 @@ async def runtime_status() -> dict:
                 "canceled",
             ],
         },
+        "output_policy": {
+            "root": str(settings.comfyui_output_root),
+            "filename_prefix_shape": "<project-folder>/<run-stem>",
+            "one_folder_per_project": True,
+        },
         "disabled_actions": {
             "public_submit_prompt": "disabled",
+            "hardware_operator_submit": "enabled" if settings.hardware_operator_enabled else "disabled",
             "websocket_monitor": "disabled_until_future_phase",
             "output_collection": "disabled_until_future_phase",
             "ffmpeg_assembly": "disabled_until_future_phase",

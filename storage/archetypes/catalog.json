@@ -1,0 +1,74 @@
+{
+  "catalog_version": "2026-07-local-m1",
+  "archetypes": [
+    {
+      "archetype_id": "CF-VID-01",
+      "name": "LTX-2.3 Distilled Single Stage T2V/I2V",
+      "modality": "video",
+      "source_kind": "external_comfyui_workflow",
+      "source_path": "C:/AI/ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-LTXVideo/example_workflows/2.3/LTX-2.3_T2V_I2V_Single_Stage_Distilled_Full.json",
+      "default_model_key": "ltx2_3_22b_distilled_1_1_fp8",
+      "quality_profiles": [
+        "draft",
+        "review"
+      ],
+      "readiness": "benchmark_required",
+      "enabled": false,
+      "notes": "Primary video graph candidate. API T2V smoke passed locally at 512x288/17f/4 steps with selected 1.1 FP8 checkpoint after installing RES4LYF; remains disabled until benchmark ladder, recovery evidence, and human QA."
+    },
+    {
+      "archetype_id": "CF-VID-02",
+      "name": "LTX-2.3 Distilled Two Stage",
+      "modality": "video",
+      "source_kind": "external_comfyui_workflow",
+      "source_path": "C:/AI/ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-LTXVideo/example_workflows/2.3/LTX-2.3_T2V_I2V_Two_Stage_Distilled.json",
+      "default_model_key": "ltx2_3_22b_distilled_1_1_fp8",
+      "quality_profiles": [
+        "final_candidate"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Blocked until CF-VID-01 passes single-stage ladder."
+    },
+    {
+      "archetype_id": "CF-VID-03",
+      "name": "LTX-2.3 Distilled IC-LoRA Union Control",
+      "modality": "video",
+      "source_kind": "external_comfyui_workflow",
+      "source_path": "C:/AI/ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-LTXVideo/example_workflows/2.3/LTX-2.3_ICLoRA_Union_Control_Distilled.json",
+      "default_model_key": "ltx2_3_22b_distilled_1_1_fp8",
+      "quality_profiles": [
+        "controlled"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Blocked until control graph admission and Stage 5 evidence."
+    },
+    {
+      "archetype_id": "CF-VID-04",
+      "name": "LTX-2.3 Distilled Lipdub Two Stage",
+      "modality": "video",
+      "source_kind": "external_comfyui_workflow",
+      "source_path": "C:/AI/ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-LTXVideo/example_workflows/2.3/LTX-2.3_ICLoRA_Lipdub_Two_Stage_Distilled.json",
+      "default_model_key": "ltx2_3_22b_distilled_1_1_fp8",
+      "quality_profiles": [
+        "lipdub"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Blocked until lipdub graph admission and Stage 6 evidence."
+    },
+    {
+      "archetype_id": "CF-IMG-01",
+      "name": "FLUX Base Still Image Candidate",
+      "modality": "image",
+      "source_kind": "external_comfyui_workflow",
+      "source_path": null,
+      "default_model_key": null,
+      "quality_profiles": [],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Still-image placeholder. Requires explicit workflow source and graph admission."
+    }
+  ]
+}

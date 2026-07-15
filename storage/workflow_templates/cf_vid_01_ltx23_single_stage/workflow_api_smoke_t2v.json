@@ -1,0 +1,326 @@
+{
+  "1241": {
+    "_meta": {
+      "title": "CFVID01 Conditioning"
+    },
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "frame_rate": 24.0,
+      "negative": [
+        "2612",
+        0
+      ],
+      "positive": [
+        "2483",
+        0
+      ]
+    }
+  },
+  "2483": {
+    "_meta": {
+      "title": "CFVID01 Positive Prompt"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4960",
+        0
+      ],
+      "text": "A calm cinematic shot of a small paper boat floating across a quiet pond at sunrise, soft warm light, realistic motion."
+    }
+  },
+  "2612": {
+    "_meta": {
+      "title": "CFVID01 Negative Prompt"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4960",
+        0
+      ],
+      "text": "low quality, distorted, blurry, flicker, text, watermark"
+    }
+  },
+  "3059": {
+    "_meta": {
+      "title": "CFVID01 Empty Video Latent"
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": {
+      "batch_size": 1,
+      "height": 288,
+      "length": 17,
+      "width": 512
+    }
+  },
+  "3940": {
+    "_meta": {
+      "title": "CFVID01 Selected FP8 Checkpoint"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-distilled-1.1-fp8.safetensors"
+    }
+  },
+  "3980": {
+    "_meta": {
+      "title": "CFVID01 Empty Audio Latent"
+    },
+    "class_type": "LTXVEmptyLatentAudio",
+    "inputs": {
+      "audio_vae": [
+        "4010",
+        0
+      ],
+      "batch_size": 1,
+      "frame_rate": 24,
+      "frames_number": 17
+    }
+  },
+  "4010": {
+    "_meta": {
+      "title": "CFVID01 Audio VAE Loader"
+    },
+    "class_type": "LTXVAudioVAELoader",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-distilled-1.1-fp8.safetensors"
+    }
+  },
+  "4528": {
+    "_meta": {
+      "title": "CFVID01 AV Latent Concat"
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": {
+      "audio_latent": [
+        "3980",
+        0
+      ],
+      "video_latent": [
+        "3059",
+        0
+      ]
+    }
+  },
+  "4802": {
+    "_meta": {
+      "title": "CFVID01 Sampler"
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "guider": [
+        "4808",
+        0
+      ],
+      "latent_image": [
+        "4528",
+        0
+      ],
+      "noise": [
+        "4814",
+        0
+      ],
+      "sampler": [
+        "4967",
+        0
+      ],
+      "sigmas": [
+        "4966",
+        0
+      ]
+    }
+  },
+  "4808": {
+    "_meta": {
+      "title": "CFVID01 Multimodal Guider"
+    },
+    "class_type": "MultimodalGuider",
+    "inputs": {
+      "model": [
+        "3940",
+        0
+      ],
+      "negative": [
+        "1241",
+        1
+      ],
+      "parameters": [
+        "4964",
+        0
+      ],
+      "positive": [
+        "1241",
+        0
+      ],
+      "skip_blocks": "28"
+    }
+  },
+  "4814": {
+    "_meta": {
+      "title": "CFVID01 Noise"
+    },
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 20260713
+    }
+  },
+  "4818": {
+    "_meta": {
+      "title": "CFVID01 Audio Decode"
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "inputs": {
+      "audio_vae": [
+        "4010",
+        0
+      ],
+      "samples": [
+        "4824",
+        1
+      ]
+    }
+  },
+  "4819": {
+    "_meta": {
+      "title": "CFVID01 Create Video"
+    },
+    "class_type": "CreateVideo",
+    "inputs": {
+      "audio": [
+        "4818",
+        0
+      ],
+      "fps": 24.0,
+      "images": [
+        "4983",
+        0
+      ]
+    }
+  },
+  "4823": {
+    "_meta": {
+      "title": "CFVID01 Save Video"
+    },
+    "class_type": "SaveVideo",
+    "inputs": {
+      "codec": "h264",
+      "filename_prefix": "CineForge_runtime_validation/cfvid01_smoke_001",
+      "format": "mp4",
+      "video": [
+        "4819",
+        0
+      ]
+    }
+  },
+  "4824": {
+    "_meta": {
+      "title": "CFVID01 Separate AV Latent"
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "inputs": {
+      "av_latent": [
+        "4802",
+        0
+      ]
+    }
+  },
+  "4960": {
+    "_meta": {
+      "title": "CFVID01 Local Text Encoder"
+    },
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-distilled-1.1-fp8.safetensors",
+      "device": "default",
+      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors"
+    }
+  },
+  "4963": {
+    "_meta": {
+      "title": "CFVID01 Audio Guider Parameters"
+    },
+    "class_type": "GuiderParameters",
+    "inputs": {
+      "cfg": 7.0,
+      "cross_attn": true,
+      "modality": "AUDIO",
+      "modality_scale": 3.0,
+      "perturb_attn": true,
+      "rescale": 0.7,
+      "skip_step": 0,
+      "stg": 1.0
+    }
+  },
+  "4964": {
+    "_meta": {
+      "title": "CFVID01 Video Guider Parameters"
+    },
+    "class_type": "GuiderParameters",
+    "inputs": {
+      "cfg": 3.0,
+      "cross_attn": true,
+      "modality": "VIDEO",
+      "modality_scale": 3.0,
+      "parameters": [
+        "4963",
+        0
+      ],
+      "perturb_attn": true,
+      "rescale": 0.9,
+      "skip_step": 0,
+      "stg": 1.0
+    }
+  },
+  "4966": {
+    "_meta": {
+      "title": "CFVID01 Scheduler"
+    },
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "base_shift": 0.95,
+      "latent": [
+        "4528",
+        0
+      ],
+      "max_shift": 2.05,
+      "steps": 4,
+      "stretch": true,
+      "terminal": 0.1
+    }
+  },
+  "4967": {
+    "_meta": {
+      "title": "CFVID01 RES4LYF Sampler"
+    },
+    "class_type": "ClownSampler_Beta",
+    "inputs": {
+      "bongmath": true,
+      "eta": 0.25,
+      "sampler_name": "exponential/res_2s",
+      "seed": 94
+    }
+  },
+  "4983": {
+    "_meta": {
+      "title": "CFVID01 Video Decode"
+    },
+    "class_type": "LTXVTiledVAEDecode",
+    "inputs": {
+      "horizontal_tiles": 2,
+      "last_frame_fix": false,
+      "latents": [
+        "4824",
+        0
+      ],
+      "overlap": 6,
+      "vae": [
+        "3940",
+        2
+      ],
+      "vertical_tiles": 2,
+      "working_device": "auto",
+      "working_dtype": "auto"
+    }
+  }
+}

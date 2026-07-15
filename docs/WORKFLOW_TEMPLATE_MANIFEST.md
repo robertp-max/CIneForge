@@ -38,3 +38,24 @@ Snapshot behavior:
 - The patched workflow is written once to `storage/workflow_snapshots`.
 - Existing snapshot paths are never overwritten.
 
+## UI-format admission candidate
+
+`storage/workflow_templates/cf_vid_01_ltx23_single_stage/` stores the local ComfyUI-LTXVideo LTX-2.3 single-stage example as `workflow_ui.json` plus `workflow_ui_manifest.json`.
+
+The UI candidate is retained as source evidence:
+
+- It validates UI graph SHA, node class, widget index, selected model checkpoint patch points, and safe output-prefix widget bindings.
+- It writes immutable `.ui.json` snapshots for UI-level audit if needed.
+
+## CF-VID-01 API smoke template
+
+`storage/workflow_templates/cf_vid_01_ltx23_single_stage/workflow_api.json` and `workflow_manifest.json` define `cf_vid_01_ltx23_single_stage_t2v_smoke`.
+
+Runtime evidence on 2026-07-13:
+
+- `/object_info` passed for all required classes after installing RES4LYF.
+- Two serialized T2V smoke jobs succeeded with selected `ltx-2.3-22b-distilled-1.1-fp8.safetensors`.
+- Outputs and hashes are recorded in `docs/CFVID01_RUNTIME_SMOKE.md`.
+
+The template remains benchmark-gated. It is a T2V smoke candidate, not full preset/profile readiness.
+

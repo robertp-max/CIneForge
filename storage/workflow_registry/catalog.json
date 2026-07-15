@@ -1,0 +1,537 @@
+{
+  "catalog_version": "2026-07-local-m2",
+  "workflows": [
+    {
+      "archetype_id": "CF-IMG-01",
+      "version": "0.1.0-planned",
+      "name": "FLUX Base Image Generation",
+      "modality": "image",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "text_to_image"
+      ],
+      "supported_profiles": [
+        "draft"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-IMG-02",
+      "version": "0.1.0-planned",
+      "name": "FLUX Redux Identity Reference",
+      "modality": "image",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "reference_image"
+      ],
+      "supported_profiles": [
+        "draft"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-IMG-03",
+      "version": "0.1.0-planned",
+      "name": "PuLID Identity Candidate",
+      "modality": "image",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "reference_image"
+      ],
+      "supported_profiles": [
+        "draft"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-IMG-04",
+      "version": "0.1.0-planned",
+      "name": "FLUX Fill/Kontext",
+      "modality": "image",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "inpaint",
+        "context"
+      ],
+      "supported_profiles": [
+        "draft"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-IMG-05",
+      "version": "0.1.0-planned",
+      "name": "FLUX Canny/Depth Control",
+      "modality": "image",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "control"
+      ],
+      "supported_profiles": [
+        "draft"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-VID-01",
+      "version": "0.2.0-api-t2v-smoke",
+      "name": "LTX 2.3 Single Stage T2V Smoke Candidate",
+      "modality": "video",
+      "source_url": "https://github.com/Lightricks/ComfyUI-LTXVideo/tree/master/example_workflows/2.3",
+      "source_repository": "Lightricks/ComfyUI-LTXVideo",
+      "source_path": "storage/workflow_templates/cf_vid_01_ltx23_single_stage/workflow_ui.json",
+      "template_dir": "storage/workflow_templates/cf_vid_01_ltx23_single_stage",
+      "ui_graph_path": "storage/workflow_templates/cf_vid_01_ltx23_single_stage/workflow_ui.json",
+      "api_graph_path": "storage/workflow_templates/cf_vid_01_ltx23_single_stage/workflow_api.json",
+      "required_classes": [
+        "CLIPTextEncode",
+        "CheckpointLoaderSimple",
+        "CreateVideo",
+        "EmptyLTXVLatentVideo",
+        "LTXAVTextEncoderLoader",
+        "LTXVAudioVAELoader",
+        "LTXVConditioning",
+        "LTXVEmptyLatentAudio",
+        "LTXVScheduler",
+        "RandomNoise",
+        "SaveVideo"
+      ],
+      "dependencies": [
+        {
+          "key": "ltx2_3_22b_distilled_1_1_fp8",
+          "kind": "checkpoint",
+          "filename": "ltx-2.3-22b-distilled-1.1-fp8.safetensors",
+          "path": "C:/AI/ComfyUI_windows_portable/ComfyUI/models/checkpoints/ltx-2.3-22b-distilled-1.1-fp8.safetensors",
+          "sha256": "c5dd96a75c4b588171b9807a8a25fea91e71a3cc7386d8bc245f50a21756cfbb",
+          "required": true,
+          "notes": "Operator-selected converted_derivative FP8 product artifact; benchmark/recovery/QA gated."
+        },
+        {
+          "key": "gemma_3_12B_it_fp4_mixed",
+          "kind": "text_encoder",
+          "filename": "gemma_3_12B_it_fp4_mixed.safetensors",
+          "required": true,
+          "notes": "Pinned by CF-VID-01 smoke workflow manifest; local path varies by portable runtime layout."
+        },
+        {
+          "key": "comfyui_ltxvideo",
+          "kind": "custom_node",
+          "required": true,
+          "notes": "Required custom node set; object_info compatibility is recorded in runtime evidence."
+        },
+        {
+          "key": "res4lyf",
+          "kind": "custom_node",
+          "required": true,
+          "notes": "Required for ClownSampler_Beta in the pinned local CF-VID-01 UI/API export."
+        }
+      ],
+      "bindings": [
+        {
+          "semantic_key": "audio_vae_loader",
+          "semantic_title": "Audio Vae Loader",
+          "node_id": "4010",
+          "class_type": "LTXVAudioVAELoader",
+          "input_name": "ckpt_name",
+          "runtime_parameter": "model_checkpoint",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "checkpoint_loader",
+          "semantic_title": "Checkpoint Loader",
+          "node_id": "3940",
+          "class_type": "CheckpointLoaderSimple",
+          "input_name": "ckpt_name",
+          "runtime_parameter": "model_checkpoint",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "fps_audio_latent",
+          "semantic_title": "Fps Audio Latent",
+          "node_id": "3980",
+          "class_type": "LTXVEmptyLatentAudio",
+          "input_name": "frame_rate",
+          "runtime_parameter": "fps",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 1,
+          "max_value": 120
+        },
+        {
+          "semantic_key": "fps_conditioning",
+          "semantic_title": "Fps Conditioning",
+          "node_id": "1241",
+          "class_type": "LTXVConditioning",
+          "input_name": "frame_rate",
+          "runtime_parameter": "fps",
+          "value_type": "number",
+          "required": true,
+          "min_value": 1,
+          "max_value": 120
+        },
+        {
+          "semantic_key": "fps_video_create",
+          "semantic_title": "Fps Video Create",
+          "node_id": "4819",
+          "class_type": "CreateVideo",
+          "input_name": "fps",
+          "runtime_parameter": "fps",
+          "value_type": "number",
+          "required": true,
+          "min_value": 1,
+          "max_value": 120
+        },
+        {
+          "semantic_key": "frames_audio_latent",
+          "semantic_title": "Frames Audio Latent",
+          "node_id": "3980",
+          "class_type": "LTXVEmptyLatentAudio",
+          "input_name": "frames_number",
+          "runtime_parameter": "frames",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 1,
+          "max_value": 4096
+        },
+        {
+          "semantic_key": "frames_video_latent",
+          "semantic_title": "Frames Video Latent",
+          "node_id": "3059",
+          "class_type": "EmptyLTXVLatentVideo",
+          "input_name": "length",
+          "runtime_parameter": "frames",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 1,
+          "max_value": 4096
+        },
+        {
+          "semantic_key": "height",
+          "semantic_title": "Height",
+          "node_id": "3059",
+          "class_type": "EmptyLTXVLatentVideo",
+          "input_name": "height",
+          "runtime_parameter": "height",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 64,
+          "max_value": 16384
+        },
+        {
+          "semantic_key": "negative_prompt",
+          "semantic_title": "Negative Prompt",
+          "node_id": "2612",
+          "class_type": "CLIPTextEncode",
+          "input_name": "text",
+          "runtime_parameter": "negative_prompt",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "positive_prompt",
+          "semantic_title": "Positive Prompt",
+          "node_id": "2483",
+          "class_type": "CLIPTextEncode",
+          "input_name": "text",
+          "runtime_parameter": "prompt",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "save_video_prefix",
+          "semantic_title": "Save Video Prefix",
+          "node_id": "4823",
+          "class_type": "SaveVideo",
+          "input_name": "filename_prefix",
+          "runtime_parameter": "output_prefix",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "seed_noise",
+          "semantic_title": "Seed Noise",
+          "node_id": "4814",
+          "class_type": "RandomNoise",
+          "input_name": "noise_seed",
+          "runtime_parameter": "seed",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 0,
+          "max_value": 18446744073709551615
+        },
+        {
+          "semantic_key": "steps_scheduler",
+          "semantic_title": "Steps Scheduler",
+          "node_id": "4966",
+          "class_type": "LTXVScheduler",
+          "input_name": "steps",
+          "runtime_parameter": "steps",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 1,
+          "max_value": 10000
+        },
+        {
+          "semantic_key": "text_encoder_ltx_checkpoint",
+          "semantic_title": "Text Encoder Ltx Checkpoint",
+          "node_id": "4960",
+          "class_type": "LTXAVTextEncoderLoader",
+          "input_name": "ckpt_name",
+          "runtime_parameter": "model_checkpoint",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "text_encoder_model",
+          "semantic_title": "Text Encoder Model",
+          "node_id": "4960",
+          "class_type": "LTXAVTextEncoderLoader",
+          "input_name": "text_encoder",
+          "runtime_parameter": "text_encoder",
+          "value_type": "string",
+          "required": true
+        },
+        {
+          "semantic_key": "width",
+          "semantic_title": "Width",
+          "node_id": "3059",
+          "class_type": "EmptyLTXVLatentVideo",
+          "input_name": "width",
+          "runtime_parameter": "width",
+          "value_type": "integer",
+          "required": true,
+          "min_value": 64,
+          "max_value": 16384
+        }
+      ],
+      "supported_modes": [
+        "t2v"
+      ],
+      "supported_profiles": [
+        "draft"
+      ],
+      "implemented": true,
+      "dependency_verified": true,
+      "locally_tested": true,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "benchmark_required",
+      "blocked_reasons": [
+        "CF-VID-01 is a bounded T2V smoke candidate only; production readiness requires benchmark ladder, recovery evidence, output provenance, and human QA.",
+        "Template id/version contains smoke and must not compile production work."
+      ]
+    },
+    {
+      "archetype_id": "CF-VID-02",
+      "version": "0.1.0-planned",
+      "name": "LTX 2.3 Two Stage / Upscale",
+      "modality": "video",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "t2v",
+        "i2v"
+      ],
+      "supported_profiles": [
+        "final_candidate"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ],
+      "source_path": "storage/workflow_templates/cf_vid_02_ltx23_two_stage/workflow_ui.json",
+      "ui_graph_path": "storage/workflow_templates/cf_vid_02_ltx23_two_stage/workflow_ui.json"
+    },
+    {
+      "archetype_id": "CF-VID-03",
+      "version": "0.1.0-planned",
+      "name": "LTX 2.3 IC-LoRA Union Control",
+      "modality": "video",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "control"
+      ],
+      "supported_profiles": [
+        "controlled"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ],
+      "source_path": "storage/workflow_templates/cf_vid_03_ltx23_iclora_union_control/workflow_ui.json",
+      "ui_graph_path": "storage/workflow_templates/cf_vid_03_ltx23_iclora_union_control/workflow_ui.json"
+    },
+    {
+      "archetype_id": "CF-VID-04",
+      "version": "0.1.0-planned",
+      "name": "LTX 2.3 IC-LoRA Lipdub Two Stage",
+      "modality": "video",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "lipdub"
+      ],
+      "supported_profiles": [
+        "lipdub"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ],
+      "source_path": "storage/workflow_templates/cf_vid_04_ltx23_lipdub_two_stage/workflow_ui.json",
+      "ui_graph_path": "storage/workflow_templates/cf_vid_04_ltx23_lipdub_two_stage/workflow_ui.json"
+    },
+    {
+      "archetype_id": "CF-VID-05",
+      "version": "0.1.0-planned",
+      "name": "LTX Continuation / V2V",
+      "modality": "video",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "continuation",
+        "v2v"
+      ],
+      "supported_profiles": [
+        "review"
+      ],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-UTIL-01",
+      "version": "0.1.0-planned",
+      "name": "Mask/Alpha Utility",
+      "modality": "utility",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "utility"
+      ],
+      "supported_profiles": [],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    },
+    {
+      "archetype_id": "CF-POST-01",
+      "version": "0.1.0-planned",
+      "name": "Deterministic FFmpeg Post-Production",
+      "modality": "post",
+      "required_classes": [],
+      "dependencies": [],
+      "bindings": [],
+      "supported_modes": [
+        "postprocess"
+      ],
+      "supported_profiles": [],
+      "implemented": false,
+      "dependency_verified": false,
+      "locally_tested": false,
+      "benchmark_passed": false,
+      "human_approved": false,
+      "publicly_enabled": false,
+      "readiness": "blocked",
+      "blocked_reasons": [
+        "Not admitted: executable API graph, dependency evidence, benchmark/recovery evidence, and human QA are pending."
+      ]
+    }
+  ]
+}

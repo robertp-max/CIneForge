@@ -6,11 +6,13 @@ from uuid import UUID
 import httpx
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import CineForgeError
-from backend.app.db.base import AuditLog, ComfyJob, QueueStatus, WorkflowRun
+from backend.app.db.base import AuditLog, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun
 from backend.app.queue.state_machine import JobState
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
 from backend.app.services.queue.service import QueueService, SubmissionReadinessResult
+from backend.app.services.runtime.gpu_leases import VIDEO_GPU_WORKLOADS
 
 
 class ControlledSubmissionError(CineForgeError):
@@ -29,7 +31,12 @@ class ComfyWorkerPromptSubmissionAdapter:
         *,
         timeout: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        tracked_worker_submission: bool = False,
     ) -> None:
+        if not tracked_worker_submission:
+            raise ControlledSubmissionError(
+                "UNTRACKED_DIRECT_COMFY_SUBMISSION: Comfy /prompt adapter may only be constructed by the tracked backend worker"
+            )
         self.base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, transport=transport)
 
@@ -54,6 +61,7 @@ class WorkerSubmissionContext:
     worker_id: str
     client_id: str
     object_info_cache: ObjectInfoCacheService
+    gpu_lease_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -73,9 +81,11 @@ class ControlledComfySubmissionService:
         self,
         queue_service: QueueService | None = None,
         submission_adapter: PromptSubmissionAdapter | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.queue_service = queue_service or QueueService()
         self.submission_adapter = submission_adapter
+        self.settings = settings or get_settings()
 
     async def submit_reserved_job(
         self,
@@ -84,6 +94,14 @@ class ControlledComfySubmissionService:
     ) -> ControlledSubmissionResult:
         if self.submission_adapter is None:
             raise ControlledSubmissionError("Controlled submission adapter is not configured")
+
+        gate_error = self._submission_gate_error()
+        if gate_error is not None:
+            return self._mark_preflight_blocked(db, context, "operator_gate_disabled", gate_error)
+
+        lease_error = self._gpu_lease_error(db, context)
+        if lease_error is not None:
+            return self._mark_preflight_blocked(db, context, "gpu_lease_required", lease_error)
 
         readiness = self.queue_service.evaluate_submission_readiness(
             db,
@@ -197,6 +215,59 @@ class ControlledComfySubmissionService:
             prompt_id=prompt_id,
             queue_number=submitted_job.queue_number,
             errors=[],
+        )
+
+    def _submission_gate_error(self) -> str | None:
+        if self.settings.hardware_operator_enabled or self.settings.queue_worker_enabled:
+            return None
+        return (
+            "Controlled ComfyUI submission requires CINEFORGE_HARDWARE_OPERATOR_ENABLED=true "
+            "or CINEFORGE_QUEUE_WORKER_ENABLED=true; public submission remains disabled."
+        )
+
+    def _gpu_lease_error(self, db: Session, context: WorkerSubmissionContext) -> str | None:
+        if context.gpu_lease_id is None:
+            return "Controlled ComfyUI submission requires an active GPU lease id."
+        lease = db.get(GpuResourceLease, context.gpu_lease_id)
+        if lease is None:
+            return f"GPU lease not found: {context.gpu_lease_id}"
+        if lease.status != "active":
+            return f"GPU lease {context.gpu_lease_id} is not active (status={lease.status})."
+        if lease.worker_id != context.worker_id:
+            return f"GPU lease {context.gpu_lease_id} is not owned by worker {context.worker_id}."
+        if lease.workload_type not in VIDEO_GPU_WORKLOADS:
+            return f"GPU lease {context.gpu_lease_id} is for unsupported workload type {lease.workload_type}."
+        job = db.get(ComfyJob, context.job_id)
+        allowed_workload_ids = {str(context.job_id)}
+        if job is not None:
+            allowed_workload_ids.add(str(job.workflow_run_id))
+        if lease.workload_id not in allowed_workload_ids:
+            return f"GPU lease {context.gpu_lease_id} is not bound to job {context.job_id}."
+        return None
+
+    def _mark_preflight_blocked(
+        self,
+        db: Session,
+        context: WorkerSubmissionContext,
+        code: str,
+        message: str,
+    ) -> ControlledSubmissionResult:
+        readiness = SubmissionReadinessResult(
+            ready=False,
+            job_id=context.job_id,
+            worker_id=context.worker_id,
+            code=code,
+            errors=[message],
+            checked_at=datetime.now(UTC),
+        )
+        self._mark_validation_failed_if_worker_owned_reserved(db, readiness)
+        return ControlledSubmissionResult(
+            submitted=False,
+            job_id=context.job_id,
+            worker_id=context.worker_id,
+            status=QueueStatus.validation_failed.value,
+            code=code,
+            errors=[message],
         )
 
     def _mark_validation_failed_if_worker_owned_reserved(

@@ -21,7 +21,7 @@ ComfyUI Manager is useful for installing, updating, disabling, and snapshotting 
 3. Record custom node commit hashes.
 4. Record `pip freeze`, Python version, torch/torchvision/torchaudio, CUDA wheel index, xformers/sage-attention versions.
 5. Upgrade in a clone/second portable folder first.
-6. Run smoke workflows and representative Wan/LTX workflows.
+6. Run smoke workflows and admitted LTX Distilled 1.1 FP8 workflows first; Wan workflows are optional secondary checks only if explicitly enabled.
 7. Promote only after API, output retrieval, VRAM recovery, and benchmark deltas pass.
 
 ## CUDA/PyTorch Pinning
@@ -56,7 +56,7 @@ xFormers and related acceleration packages can force torch changes. Never run pa
 
 ## Queue Design
 
-Use a durable database queue with one GPU worker for ComfyUI jobs.
+Use a local file-backed queue/spool with one GPU worker for ComfyUI jobs. This local app does not require PostgreSQL or an external database.
 
 Recommended states:
 
@@ -69,11 +69,12 @@ Failure states:
 Rules:
 
 - Serialize GPU generation jobs on the 24GB GPU.
-- Keep ComfyUI queue depth small; the backend owns long queue state.
+- Keep ComfyUI queue depth small; the backend owns long queue state in local manifests/JSONL files.
 - Use WebSocket completion; poll history only as fallback.
 - Group jobs by model, quant, text encoder, VAE, and LoRA stack to reduce reload churn.
 - Separate preview queues from final queues.
 - Restart ComfyUI after memory thresholds, crash, hung job, or a configured number of high-risk jobs.
+- Save ComfyUI outputs under `C:\AI\ComfyUI_windows_portable\ComfyUI\output\<project-folder>\` using a controller-built `filename_prefix` of `<project-folder>/<run-stem>`.
 - Run FFmpeg/post-processing in separate CPU/GPU-aware workers so it does not interfere with generation.
 
 ## Memory and Stability Policy

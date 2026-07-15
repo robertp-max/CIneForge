@@ -15,6 +15,9 @@ APPROVED_COMMAND_TEMPLATES = {
     "concat_stream_copy_v1": "concat demuxer with -c copy",
     "normalize_mezzanine_prores_v1": "high quality mezzanine normalization",
     "normalize_delivery_h264_v1": "delivery-compatible H.264 normalization",
+    "assemble_exact_duration_h264_v1": "deterministic exact-duration H.264 assembly with trim/scale/pad",
+    "captions_srt_mux_v1": "mux reviewed captions/subtitles into a delivery file",
+    "audio_loudness_normalize_v1": "EBU R128-style audio loudness normalization",
     "decode_validate_v1": "full decode validation to null sink",
 }
 

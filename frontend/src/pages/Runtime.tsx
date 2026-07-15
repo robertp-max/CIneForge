@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { api, type RuntimeStatus } from '../api/client'
+import {
+  api,
+  type LocalArchetype,
+  type LocalPreset,
+  type LocalRuntimeCatalog,
+  type LocalRuntimeEvidence,
+  type RuntimeStatus,
+} from '../api/client'
 import { DebugPanel, ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
 import { StatusCard } from '../components/Cards'
@@ -14,6 +21,10 @@ const disabledActions = [
 
 export function Runtime() {
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
+  const [localCatalog, setLocalCatalog] = useState<LocalRuntimeCatalog | null>(null)
+  const [localPresets, setLocalPresets] = useState<LocalPreset[]>([])
+  const [localArchetypes, setLocalArchetypes] = useState<LocalArchetype[]>([])
+  const [localEvidence, setLocalEvidence] = useState<LocalRuntimeEvidence[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -24,9 +35,19 @@ export function Runtime() {
       setLoading(true)
       setError(null)
       try {
-        const status = await api.runtimeStatus()
+        const [status, catalog, presets, archetypes, evidence] = await Promise.all([
+          api.runtimeStatus(),
+          api.localRuntimeCatalog(),
+          api.listLocalPresets(),
+          api.listLocalArchetypes(),
+          api.listLocalRuntimeEvidence(),
+        ])
         if (!cancelled) {
           setRuntime(status)
+          setLocalCatalog(catalog)
+          setLocalPresets(presets)
+          setLocalArchetypes(archetypes)
+          setLocalEvidence(evidence)
         }
       } catch (err) {
         if (!cancelled) {
@@ -44,6 +65,8 @@ export function Runtime() {
       cancelled = true
     }
   }, [])
+
+  const selectedArtifact = localCatalog?.artifacts.find((artifact) => artifact.role === 'selected_fp8')
 
   return (
     <div className="page">
@@ -90,6 +113,61 @@ export function Runtime() {
           {runtime?.queue.controlled_submission_enabled ? 'enabled' : 'disabled'}. User-facing generation{' '}
           {runtime?.queue.public_submission_enabled ? 'enabled' : 'disabled'}.
         </p>
+      </section>
+
+      <section className="grid three">
+        <StatusCard
+          title="Default Local Video Model"
+          status={localCatalog?.readiness ?? 'loading'}
+          detail={localCatalog?.display_name ?? 'Loading local runtime catalog...'}
+          meta={localCatalog?.model_key ?? 'ltx2_3_22b_distilled_1_1_fp8'}
+        />
+        <StatusCard
+          title="Selected FP8 Artifact"
+          status={selectedArtifact?.path_exists ? selectedArtifact.readiness : 'missing'}
+          detail={selectedArtifact?.path ?? 'Loading selected FP8 artifact path...'}
+          meta={selectedArtifact?.sha256 ? `sha256 ${selectedArtifact.sha256.slice(0, 12)}...` : 'No hash loaded'}
+        />
+        <StatusCard
+          title="Local Catalogs"
+          status="file-backed"
+          detail={`${localPresets.length} presets, ${localArchetypes.length} archetypes. All generation remains gated.`}
+          meta="DB-free local contract"
+        />
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>ComfyUI Output Policy</h2>
+          <span>{localCatalog?.output_policy.one_folder_per_project ? 'project folders' : 'unknown'}</span>
+        </div>
+        <p className="mono">{localCatalog?.output_policy.output_root ?? 'Loading output root...'}</p>
+        <p>
+          Save nodes use filename_prefix shape{' '}
+          <span className="mono">{localCatalog?.output_policy.filename_prefix_shape ?? '<project-folder>/<run-stem>'}</span>.
+          Absolute paths, traversal, backslashes, and deeper trees are rejected by the backend.
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Local Runtime Evidence</h2>
+          <span>{localEvidence.length ? `${localEvidence.length} record` : 'none'}</span>
+        </div>
+        {localEvidence.map((evidence) => (
+          <article key={evidence.evidence_id} className="disabled-action">
+            <div>
+              <strong>{evidence.archetype_id}: {evidence.template_id}</strong>
+              <p>
+                {evidence.outputs.length} smoke outputs recorded; readiness remains{' '}
+                <span className="mono">{evidence.readiness_after_evidence}</span> with gates:{' '}
+                {evidence.remaining_gates.join(', ')}.
+              </p>
+              <p className="mono">sha256 {evidence.workflow_api_sha256.slice(0, 16)}...</p>
+            </div>
+            <StatusBadge status={evidence.readiness_after_evidence} />
+          </article>
+        ))}
       </section>
 
       <section className="panel">

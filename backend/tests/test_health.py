@@ -37,7 +37,12 @@ def test_favicon_does_not_return_404():
 def test_health_returns_ok():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["database_required"] is False
+    assert payload["hardware_operator_enabled"] is False
+    assert payload["local_state_mode"] == "file_backed"
+    assert payload["comfyui_output_root"].replace("\\", "/").endswith("ComfyUI/output")
 
 
 def test_local_vite_origin_is_allowed_by_cors():
@@ -105,7 +110,13 @@ def test_runtime_status_is_read_only_and_reports_disabled_actions(monkeypatch):
     payload = response.json()
     assert payload["status"] == "degraded"
     assert payload["queue"]["submission_enabled"] is False
-    assert payload["queue"]["controlled_submission_enabled"] is True
+    assert payload["queue"]["hardware_operator_enabled"] is False
+    assert payload["queue"]["controlled_submission_enabled"] is False
     assert payload["queue"]["public_submission_enabled"] is False
+    assert payload["queue"]["database_required"] is False
+    assert payload["queue"]["local_state_mode"] == "file_backed"
+    assert payload["output_policy"]["filename_prefix_shape"] == "<project-folder>/<run-stem>"
+    assert payload["output_policy"]["one_folder_per_project"] is True
     assert payload["disabled_actions"]["public_submit_prompt"] == "disabled"
+    assert payload["disabled_actions"]["hardware_operator_submit"] == "disabled"
 

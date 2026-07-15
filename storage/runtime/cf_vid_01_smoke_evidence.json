@@ -1,0 +1,65 @@
+{
+  "evidence_id": "cf_vid_01_t2v_smoke_20260713",
+  "archetype_id": "CF-VID-01",
+  "template_id": "cf_vid_01_ltx23_single_stage_t2v_smoke",
+  "template_version": "0.2.0-api-t2v-smoke",
+  "readiness_after_evidence": "benchmark_required",
+  "model_key": "ltx2_3_22b_distilled_1_1_fp8",
+  "checkpoint_filename": "ltx-2.3-22b-distilled-1.1-fp8.safetensors",
+  "text_encoder_filename": "gemma_3_12B_it_fp4_mixed.safetensors",
+  "workflow_api_sha256": "d040a311a80401dda3b7d2ecbbea0d8e24ca32b62a36e6d5801d0a7bda8865c1",
+  "comfyui_version": "0.19.3",
+  "ltxvideo_node_sha": "229437c6b65796d6a7a63ae34be2bd5ba31fa543",
+  "res4lyf_sha": "419de2d7c78f415dde9aa352a7231820ebfc17a4",
+  "runtime_args": ["--windows-standalone-build", "--disable-api-nodes", "--cuda-device", "0"],
+  "object_info_path": "storage/runtime/object_info_20260713_163704.json",
+  "object_info_required_classes_missing": [],
+  "smoke_parameters": {
+    "width": 512,
+    "height": 288,
+    "frames": 17,
+    "fps": 24,
+    "steps": 4
+  },
+  "outputs": [
+    {
+      "prompt_id": "c05d2d04-367b-44ef-bb5f-01f4f75b8583",
+      "path": "C:/AI/ComfyUI_windows_portable/ComfyUI/output/CineForge_runtime_validation/cfvid01_smoke_001_00001_.mp4",
+      "sha256": "f258167157479d1e5b9f814004e46028b49b5e7431908644a24f9c705c8f28bf",
+      "size_bytes": 64542,
+      "video_codec": "h264",
+      "width": 512,
+      "height": 288,
+      "frames": 17,
+      "fps": "24/1",
+      "audio_codec": "aac",
+      "elapsed_sec": 45.9,
+      "peak_memory_used_mib": 21934,
+      "peak_gpu_util_percent": 93,
+      "peak_temperature_c": 58
+    },
+    {
+      "prompt_id": "01349020-03a9-4fff-ae6d-4e8427e96be9",
+      "path": "C:/AI/ComfyUI_windows_portable/ComfyUI/output/CineForge_runtime_validation/cfvid01_smoke_002_00001_.mp4",
+      "sha256": "22cf59f36a767a576e013d6fded83599331401f6b855a0e1133397566e47e6c8",
+      "size_bytes": 58611,
+      "video_codec": "h264",
+      "width": 512,
+      "height": 288,
+      "frames": 17,
+      "fps": "24/1",
+      "audio_codec": "aac",
+      "elapsed_sec": 20.3
+    }
+  ],
+  "post_free_vram_free_bytes": 24180031488,
+  "queue_empty_after": true,
+  "docs_path": "docs/CFVID01_RUNTIME_SMOKE.md",
+  "remaining_gates": [
+    "benchmark_ladder",
+    "human_visual_audio_qa",
+    "controlled_recovery_or_oom_exercise",
+    "full_profile_admission",
+    "explicit_preset_enablement"
+  ]
+}

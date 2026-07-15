@@ -4,13 +4,13 @@ ComfyUI API workflows are exported with top-level node IDs. The backend must pat
 
 ## Node Identification Strategy
 
-1. Export workflow using ComfyUI dev mode `Save (API format)` / `Export (API)`.
-2. Build a separate manifest mapping semantic names to node IDs and inputs.
-3. Validate each mapped node by `class_type` and input name before submission.
+1. Export workflow using ComfyUI dev mode `Save (API format)` / `Export (API)` and retain the pinned UI workflow when API JSON does not preserve titles.
+2. Build a separate manifest mapping semantic bindings to graph SHA, node class, unique semantic title, input name, and resolved API node ID.
+3. Validate each mapped node by graph hash, `class_type`, unique title, resolved node ID, and input name before submission.
 4. Use `GET /object_info` to validate installed node classes and field availability.
 5. Snapshot patched workflow JSON per run.
 
-Avoid relying on UI node position or title alone. Numeric IDs are acceptable only when tied to a versioned workflow template and manifest.
+Avoid relying on UI node position, title alone, or numeric ID alone. Numeric IDs are execution details stored only after title/class/input admission against an immutable graph hash.
 
 ## Runtime Parameter Matrix
 
@@ -36,21 +36,38 @@ Avoid relying on UI node position or title alone. Numeric IDs are acceptable onl
 | LoRA strengths | LoRA loader chain | `strength_model`, `strength_clip`, or implementation-specific | Numeric range; preserve order | `lora_combination_items` |
 | Image input path | Load image/video node | `image`, `video`, `path` | Uploaded/accessible path exists | `generated_assets.input_asset_id` |
 | Conditioning image path | I2V/control node | Implementation-specific | Path exists | `clip_iterations.conditioning_asset_id` |
-| Output filename prefix | Save node | `inputs.filename_prefix` | Sanitized, run-id prefixed | `file_outputs.filename_prefix` |
-| Save path | Save node if supported | Implementation-specific | Must remain inside allowed output root | `file_outputs.path` |
+| Output filename prefix | Save node | `inputs.filename_prefix` | Controller-built as `<project-folder>/<run-stem>`; both components sanitized; absolute paths, traversal, drive prefixes, backslashes, and deeper trees rejected | local run manifest `output_prefix` |
+| Save path | Save node if supported | Implementation-specific | Do not expose to user input; if used, must remain inside `CINEFORGE_COMFYUI_OUTPUT_ROOT` | local run manifest `output_path` |
 
 ## Template Manifest Example
 
 ```json
 {
-  "template_id": "wan22-t2v-a14b-fp8-v001",
+  "template_id": "ltx23-distilled-single-stage-v001",
+  "model_key": "ltx2_3_22b_distilled_1_1_fp8",
+  "api_graph_sha256": "recorded-at-admission",
+  "ui_graph_sha256": "recorded-at-admission-if-needed-for-titles",
   "comfyui_commit": "recorded-at-install",
   "nodes": {
-    "positive_prompt": { "node_id": "6", "class_type": "CLIPTextEncode", "input": "text" },
-    "negative_prompt": { "node_id": "7", "class_type": "CLIPTextEncode", "input": "text" },
-    "sampler_steps": { "node_id": "3", "class_type": "KSampler", "input": "steps" },
-    "seed": { "node_id": "3", "class_type": "KSampler", "input": "seed" },
-    "output_prefix": { "node_id": "99", "class_type": "SaveVideo", "input": "filename_prefix" }
+    "positive_prompt": {
+      "node_id": "resolved-api-node-id",
+      "semantic_title": "CF Positive Prompt",
+      "class_type": "example-class-from-admitted-graph",
+      "input": "text"
+    },
+    "seed": {
+      "node_id": "resolved-api-node-id",
+      "semantic_title": "CF Seed",
+      "class_type": "example-class-from-admitted-graph",
+      "input": "seed"
+    },
+    "output_prefix": {
+      "node_id": "resolved-api-node-id",
+      "semantic_title": "CF Output Prefix",
+      "class_type": "example-class-from-admitted-graph",
+      "input": "filename_prefix",
+      "value_example": "Project_A/run_0001"
+    }
   }
 }
 ```
@@ -78,7 +95,7 @@ function patchInput(workflow: Workflow, ref: NodeRef, value: unknown) {
 
 ## Reproducibility Rule
 
-Every `workflow_runs` row stores:
+Every local run manifest stores:
 
 - Template ID and template version.
 - Original template SHA256.
@@ -87,3 +104,5 @@ Every `workflow_runs` row stores:
 - ComfyUI commit and custom node snapshot.
 - Model/LoRA/text encoder/VAE file hashes.
 - ComfyUI `prompt_id`.
+- Project output folder under `CINEFORGE_COMFYUI_OUTPUT_ROOT`.
+- Final output paths relative to the project output folder.

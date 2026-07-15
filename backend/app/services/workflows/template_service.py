@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.app.core.config import get_settings
 from backend.app.core.errors import ValidationError
-from backend.app.utils.path_safety import sanitize_output_prefix
+from backend.app.utils.path_safety import sanitize_comfy_output_prefix
 
 
 class ValueSchema(BaseModel):
@@ -137,7 +137,7 @@ class WorkflowTemplateService:
                 continue
             value = patch_payload[ref.runtime_parameter]
             if ref.runtime_parameter == "output_prefix":
-                value = sanitize_output_prefix(str(value))
+                value = sanitize_comfy_output_prefix(str(value))
             _validate_value(value, ref.value_schema, semantic_key)
             plan.append(PatchPlanItem(semantic_key, ref.node_id, ref.input_name, value))
         return plan

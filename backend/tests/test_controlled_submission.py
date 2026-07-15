@@ -7,11 +7,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.core.config import Settings
 from backend.app.db.base import AuditLog, Base, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
 from backend.app.main import app
+from backend.app.schemas.voice import GpuLeaseAcquireRequest
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
-from backend.app.services.comfy.submission import ControlledComfySubmissionService, WorkerSubmissionContext
+from backend.app.services.comfy.submission import (
+    ComfyWorkerPromptSubmissionAdapter,
+    ControlledComfySubmissionService,
+    ControlledSubmissionError,
+    WorkerSubmissionContext,
+)
 from backend.app.services.queue.worker import QueueWorker
+from backend.app.services.runtime.gpu_leases import acquire_lease, release_lease
 from backend.app.services.workflows.template_service import sha256_json
 
 
@@ -127,6 +135,27 @@ def create_ready_reserved_job(
     return job
 
 
+def create_gpu_lease(db: Session, job: ComfyJob, *, worker_id: str = "worker-1", workload_type: str = "comfy_job"):
+    return acquire_lease(
+        db,
+        GpuLeaseAcquireRequest(
+            resource_key="gpu0",
+            exclusive_group="gpu-shared",
+            workload_type=workload_type,
+            workload_id=str(job.id),
+            owner="controlled-submission-test",
+            worker_id=worker_id,
+            ttl_seconds=300,
+        ),
+    )
+
+
+def enabled_settings(**overrides) -> Settings:
+    values = {"hardware_operator_enabled": True, "queue_worker_enabled": False}
+    values.update(overrides)
+    return Settings(**values)
+
+
 def audit_logs_for_action(db: Session, action: str) -> list[AuditLog]:
     return list(db.scalars(select(AuditLog).where(AuditLog.action == action)).all())
 
@@ -135,7 +164,8 @@ def audit_logs_for_action(db: Session, action: str) -> list[AuditLog]:
 async def test_controlled_submission_submits_ready_worker_owned_job(db_session):
     job = create_ready_reserved_job(db_session)
     adapter = FakePromptSubmissionAdapter()
-    service = ControlledComfySubmissionService(submission_adapter=adapter)
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
 
     result = await service.submit_reserved_job(
         db_session,
@@ -144,6 +174,7 @@ async def test_controlled_submission_submits_ready_worker_owned_job(db_session):
             worker_id="worker-1",
             client_id="client-1",
             object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
         ),
     )
 
@@ -166,7 +197,8 @@ async def test_controlled_submission_submits_ready_worker_owned_job(db_session):
 async def test_controlled_submission_requires_readiness_before_prompt_call(db_session):
     job = create_ready_reserved_job(db_session, status=QueueStatus.pending, worker_id=None)
     adapter = FakePromptSubmissionAdapter()
-    service = ControlledComfySubmissionService(submission_adapter=adapter)
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
 
     result = await service.submit_reserved_job(
         db_session,
@@ -175,6 +207,7 @@ async def test_controlled_submission_requires_readiness_before_prompt_call(db_se
             worker_id="worker-1",
             client_id="client-1",
             object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
         ),
     )
 
@@ -190,10 +223,14 @@ async def test_controlled_submission_requires_readiness_before_prompt_call(db_se
 
 
 @pytest.mark.asyncio
-async def test_controlled_submission_node_errors_do_not_false_success(db_session):
+async def test_controlled_submission_requires_operator_or_worker_gate_before_prompt_call(db_session):
     job = create_ready_reserved_job(db_session)
-    adapter = FakePromptSubmissionAdapter(response={"node_errors": {"3": "bad seed"}})
-    service = ControlledComfySubmissionService(submission_adapter=adapter)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(
+        submission_adapter=adapter,
+        settings=enabled_settings(hardware_operator_enabled=False, queue_worker_enabled=False),
+    )
+    lease = create_gpu_lease(db_session, job)
 
     result = await service.submit_reserved_job(
         db_session,
@@ -202,6 +239,112 @@ async def test_controlled_submission_node_errors_do_not_false_success(db_session
             worker_id="worker-1",
             client_id="client-1",
             object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
+        ),
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert result.submitted is False
+    assert result.code == "operator_gate_disabled"
+    assert adapter.calls == []
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.validation_failed
+    assert persisted_job.prompt_id is None
+    assert "HARDWARE_OPERATOR_ENABLED" in (persisted_job.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_controlled_submission_requires_active_gpu_lease_before_prompt_call(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+        ),
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    assert result.submitted is False
+    assert result.code == "gpu_lease_required"
+    assert adapter.calls == []
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.validation_failed
+    assert persisted_job.prompt_id is None
+    assert "active GPU lease" in (persisted_job.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_controlled_submission_rejects_released_or_wrong_worker_gpu_lease(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
+    release_lease(db_session, lease.id)
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
+        ),
+    )
+
+    assert result.submitted is False
+    assert result.code == "gpu_lease_required"
+    assert adapter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_queue_worker_gate_can_submit_when_hardware_operator_gate_is_off(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(
+        submission_adapter=adapter,
+        settings=enabled_settings(hardware_operator_enabled=False, queue_worker_enabled=True),
+    )
+    lease = create_gpu_lease(db_session, job)
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
+        ),
+    )
+
+    assert result.submitted is True
+    assert adapter.calls == [(_ready_workflow(), "client-1")]
+
+
+@pytest.mark.asyncio
+async def test_controlled_submission_node_errors_do_not_false_success(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter(response={"node_errors": {"3": "bad seed"}})
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
         ),
     )
 
@@ -221,7 +364,8 @@ async def test_controlled_submission_node_errors_do_not_false_success(db_session
 async def test_controlled_submission_rejection_is_classified_safely(db_session):
     job = create_ready_reserved_job(db_session)
     adapter = FakePromptSubmissionAdapter(error=RuntimeError("comfy rejected prompt"))
-    service = ControlledComfySubmissionService(submission_adapter=adapter)
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
 
     result = await service.submit_reserved_job(
         db_session,
@@ -230,6 +374,7 @@ async def test_controlled_submission_rejection_is_classified_safely(db_session):
             worker_id="worker-1",
             client_id="client-1",
             object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
         ),
     )
 
@@ -249,7 +394,8 @@ async def test_controlled_submission_rejection_is_classified_safely(db_session):
 async def test_worker_controlled_submission_once_is_approved_context(db_session):
     job = create_ready_reserved_job(db_session)
     adapter = FakePromptSubmissionAdapter()
-    service = ControlledComfySubmissionService(submission_adapter=adapter)
+    service = ControlledComfySubmissionService(submission_adapter=adapter, settings=enabled_settings())
+    lease = create_gpu_lease(db_session, job)
 
     result = await QueueWorker("worker-1").controlled_submission_once(
         db_session,
@@ -257,11 +403,17 @@ async def test_worker_controlled_submission_once_is_approved_context(db_session)
         "client-1",
         ObjectInfoCacheService(_ready_object_info()),
         service,
+        gpu_lease_id=lease.id,
     )
 
     assert result.submitted is True
     assert result.status == QueueStatus.submitted.value
     assert adapter.calls == [(_ready_workflow(), "client-1")]
+
+
+def test_worker_prompt_submission_adapter_rejects_untracked_direct_construction():
+    with pytest.raises(ControlledSubmissionError, match="UNTRACKED_DIRECT_COMFY_SUBMISSION"):
+        ComfyWorkerPromptSubmissionAdapter("http://comfy.test")
 
 
 def test_public_prompt_route_remains_unavailable():

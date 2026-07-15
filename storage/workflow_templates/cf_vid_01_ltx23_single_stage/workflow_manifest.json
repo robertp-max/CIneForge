@@ -1,0 +1,186 @@
+{
+  "comfyui_snapshot_ref": "portable-0.19.3-b435ed4a97cbbe9e66017370d1ac2ca49b7270c2-ltxvideo-229437c6b65796d6a7a63ae34be2bd5ba31fa543-res4lyf-419de2d7c78f415dde9aa352a7231820ebfc17a4",
+  "nodes": {
+    "audio_vae_loader": {
+      "class_type": "LTXVAudioVAELoader",
+      "input": "ckpt_name",
+      "node_id": "4010",
+      "required": true,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "input": "ckpt_name",
+      "node_id": "3940",
+      "required": true,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "fps_audio_latent": {
+      "class_type": "LTXVEmptyLatentAudio",
+      "input": "frame_rate",
+      "node_id": "3980",
+      "required": true,
+      "runtime_parameter": "fps",
+      "value_schema": {
+        "max": 120,
+        "min": 1,
+        "type": "integer"
+      }
+    },
+    "fps_conditioning": {
+      "class_type": "LTXVConditioning",
+      "input": "frame_rate",
+      "node_id": "1241",
+      "required": true,
+      "runtime_parameter": "fps",
+      "value_schema": {
+        "max": 120,
+        "min": 1,
+        "type": "number"
+      }
+    },
+    "fps_video_create": {
+      "class_type": "CreateVideo",
+      "input": "fps",
+      "node_id": "4819",
+      "required": true,
+      "runtime_parameter": "fps",
+      "value_schema": {
+        "max": 120,
+        "min": 1,
+        "type": "number"
+      }
+    },
+    "frames_audio_latent": {
+      "class_type": "LTXVEmptyLatentAudio",
+      "input": "frames_number",
+      "node_id": "3980",
+      "required": true,
+      "runtime_parameter": "frames",
+      "value_schema": {
+        "max": 4096,
+        "min": 1,
+        "type": "integer"
+      }
+    },
+    "frames_video_latent": {
+      "class_type": "EmptyLTXVLatentVideo",
+      "input": "length",
+      "node_id": "3059",
+      "required": true,
+      "runtime_parameter": "frames",
+      "value_schema": {
+        "max": 4096,
+        "min": 1,
+        "type": "integer"
+      }
+    },
+    "height": {
+      "class_type": "EmptyLTXVLatentVideo",
+      "input": "height",
+      "node_id": "3059",
+      "required": true,
+      "runtime_parameter": "height",
+      "value_schema": {
+        "max": 16384,
+        "min": 64,
+        "type": "integer"
+      }
+    },
+    "negative_prompt": {
+      "class_type": "CLIPTextEncode",
+      "input": "text",
+      "node_id": "2612",
+      "required": true,
+      "runtime_parameter": "negative_prompt",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "positive_prompt": {
+      "class_type": "CLIPTextEncode",
+      "input": "text",
+      "node_id": "2483",
+      "required": true,
+      "runtime_parameter": "prompt",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "save_video_prefix": {
+      "class_type": "SaveVideo",
+      "input": "filename_prefix",
+      "node_id": "4823",
+      "required": true,
+      "runtime_parameter": "output_prefix",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "seed_noise": {
+      "class_type": "RandomNoise",
+      "input": "noise_seed",
+      "node_id": "4814",
+      "required": true,
+      "runtime_parameter": "seed",
+      "value_schema": {
+        "max": 18446744073709551615,
+        "min": 0,
+        "type": "integer"
+      }
+    },
+    "steps_scheduler": {
+      "class_type": "LTXVScheduler",
+      "input": "steps",
+      "node_id": "4966",
+      "required": true,
+      "runtime_parameter": "steps",
+      "value_schema": {
+        "max": 10000,
+        "min": 1,
+        "type": "integer"
+      }
+    },
+    "text_encoder_ltx_checkpoint": {
+      "class_type": "LTXAVTextEncoderLoader",
+      "input": "ckpt_name",
+      "node_id": "4960",
+      "required": true,
+      "runtime_parameter": "model_checkpoint",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "text_encoder_model": {
+      "class_type": "LTXAVTextEncoderLoader",
+      "input": "text_encoder",
+      "node_id": "4960",
+      "required": true,
+      "runtime_parameter": "text_encoder",
+      "value_schema": {
+        "type": "string"
+      }
+    },
+    "width": {
+      "class_type": "EmptyLTXVLatentVideo",
+      "input": "width",
+      "node_id": "3059",
+      "required": true,
+      "runtime_parameter": "width",
+      "value_schema": {
+        "max": 16384,
+        "min": 64,
+        "type": "integer"
+      }
+    }
+  },
+  "original_workflow_sha256": "d040a311a80401dda3b7d2ecbbea0d8e24ca32b62a36e6d5801d0a7bda8865c1",
+  "template_id": "cf_vid_01_ltx23_single_stage_t2v_smoke",
+  "version": "0.2.0-api-t2v-smoke"
+}
