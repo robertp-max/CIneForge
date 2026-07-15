@@ -9,7 +9,7 @@ from typing import Iterable
 
 from backend.app.core.errors import UnsafePathError, ValidationError
 from backend.app.schemas.production import AspectRatio, FFmpegAssemblyInput, FFmpegAssemblyPlan, GeometryProfile
-from backend.app.services.ffmpeg.service import FFmpegService, sha256_file
+from backend.app.services.ffmpeg.service import FFmpegService, sha256_file, validate_sha256_hex
 from backend.app.utils.path_safety import resolve_inside
 
 
@@ -39,7 +39,7 @@ class PostProductionService:
         for clip in clip_list:
             safe_clip_path = self._resolve_media_path(clip.path)
             if clip.sha256:
-                input_hashes.append(clip.sha256)
+                input_hashes.append(validate_sha256_hex(clip.sha256))
             elif safe_clip_path.is_file():
                 input_hashes.append(sha256_file(safe_clip_path))
             else:
@@ -114,17 +114,24 @@ class PostProductionService:
 
     def execute_assembly(self, plan: FFmpegAssemblyPlan, *, timeout_sec: int = 600) -> dict:
         command = self.build_command(plan)
+        if plan.output_path is None:
+            raise ValidationError("Assembly output_path is required")
+        safe_output_path = self._resolve_media_path(plan.output_path)
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_sec, check=False)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "ffmpeg assembly failed")
-        if plan.output_path is None or not plan.output_path.is_file():
-            raise FileNotFoundError(plan.output_path)
-        final_probe = self.ffmpeg.ffprobe_asset(plan.output_path)
+        if not safe_output_path.is_file():
+            raise FileNotFoundError(safe_output_path)
+        try:
+            probe_path = safe_output_path.relative_to(self.ffmpeg.storage_root.resolve())
+        except ValueError:
+            probe_path = safe_output_path
+        final_probe = self.ffmpeg.ffprobe_asset(probe_path)
         return {
             "command_template_id": plan.command_template_id,
             "command": command,
-            "output_path": str(plan.output_path),
-            "output_sha256": sha256_file(plan.output_path),
+            "output_path": str(safe_output_path),
+            "output_sha256": sha256_file(safe_output_path),
             "probe_json": final_probe,
             "plan": json.loads(plan.model_dump_json()),
         }

@@ -66,6 +66,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_sha256_hex(value: str) -> str:
+    cleaned = value.strip().lower()
+    if len(cleaned) != 64 or any(ch not in "0123456789abcdef" for ch in cleaned):
+        raise ValidationError("SHA256 must be a 64-character hexadecimal string")
+    return cleaned
+
+
 def _video_signature(probe: dict[str, Any]) -> tuple:
     streams = probe.get("streams", [])
     video = [stream for stream in streams if stream.get("codec_type") == "video"]
@@ -183,8 +190,7 @@ class FFmpegService:
             raise ValidationError("Concat manifest requires one probe per input path")
         if len(paths) != len(input_hashes):
             raise ValidationError("Concat manifest requires one input hash per input path")
-        if any(not str(value).strip() for value in input_hashes):
-            raise ValidationError("Concat manifest input hashes cannot be empty")
+        validated_hashes = [validate_sha256_hex(str(value)) for value in input_hashes]
 
         compatibility = check_stream_copy_compatibility(probes)
         if not compatibility.compatible:
@@ -197,7 +203,7 @@ class FFmpegService:
         return ConcatManifestBuildResult(
             manifest=generate_concat_manifest(safe_paths),
             input_paths=[str(path) for path in safe_paths],
-            input_hashes=list(input_hashes),
+            input_hashes=validated_hashes,
             compatibility_reason=compatibility.reason,
         )
 

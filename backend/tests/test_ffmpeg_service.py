@@ -79,6 +79,8 @@ def test_stream_copy_concat_manifest_rejects_missing_hashes_bad_probes_and_unsaf
 
     with pytest.raises(ValidationError, match="one input hash"):
         service.build_stream_copy_concat_manifest(["clip_001.mp4"], [_probe()], [])
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_stream_copy_concat_manifest(["clip_001.mp4"], [_probe()], ["not-a-sha"])
     with pytest.raises(ValidationError, match="Stream-copy concat rejected"):
         service.build_stream_copy_concat_manifest(
             ["clip_001.mp4", "clip_002.mp4"],
