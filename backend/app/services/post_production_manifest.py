@@ -14,9 +14,15 @@ from uuid import UUID, uuid4
 from pydantic import TypeAdapter
 
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.errors import not_found
-from backend.app.schemas.post_production import PostProductionAssemblyPlanCreate, PostProductionPlanManifest
+from backend.app.core.errors import ValidationError, not_found
+from backend.app.schemas.post_production import (
+    PostProductionAssemblyPlanCreate,
+    PostProductionPlanErrorRecord,
+    PostProductionPlanManifest,
+    PostProductionPlanSuccessRecord,
+)
 from backend.app.schemas.production import FFmpegAssemblyPlan
+from backend.app.services.ffmpeg.service import validate_sha256_hex
 from backend.app.services.post_production import PostProductionService
 
 _MANIFEST_ADAPTER = TypeAdapter(PostProductionPlanManifest)
@@ -93,6 +99,68 @@ class PostProductionPlanStore:
                 break
             manifests.append(_MANIFEST_ADAPTER.validate_json(path.read_text(encoding="utf-8")))
         return manifests
+
+    def record_success(
+        self,
+        plan_id: UUID,
+        record: PostProductionPlanSuccessRecord,
+    ) -> PostProductionPlanManifest:
+        manifest = self.get(plan_id)
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "completed_offline_recorded",
+                "updated_at": now,
+                "completed_at": now,
+                "ffmpeg_job_id": record.ffmpeg_job_id,
+                "output_sha256": validate_sha256_hex(record.output_sha256),
+                "final_probe_json": record.final_probe_json,
+                "error_message": None,
+            }
+        )
+        self._write_manifest(updated)
+        self._append_event(
+            {
+                "event": "post_production_plan_result_recorded",
+                "plan_id": str(plan_id),
+                "state": updated.state,
+                "output_sha256": updated.output_sha256,
+                "recorded_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_error(
+        self,
+        plan_id: UUID,
+        record: PostProductionPlanErrorRecord,
+    ) -> PostProductionPlanManifest:
+        manifest = self.get(plan_id)
+        error_message = record.error_message.strip()
+        if not error_message:
+            raise ValidationError("Post-production error_message cannot be blank")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "failed_offline_recorded",
+                "updated_at": now,
+                "completed_at": now,
+                "ffmpeg_job_id": record.ffmpeg_job_id,
+                "output_sha256": None,
+                "final_probe_json": None,
+                "error_message": error_message,
+            }
+        )
+        self._write_manifest(updated)
+        self._append_event(
+            {
+                "event": "post_production_plan_error_recorded",
+                "plan_id": str(plan_id),
+                "state": updated.state,
+                "recorded_at": now.isoformat(),
+            }
+        )
+        return updated
 
     def _write_manifest(self, manifest: PostProductionPlanManifest) -> None:
         self.root.mkdir(parents=True, exist_ok=True)

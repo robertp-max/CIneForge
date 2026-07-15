@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.core.errors import UnsafePathError, ValidationError
+from backend.app.schemas.post_production import PostProductionPlanErrorRecord, PostProductionPlanSuccessRecord
 from backend.app.schemas.production import AspectRatio, FFmpegAssemblyInput, GeometryProfile, OutputProfile
 from backend.app.services.ffmpeg.service import FFmpegService, sha256_file
 from backend.app.services.post_production import PostProductionService
@@ -170,6 +171,72 @@ def test_post_production_plan_store_persists_offline_manifest_without_execution(
     assert (tmp_path / "plans" / "events.jsonl").is_file()
     assert store.get(manifest.plan_id) == manifest
     assert store.list()[0].plan_id == manifest.plan_id
+
+
+def test_post_production_plan_store_records_success_and_error_without_execution(monkeypatch, tmp_path: Path):
+    service = PostProductionService(FFmpegService(storage_root=tmp_path))
+    plan = service.build_assembly_plan(
+        [_clip(Path("clip_a.mp4"), sha256="a" * 64)],
+        target_duration_sec=1.0,
+        geometry=_geometry(),
+        fps=24,
+        output_path=Path("delivery/final.mp4"),
+    )
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("recording plan metadata must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.post_production.subprocess.run", forbidden_run)
+    store = PostProductionPlanStore(root=tmp_path / "plans", service=service)
+    manifest = store.create_from_plan(plan)
+
+    completed = store.record_success(
+        manifest.plan_id,
+        PostProductionPlanSuccessRecord(
+            output_sha256="B" * 64,
+            final_probe_json={"streams": [{"codec_type": "video", "width": 1280, "height": 720}]},
+        ),
+    )
+
+    assert completed.state == "completed_offline_recorded"
+    assert completed.output_sha256 == "b" * 64
+    assert completed.final_probe_json["streams"][0]["codec_type"] == "video"
+    assert completed.error_message is None
+    assert completed.completed_at is not None
+    assert store.get(manifest.plan_id).output_sha256 == "b" * 64
+
+    failed = store.record_error(
+        manifest.plan_id,
+        PostProductionPlanErrorRecord(error_message="  probe mismatch  "),
+    )
+
+    assert failed.state == "failed_offline_recorded"
+    assert failed.output_sha256 is None
+    assert failed.final_probe_json is None
+    assert failed.error_message == "probe mismatch"
+    assert (tmp_path / "plans" / "events.jsonl").read_text(encoding="utf-8").count("post_production_plan_") == 3
+
+
+def test_post_production_plan_store_rejects_invalid_recorded_success_hash(tmp_path: Path):
+    service = PostProductionService(FFmpegService(storage_root=tmp_path))
+    plan = service.build_assembly_plan(
+        [_clip(Path("clip_a.mp4"), sha256="a" * 64)],
+        target_duration_sec=1.0,
+        geometry=_geometry(),
+        fps=24,
+        output_path=Path("delivery/final.mp4"),
+    )
+    store = PostProductionPlanStore(root=tmp_path / "plans", service=service)
+    manifest = store.create_from_plan(plan)
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        store.record_success(
+            manifest.plan_id,
+            PostProductionPlanSuccessRecord(output_sha256="bad", final_probe_json={"streams": []}),
+        )
+
+    assert store.get(manifest.plan_id).state == "planned_offline"
+    assert store.get(manifest.plan_id).output_sha256 is None
 
 
 def test_post_production_rejects_command_build_without_hashes(tmp_path: Path):

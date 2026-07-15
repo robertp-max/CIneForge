@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -20,10 +21,23 @@ class PostProductionAssemblyPlanCreate(BaseModel):
 
 
 
+class PostProductionPlanSuccessRecord(BaseModel):
+    output_sha256: str
+    final_probe_json: dict[str, Any]
+    ffmpeg_job_id: UUID | None = None
+
+
+class PostProductionPlanErrorRecord(BaseModel):
+    error_message: str = Field(min_length=1, max_length=10_000)
+    ffmpeg_job_id: UUID | None = None
+
+
 class PostProductionPlanManifest(BaseModel):
     plan_id: UUID
     state: str = "planned_offline"
     created_at: datetime
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
     manifest_path: Path
     command_template_id: str
     command: list[str]
@@ -37,6 +51,6 @@ class PostProductionPlanManifest(BaseModel):
     execution_submitted: bool = False
     ffmpeg_job_id: UUID | None = None
     output_sha256: str | None = None
-    final_probe_json: dict | None = None
+    final_probe_json: dict[str, Any] | None = None
     error_message: str | None = None
     plan: FFmpegAssemblyPlan
