@@ -7,12 +7,14 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.db.base import AuditLog, Base, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
+from backend.app.db.base import AuditLog, Base, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun, WorkflowTemplate
 from backend.app.queue.state_machine import InvalidTransition, JobState
 from backend.app.services.ai_orchestration.schemas import AIProposal
 from backend.app.services.ai_orchestration.validator import ProposalValidator
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
+from backend.app.schemas.voice import GpuLeaseAcquireRequest
 from backend.app.services.queue.service import QueueJobNotFound, QueueService
+from backend.app.services.runtime.gpu_leases import acquire_lease
 from backend.app.services.workflows.template_service import sha256_json
 
 
@@ -148,6 +150,23 @@ def create_ready_comfy_job(
     return job
 
 
+def bind_lease(db: Session, job: ComfyJob, *, worker_id: str = "worker-1") -> GpuResourceLease:
+    lease = acquire_lease(
+        db,
+        GpuLeaseAcquireRequest(
+            resource_key="gpu0",
+            exclusive_group="gpu-shared",
+            workload_type="comfy_job",
+            workload_id=str(job.id),
+            owner="queue-service-test",
+            worker_id=worker_id,
+            ttl_seconds=300,
+        ),
+    )
+    QueueService().bind_gpu_lease(db, job.id, lease.id, "queue test lease", worker_id=worker_id)
+    return lease
+
+
 def audit_logs(db: Session) -> list[AuditLog]:
     return list(db.scalars(select(AuditLog)).all())
 
@@ -217,6 +236,52 @@ def test_reserve_job_persists_reserved_status(db_session):
     assert persisted_job.status == QueueStatus.reserved
     assert len(logs) == 1
     assert logs[0].details["worker_id"] == "worker-1"
+
+
+def test_mark_terminal_job_sets_completion_metadata_and_releases_lease(db_session):
+    job = create_comfy_job(db_session, QueueStatus.running)
+    lease = bind_lease(db_session, job)
+
+    terminal = QueueService().mark_terminal_job(
+        db_session,
+        job.id,
+        QueueStatus.timeout,
+        "worker timeout",
+        worker_id="worker-1",
+        error_message="timed out",
+    )
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    workflow_run = db_session.get(WorkflowRun, job.workflow_run_id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert terminal.status == QueueStatus.timeout
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.timeout
+    assert persisted_job.completed_at is not None
+    assert persisted_job.error_message == "timed out"
+    assert workflow_run is not None
+    assert workflow_run.status == QueueStatus.timeout.value
+    assert workflow_run.ended_at is not None
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
+    assert audit_logs_for_action(db_session, "gpu_lease_released")
+
+
+def test_mark_terminal_job_rejects_non_terminal_target_without_releasing_lease(db_session):
+    job = create_comfy_job(db_session, QueueStatus.submitted)
+    lease = bind_lease(db_session, job)
+
+    with pytest.raises(ValueError, match="not terminal"):
+        QueueService().mark_terminal_job(db_session, job.id, QueueStatus.running, "not terminal", worker_id="worker-1")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.submitted
+    assert persisted_lease is not None
+    assert persisted_lease.status == "active"
 
 
 def test_reserve_job_writes_worker_ownership_fields(db_session):

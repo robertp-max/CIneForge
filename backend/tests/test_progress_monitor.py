@@ -225,6 +225,8 @@ def test_progress_recorder_maps_oom_to_terminal_and_releases_lease(db_session):
     persisted_lease = db_session.get(GpuResourceLease, lease.id)
     assert persisted is not None
     assert persisted.status == QueueStatus.oom
+    assert persisted.completed_at is not None
+    assert persisted.error_message == "CUDA out of memory"
     assert persisted.websocket_events[-1]["is_runtime_failure_candidate"] is True
     assert persisted.recovery_metadata["gpu_lease_released_at"]
     assert persisted_lease is not None

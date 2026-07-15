@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import CineForgeError
 from backend.app.db.base import AuditLog, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun, WorkflowTemplate
-from backend.app.queue.state_machine import InvalidTransition, JobState, transition
+from backend.app.queue.state_machine import FAILURE_STATES, InvalidTransition, JobState, transition
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
 from backend.app.services.workflows.template_service import WorkflowManifest
 
@@ -307,6 +307,37 @@ class QueueService:
         )
         db.commit()
         db.refresh(job)
+        return job
+
+    def mark_terminal_job(
+        self,
+        db: Session,
+        job_id: UUID,
+        target_state: JobState | QueueStatus | str,
+        reason: str,
+        actor: str = "worker",
+        worker_id: str | None = None,
+        error_message: str | None = None,
+        release_gpu_lease: bool = True,
+    ) -> ComfyJob:
+        target = JobState(self._status_value(target_state))
+        terminal_states = set(FAILURE_STATES) | {JobState.canceled, JobState.complete}
+        if target not in terminal_states:
+            raise ValueError(f"Target state is not terminal: {target.value}")
+        job = self.transition_job(db, job_id, target, reason, actor=actor, worker_id=worker_id)
+        now = datetime.now(UTC)
+        job.completed_at = now
+        if error_message is not None:
+            job.error_message = error_message
+        workflow_run = db.get(WorkflowRun, job.workflow_run_id)
+        if workflow_run is not None:
+            workflow_run.status = target.value
+            workflow_run.ended_at = now
+        db.commit()
+        db.refresh(job)
+        if release_gpu_lease:
+            self.release_bound_gpu_lease(db, job_id, reason, actor=actor, worker_id=worker_id)
+            db.refresh(job)
         return job
 
     def bind_gpu_lease(

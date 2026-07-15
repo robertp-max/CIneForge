@@ -186,20 +186,14 @@ class ComfyJobProgressRecorder:
         if event.is_runtime_failure_candidate and status in {QueueStatus.submitted, QueueStatus.running}:
             self._ensure_running(db, job_id, worker_id, "ComfyUI runtime failure observed")
             target = JobState.oom if self._is_oom(event.error) else JobState.runtime_failed
-            self.queue_service.transition_job(
+            self.queue_service.mark_terminal_job(
                 db,
                 job_id,
                 target,
                 event.error or "ComfyUI runtime failure",
                 actor="worker",
                 worker_id=worker_id,
-            )
-            self.queue_service.release_bound_gpu_lease(
-                db,
-                job_id,
-                event.error or "ComfyUI runtime failure",
-                actor="worker",
-                worker_id=worker_id,
+                error_message=event.error,
             )
             return event
 

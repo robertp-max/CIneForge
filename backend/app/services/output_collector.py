@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -95,21 +94,14 @@ class OutputCollector:
 
         records = self.discover(project_key, run_stem, probe=probe)
         if not records:
-            job.error_message = "No managed ComfyUI outputs found for expected prefix"
-            self.queue_service.transition_job(
+            self.queue_service.mark_terminal_job(
                 db,
                 job_id,
                 JobState.postprocess_failed,
                 "No managed ComfyUI outputs found for expected prefix",
                 actor="worker",
                 worker_id=worker_id,
-            )
-            self.queue_service.release_bound_gpu_lease(
-                db,
-                job_id,
-                "output collection failed",
-                actor="worker",
-                worker_id=worker_id,
+                error_message="No managed ComfyUI outputs found for expected prefix",
             )
             return []
 
@@ -144,23 +136,11 @@ class OutputCollector:
             )
         db.commit()
 
-        completed = self.queue_service.transition_job(
+        self.queue_service.mark_terminal_job(
             db,
             job_id,
             JobState.complete,
             "Managed ComfyUI outputs collected",
-            actor="worker",
-            worker_id=worker_id,
-        )
-        now = datetime.now(UTC)
-        completed.completed_at = now
-        workflow_run.status = QueueStatus.complete.value
-        workflow_run.ended_at = now
-        db.commit()
-        self.queue_service.release_bound_gpu_lease(
-            db,
-            job_id,
-            "output collection complete",
             actor="worker",
             worker_id=worker_id,
         )
