@@ -50,6 +50,14 @@ class CompatibilityResult:
     reason: str
 
 
+@dataclass(frozen=True)
+class ConcatManifestBuildResult:
+    manifest: str
+    input_paths: list[str]
+    input_hashes: list[str]
+    compatibility_reason: str
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -162,6 +170,36 @@ class FFmpegService:
             raise FileExistsError(f"Probe JSON already exists: {output}")
         output.write_text(json.dumps(probe, indent=2, sort_keys=True), encoding="utf-8")
         return output
+
+    def build_stream_copy_concat_manifest(
+        self,
+        paths: list[str | Path],
+        probes: list[dict[str, Any]],
+        input_hashes: list[str],
+    ) -> ConcatManifestBuildResult:
+        if not paths:
+            raise ValidationError("Concat manifest requires at least one input path")
+        if len(paths) != len(probes):
+            raise ValidationError("Concat manifest requires one probe per input path")
+        if len(paths) != len(input_hashes):
+            raise ValidationError("Concat manifest requires one input hash per input path")
+        if any(not str(value).strip() for value in input_hashes):
+            raise ValidationError("Concat manifest input hashes cannot be empty")
+
+        compatibility = check_stream_copy_compatibility(probes)
+        if not compatibility.compatible:
+            raise ValidationError(f"Stream-copy concat rejected: {compatibility.reason}")
+
+        safe_paths = [
+            resolve_inside(self.storage_root, path, allow_absolute=self.settings.allow_absolute_input_paths)
+            for path in paths
+        ]
+        return ConcatManifestBuildResult(
+            manifest=generate_concat_manifest(safe_paths),
+            input_paths=[str(path) for path in safe_paths],
+            input_hashes=list(input_hashes),
+            compatibility_reason=compatibility.reason,
+        )
 
     def validate_command_template_id(self, template_id: str) -> None:
         reject_path_traversal(template_id)

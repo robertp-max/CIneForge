@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.core.errors import UnsafePathError, ValidationError
 from backend.app.main import app
 from backend.app.services.ffmpeg.service import (
     APPROVED_COMMAND_TEMPLATES,
@@ -52,6 +53,40 @@ def test_ffprobe_compatibility_mismatch_rejects_stream_copy():
     result = check_stream_copy_compatibility([_probe(), _probe(width=1280)])
     assert result.compatible is False
     assert select_normalization_plan([_probe(), _probe(width=1280)]) == "normalize_delivery_h264_v1"
+
+
+def test_stream_copy_concat_manifest_requires_hashes_and_compatible_probes(tmp_path):
+    first = tmp_path / "clip_001.mp4"
+    second = tmp_path / "clip_002.mp4"
+    first.write_bytes(b"clip-1")
+    second.write_bytes(b"clip-2")
+    result = FFmpegService(storage_root=tmp_path).build_stream_copy_concat_manifest(
+        ["clip_001.mp4", "clip_002.mp4"],
+        [_probe(), _probe()],
+        ["a" * 64, "b" * 64],
+    )
+
+    assert result.compatibility_reason == "all stream signatures match"
+    assert result.input_hashes == ["a" * 64, "b" * 64]
+    assert str(first.resolve()).replace("\\", "/") in result.manifest
+    assert str(second.resolve()).replace("\\", "/") in result.manifest
+
+
+def test_stream_copy_concat_manifest_rejects_missing_hashes_bad_probes_and_unsafe_paths(tmp_path):
+    first = tmp_path / "clip_001.mp4"
+    first.write_bytes(b"clip-1")
+    service = FFmpegService(storage_root=tmp_path)
+
+    with pytest.raises(ValidationError, match="one input hash"):
+        service.build_stream_copy_concat_manifest(["clip_001.mp4"], [_probe()], [])
+    with pytest.raises(ValidationError, match="Stream-copy concat rejected"):
+        service.build_stream_copy_concat_manifest(
+            ["clip_001.mp4", "clip_002.mp4"],
+            [_probe(), _probe(width=1280)],
+            ["a" * 64, "b" * 64],
+        )
+    with pytest.raises(UnsafePathError):
+        service.build_stream_copy_concat_manifest(["../escape.mp4"], [_probe()], ["a" * 64])
 
 
 def test_ffmpeg_recipe_catalog_is_read_only_and_matches_allowlist():
