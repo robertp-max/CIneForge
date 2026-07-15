@@ -6,7 +6,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import CineForgeError
-from backend.app.db.base import AuditLog, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
+from backend.app.db.base import AuditLog, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun, WorkflowTemplate
 from backend.app.queue.state_machine import InvalidTransition, JobState, transition
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
 from backend.app.services.workflows.template_service import WorkflowManifest
@@ -308,6 +308,92 @@ class QueueService:
         db.commit()
         db.refresh(job)
         return job
+
+    def bind_gpu_lease(
+        self,
+        db: Session,
+        job_id: UUID,
+        lease_id: UUID,
+        reason: str,
+        actor: str = "worker",
+        worker_id: str | None = None,
+    ) -> ComfyJob:
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
+        metadata = dict(job.recovery_metadata or {})
+        metadata["gpu_lease_id"] = str(lease_id)
+        metadata["gpu_lease_bound_at"] = self._datetime_value(datetime.now(UTC))
+        job.recovery_metadata = metadata
+        audit_details = {
+            "reason": reason,
+            "actor": actor,
+            "gpu_lease_id": str(lease_id),
+            "status": self._status_value(job.status),
+        }
+        audit_worker_id = worker_id or job.worker_id
+        if audit_worker_id is not None:
+            audit_details["worker_id"] = audit_worker_id
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=job.id,
+                action="gpu_lease_bound",
+                details=audit_details,
+            )
+        )
+        db.commit()
+        db.refresh(job)
+        return job
+
+    def release_bound_gpu_lease(
+        self,
+        db: Session,
+        job_id: UUID,
+        reason: str,
+        actor: str = "worker",
+        worker_id: str | None = None,
+    ) -> bool:
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
+        metadata = dict(job.recovery_metadata or {})
+        lease_id_raw = metadata.get("gpu_lease_id")
+        if not lease_id_raw:
+            return False
+        try:
+            lease_id = UUID(str(lease_id_raw))
+        except ValueError:
+            return False
+        lease = db.get(GpuResourceLease, lease_id)
+        if lease is None or lease.status != "active":
+            return False
+        now = datetime.now(UTC)
+        lease.status = "released"
+        lease.released_at = now
+        metadata["gpu_lease_released_at"] = self._datetime_value(now)
+        metadata["gpu_lease_release_reason"] = reason
+        job.recovery_metadata = metadata
+        audit_details = {
+            "reason": reason,
+            "actor": actor,
+            "gpu_lease_id": str(lease_id),
+            "status": self._status_value(job.status),
+        }
+        audit_worker_id = worker_id or job.worker_id
+        if audit_worker_id is not None:
+            audit_details["worker_id"] = audit_worker_id
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=job.id,
+                action="gpu_lease_released",
+                details=audit_details,
+            )
+        )
+        db.commit()
+        db.refresh(job)
+        return True
 
     def reserve_job(
         self,

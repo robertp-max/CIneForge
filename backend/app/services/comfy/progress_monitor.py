@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from backend.app.db.base import ComfyJob, QueueStatus
+from backend.app.queue.state_machine import JobState
+from backend.app.services.queue.service import QueueJobNotFound, QueueService
 
 
 class ProgressEventKind(StrEnum):
@@ -128,3 +135,108 @@ class ProgressMonitor:
     async def history_fallback(self, client: Any, prompt_id: str) -> HistoryFallbackResult:
         history = await client.get_history(prompt_id)
         return HistoryFallbackResult(prompt_id=prompt_id, history=history)
+
+
+class ComfyJobProgressRecorder:
+    """Persist parsed ComfyUI progress events and map them to queue states.
+
+    This recorder is worker-only plumbing for M3 mocks. It does not connect to
+    ComfyUI itself; callers pass already-received WebSocket/history events.
+    """
+
+    def __init__(
+        self,
+        queue_service: QueueService | None = None,
+        parser: ProgressEventParser | None = None,
+    ) -> None:
+        self.queue_service = queue_service or QueueService()
+        self.parser = parser or ProgressEventParser()
+
+    def record_event(self, db: Session, job_id: UUID, worker_id: str, payload: dict[str, Any]) -> ProgressEvent:
+        event = self.parser.parse(payload)
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
+        self._append_event(job, worker_id, event)
+
+        status = job.status
+        if event.kind == ProgressEventKind.execution_start and status == QueueStatus.submitted:
+            self.queue_service.transition_job(
+                db,
+                job_id,
+                JobState.running,
+                "ComfyUI execution started",
+                actor="worker",
+                worker_id=worker_id,
+            )
+            return event
+
+        if event.is_completion_signal and status in {QueueStatus.submitted, QueueStatus.running}:
+            self._ensure_running(db, job_id, worker_id, "ComfyUI completion observed")
+            self.queue_service.transition_job(
+                db,
+                job_id,
+                JobState.collecting_outputs,
+                "ComfyUI execution completed; collecting outputs",
+                actor="worker",
+                worker_id=worker_id,
+            )
+            return event
+
+        if event.is_runtime_failure_candidate and status in {QueueStatus.submitted, QueueStatus.running}:
+            self._ensure_running(db, job_id, worker_id, "ComfyUI runtime failure observed")
+            target = JobState.oom if self._is_oom(event.error) else JobState.runtime_failed
+            self.queue_service.transition_job(
+                db,
+                job_id,
+                target,
+                event.error or "ComfyUI runtime failure",
+                actor="worker",
+                worker_id=worker_id,
+            )
+            self.queue_service.release_bound_gpu_lease(
+                db,
+                job_id,
+                event.error or "ComfyUI runtime failure",
+                actor="worker",
+                worker_id=worker_id,
+            )
+            return event
+
+        db.commit()
+        return event
+
+    @staticmethod
+    def _append_event(job: ComfyJob, worker_id: str, event: ProgressEvent) -> None:
+        events = list(job.websocket_events or [])
+        events.append(
+            {
+                "kind": event.kind.value,
+                "raw_type": event.raw_type,
+                "prompt_id": event.prompt_id,
+                "node_id": event.node_id,
+                "worker_id": worker_id,
+                "is_completion_signal": event.is_completion_signal,
+                "is_runtime_failure_candidate": event.is_runtime_failure_candidate,
+                "error": event.error,
+                "raw": event.raw,
+            }
+        )
+        job.websocket_events = events
+
+    def _ensure_running(self, db: Session, job_id: UUID, worker_id: str, reason: str) -> None:
+        job = db.get(ComfyJob, job_id)
+        if job is not None and job.status == QueueStatus.submitted:
+            self.queue_service.transition_job(
+                db,
+                job_id,
+                JobState.running,
+                reason,
+                actor="worker",
+                worker_id=worker_id,
+            )
+
+    @staticmethod
+    def _is_oom(error: str | None) -> bool:
+        lowered = (error or "").lower()
+        return "out of memory" in lowered or "cuda oom" in lowered or "oom" in lowered

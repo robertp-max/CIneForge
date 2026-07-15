@@ -103,6 +103,16 @@ class ControlledComfySubmissionService:
         if lease_error is not None:
             return self._mark_preflight_blocked(db, context, "gpu_lease_required", lease_error)
 
+        assert context.gpu_lease_id is not None
+        self.queue_service.bind_gpu_lease(
+            db,
+            context.job_id,
+            context.gpu_lease_id,
+            "controlled submission lease validated",
+            actor="worker",
+            worker_id=context.worker_id,
+        )
+
         readiness = self.queue_service.evaluate_submission_readiness(
             db,
             context.job_id,
@@ -111,6 +121,13 @@ class ControlledComfySubmissionService:
         )
         if not readiness.ready:
             self._mark_validation_failed_if_worker_owned_reserved(db, readiness)
+            self.queue_service.release_bound_gpu_lease(
+                db,
+                context.job_id,
+                "controlled submission readiness failed",
+                actor="worker",
+                worker_id=context.worker_id,
+            )
             return ControlledSubmissionResult(
                 submitted=False,
                 job_id=context.job_id,
@@ -145,6 +162,7 @@ class ControlledComfySubmissionService:
                 "controlled submission adapter rejected prompt",
                 str(exc),
                 context.worker_id,
+                release_gpu_lease=True,
             )
             return ControlledSubmissionResult(
                 submitted=False,
@@ -166,6 +184,7 @@ class ControlledComfySubmissionService:
                 "controlled submission returned node_errors",
                 error_message,
                 context.worker_id,
+                release_gpu_lease=True,
             )
             return ControlledSubmissionResult(
                 submitted=False,
@@ -187,6 +206,7 @@ class ControlledComfySubmissionService:
                 "controlled submission response missing prompt_id",
                 error_message,
                 context.worker_id,
+                release_gpu_lease=True,
             )
             return ControlledSubmissionResult(
                 submitted=False,
@@ -346,6 +366,8 @@ class ControlledComfySubmissionService:
         reason: str,
         error_message: str,
         worker_id: str,
+        *,
+        release_gpu_lease: bool = False,
     ) -> None:
         now = datetime.now(UTC)
         previous_state = job.status.value
@@ -370,6 +392,14 @@ class ControlledComfySubmissionService:
             )
         )
         db.commit()
+        if release_gpu_lease:
+            self.queue_service.release_bound_gpu_lease(
+                db,
+                job.id,
+                reason,
+                actor="worker",
+                worker_id=worker_id,
+            )
 
     @staticmethod
     def _require_job(db: Session, job_id: UUID) -> ComfyJob:
