@@ -129,8 +129,8 @@ async def test_m3_mocked_worker_lifecycle_submits_tracks_collects_and_releases(t
     settings = Settings(
         storage_root=tmp_path / "storage",
         comfyui_output_root=tmp_path / "comfy-output",
-        hardware_operator_enabled=True,
-        queue_worker_enabled=False,
+        hardware_operator_enabled=False,
+        queue_worker_enabled=True,
     )
     job = create_reserved_job(db_session)
     lease = acquire_job_lease(db_session, job)

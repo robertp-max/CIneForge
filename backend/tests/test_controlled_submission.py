@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
-from backend.app.db.base import AuditLog, Base, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
+from backend.app.db.base import AuditLog, Base, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun, WorkflowTemplate
 from backend.app.main import app
 from backend.app.schemas.voice import GpuLeaseAcquireRequest
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
@@ -151,7 +151,7 @@ def create_gpu_lease(db: Session, job: ComfyJob, *, worker_id: str = "worker-1",
 
 
 def enabled_settings(**overrides) -> Settings:
-    values = {"hardware_operator_enabled": True, "queue_worker_enabled": False}
+    values = {"hardware_operator_enabled": False, "queue_worker_enabled": True}
     values.update(overrides)
     return Settings(**values)
 
@@ -213,6 +213,7 @@ async def test_controlled_submission_requires_readiness_before_prompt_call(db_se
 
     db_session.expire_all()
     persisted_job = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
     assert result.submitted is False
     assert result.code == "preflight_failed"
     assert adapter.calls == []
@@ -220,10 +221,12 @@ async def test_controlled_submission_requires_readiness_before_prompt_call(db_se
     assert persisted_job.status == QueueStatus.pending
     assert persisted_job.prompt_id is None
     assert persisted_job.completed_at is None
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
 
 
 @pytest.mark.asyncio
-async def test_controlled_submission_requires_operator_or_worker_gate_before_prompt_call(db_session):
+async def test_controlled_submission_requires_queue_worker_gate_before_prompt_call(db_session):
     job = create_ready_reserved_job(db_session)
     adapter = FakePromptSubmissionAdapter()
     service = ControlledComfySubmissionService(
@@ -245,13 +248,16 @@ async def test_controlled_submission_requires_operator_or_worker_gate_before_pro
 
     db_session.expire_all()
     persisted_job = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
     assert result.submitted is False
-    assert result.code == "operator_gate_disabled"
+    assert result.code == "queue_worker_gate_disabled"
     assert adapter.calls == []
     assert persisted_job is not None
     assert persisted_job.status == QueueStatus.validation_failed
     assert persisted_job.prompt_id is None
-    assert "HARDWARE_OPERATOR_ENABLED" in (persisted_job.error_message or "")
+    assert "QUEUE_WORKER_ENABLED" in (persisted_job.error_message or "")
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
 
 
 @pytest.mark.asyncio
@@ -323,6 +329,62 @@ async def test_queue_worker_gate_can_submit_when_hardware_operator_gate_is_off(d
             client_id="client-1",
             object_info_cache=ObjectInfoCacheService(_ready_object_info()),
             gpu_lease_id=lease.id,
+        ),
+    )
+
+    assert result.submitted is True
+    assert adapter.calls == [(_ready_workflow(), "client-1")]
+
+
+@pytest.mark.asyncio
+async def test_hardware_operator_gate_does_not_enable_default_queue_worker_submission(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(
+        submission_adapter=adapter,
+        settings=enabled_settings(hardware_operator_enabled=True, queue_worker_enabled=False),
+    )
+    lease = create_gpu_lease(db_session, job)
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
+        ),
+    )
+
+    db_session.expire_all()
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert result.submitted is False
+    assert result.code == "queue_worker_gate_disabled"
+    assert adapter.calls == []
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
+
+
+@pytest.mark.asyncio
+async def test_hardware_operator_mode_can_submit_when_queue_worker_gate_is_off(db_session):
+    job = create_ready_reserved_job(db_session)
+    adapter = FakePromptSubmissionAdapter()
+    service = ControlledComfySubmissionService(
+        submission_adapter=adapter,
+        settings=enabled_settings(hardware_operator_enabled=True, queue_worker_enabled=False),
+    )
+    lease = create_gpu_lease(db_session, job)
+
+    result = await service.submit_reserved_job(
+        db_session,
+        WorkerSubmissionContext(
+            job_id=job.id,
+            worker_id="worker-1",
+            client_id="client-1",
+            object_info_cache=ObjectInfoCacheService(_ready_object_info()),
+            gpu_lease_id=lease.id,
+            submission_mode="hardware_operator",
         ),
     )
 

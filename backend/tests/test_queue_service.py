@@ -561,6 +561,7 @@ def test_non_reserved_job_is_not_recovered(db_session):
 def test_stale_reserved_job_at_max_attempts_becomes_timeout(db_session):
     job = create_comfy_job(db_session)
     QueueService().reserve_job(db_session, job.id, "worker-1", "claim before timeout")
+    lease = bind_lease(db_session, job)
     stale_time = datetime.now(UTC) - timedelta(hours=2)
     job.reserved_at = stale_time
     job.heartbeat_at = stale_time
@@ -575,13 +576,22 @@ def test_stale_reserved_job_at_max_attempts_becomes_timeout(db_session):
 
     db_session.expire_all()
     persisted_job = db_session.get(ComfyJob, job.id)
+    workflow_run = db_session.get(WorkflowRun, job.workflow_run_id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
     timeout_logs = audit_logs_for_action(db_session, "worker_timeout")
     assert [recovered_job.id for recovered_job in recovered_jobs] == [job.id]
     assert persisted_job is not None
     assert persisted_job.status == QueueStatus.timeout
     assert persisted_job.worker_id is None
+    assert persisted_job.completed_at is not None
+    assert persisted_job.error_message == "stale reservation recovery"
     assert persisted_job.recovery_metadata["new_state"] == "timeout"
     assert persisted_job.recovery_metadata["attempt_count"] == 3
+    assert workflow_run is not None
+    assert workflow_run.status == QueueStatus.timeout.value
+    assert workflow_run.ended_at is not None
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
     assert len(timeout_logs) == 1
     assert timeout_logs[0].details["new_state"] == "timeout"
 

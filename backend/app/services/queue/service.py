@@ -233,6 +233,13 @@ class QueueService:
             job.heartbeat_at = None
             job.last_state_change_at = now
             job.recovery_metadata = metadata
+            if target_state == QueueStatus.timeout:
+                job.completed_at = now
+                job.error_message = reason
+                workflow_run = db.get(WorkflowRun, job.workflow_run_id)
+                if workflow_run is not None:
+                    workflow_run.status = QueueStatus.timeout.value
+                    workflow_run.ended_at = now
 
             db.add(
                 AuditLog(
@@ -255,6 +262,14 @@ class QueueService:
 
         db.commit()
         for job in recovered_jobs:
+            db.refresh(job)
+            self.release_bound_gpu_lease(
+                db,
+                job.id,
+                reason,
+                actor="system",
+                worker_id=(job.recovery_metadata or {}).get("previous_worker_id"),
+            )
             db.refresh(job)
         return recovered_jobs
 

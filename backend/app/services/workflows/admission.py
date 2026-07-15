@@ -9,11 +9,32 @@ It does not publicly enable generation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+import json
+from pathlib import Path, PurePosixPath
 from typing import Any
 
+from backend.app.core.errors import UnsafePathError
 from backend.app.schemas.production import CanonicalWorkflowRecord, GateCode
+from backend.app.utils.path_safety import sanitize_comfy_output_prefix
 from backend.app.services.workflows.registry import WorkflowRegistryService
+
+
+_FORBIDDEN_CLASS_TOKENS = (
+    "python",
+    "script",
+    "shell",
+    "command",
+    "subprocess",
+    "download",
+    "url",
+    "http",
+    "webrequest",
+    "gitclone",
+    "pipinstall",
+    "install",
+)
+_FORBIDDEN_INPUT_TOKENS = ("command", "cmd", "script", "python", "shell", "subprocess", "exec")
+_PATHLIKE_INPUT_TOKENS = ("path", "file", "filename", "directory", "dir", "folder", "prefix", "output", "input")
 
 
 @dataclass(frozen=True)
@@ -42,6 +63,7 @@ class WorkflowAdmissionService:
             for class_name in record.required_classes:
                 if class_name not in object_info:
                     findings.append(AdmissionFinding("OBJECT_INFO_CLASS_MISSING", f"ComfyUI object_info missing {class_name}"))
+        findings.extend(self._static_workflow_findings(record))
         admitted = not findings and record.implemented and record.dependency_verified and bool(record.api_graph_path)
         return AdmissionResult(archetype_id=archetype_id, admitted_for_local_execution=admitted, findings=findings)
 
@@ -70,3 +92,88 @@ class WorkflowAdmissionService:
         if record.publicly_enabled:
             findings.append(AdmissionFinding("PUBLIC_ENABLEMENT_FORBIDDEN", "Public enablement must remain false in local pre-QA build"))
         return findings
+
+    def _static_workflow_findings(self, record: CanonicalWorkflowRecord) -> list[AdmissionFinding]:
+        if record.api_graph_path is None:
+            return []
+        path = Path(record.api_graph_path)
+        if not path.is_file():
+            return []
+        try:
+            workflow = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return [AdmissionFinding("WORKFLOW_STATIC_SCAN_FAILED", f"Workflow API graph unreadable: {exc}")]
+        findings: list[AdmissionFinding] = []
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict):
+                continue
+            class_type = str(node.get("class_type") or "")
+            class_lower = class_type.lower().replace("_", "")
+            if any(token in class_lower for token in _FORBIDDEN_CLASS_TOKENS):
+                findings.append(
+                    AdmissionFinding(
+                        "FORBIDDEN_WORKFLOW_NODE",
+                        f"Node {node_id} class {class_type} appears to execute scripts, commands, downloads, installs, or URLs",
+                    )
+                )
+            inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+            for input_name, value in inputs.items():
+                findings.extend(self._scan_input_value(str(node_id), class_type, str(input_name), value))
+        return findings
+
+    def _scan_input_value(self, node_id: str, class_type: str, input_name: str, value: Any) -> list[AdmissionFinding]:
+        findings: list[AdmissionFinding] = []
+        lowered_name = input_name.lower()
+        if isinstance(value, str):
+            lowered_value = value.strip().lower()
+            if any(token in lowered_name for token in _FORBIDDEN_INPUT_TOKENS):
+                findings.append(
+                    AdmissionFinding(
+                        "FORBIDDEN_WORKFLOW_INPUT",
+                        f"Node {node_id} {class_type}.{input_name} is a command/script execution input",
+                    )
+                )
+            if "url" in lowered_name or lowered_value.startswith(("http://", "https://")) or "://" in lowered_value:
+                findings.append(
+                    AdmissionFinding(
+                        "FORBIDDEN_WORKFLOW_URL",
+                        f"Node {node_id} {class_type}.{input_name} contains a workflow-provided URL",
+                    )
+                )
+            if any(token in lowered_name for token in _PATHLIKE_INPUT_TOKENS):
+                path_error = self._unmanaged_path_error(input_name, value)
+                if path_error:
+                    findings.append(
+                        AdmissionFinding(
+                            "UNMANAGED_WORKFLOW_PATH",
+                            f"Node {node_id} {class_type}.{input_name} contains an unmanaged path: {path_error}",
+                        )
+                    )
+        elif isinstance(value, list):
+            for item in value:
+                findings.extend(self._scan_input_value(node_id, class_type, input_name, item))
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                findings.extend(self._scan_input_value(node_id, class_type, f"{input_name}.{key}", item))
+        return findings
+
+    @staticmethod
+    def _unmanaged_path_error(input_name: str, value: str) -> str | None:
+        raw = value.strip()
+        if not raw:
+            return None
+        lowered_name = input_name.lower()
+        if "filename_prefix" in lowered_name:
+            try:
+                sanitize_comfy_output_prefix(raw)
+                return None
+            except UnsafePathError as exc:
+                return str(exc)
+        if "\\" in raw or ":" in raw:
+            return "backslash and drive-like path components are not allowed"
+        path = PurePosixPath(raw)
+        if path.is_absolute():
+            return "absolute paths are not allowed"
+        if any(part in {".", ".."} for part in path.parts):
+            return "relative traversal components are not allowed"
+        return None

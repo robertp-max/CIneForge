@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 import httpx
@@ -62,6 +62,7 @@ class WorkerSubmissionContext:
     client_id: str
     object_info_cache: ObjectInfoCacheService
     gpu_lease_id: UUID | None = None
+    submission_mode: Literal["queue_worker", "hardware_operator"] = "queue_worker"
 
 
 @dataclass(frozen=True)
@@ -95,9 +96,12 @@ class ControlledComfySubmissionService:
         if self.submission_adapter is None:
             raise ControlledSubmissionError("Controlled submission adapter is not configured")
 
-        gate_error = self._submission_gate_error()
-        if gate_error is not None:
-            return self._mark_preflight_blocked(db, context, "operator_gate_disabled", gate_error)
+        gate_failure = self._submission_gate_failure(context)
+        if gate_failure is not None:
+            gate_code, gate_error = gate_failure
+            if context.gpu_lease_id is not None and self._gpu_lease_error(db, context) is None:
+                self._release_context_gpu_lease(db, context, "controlled submission gate disabled")
+            return self._mark_preflight_blocked(db, context, gate_code, gate_error)
 
         lease_error = self._gpu_lease_error(db, context)
         if lease_error is not None:
@@ -237,13 +241,22 @@ class ControlledComfySubmissionService:
             errors=[],
         )
 
-    def _submission_gate_error(self) -> str | None:
-        if self.settings.hardware_operator_enabled or self.settings.queue_worker_enabled:
-            return None
-        return (
-            "Controlled ComfyUI submission requires CINEFORGE_HARDWARE_OPERATOR_ENABLED=true "
-            "or CINEFORGE_QUEUE_WORKER_ENABLED=true; public submission remains disabled."
-        )
+    def _submission_gate_failure(self, context: WorkerSubmissionContext) -> tuple[str, str] | None:
+        if context.submission_mode == "hardware_operator":
+            if self.settings.hardware_operator_enabled:
+                return None
+            return (
+                "hardware_operator_gate_disabled",
+                "Hardware-operator ComfyUI submission requires CINEFORGE_HARDWARE_OPERATOR_ENABLED=true; public submission remains disabled.",
+            )
+        if context.submission_mode == "queue_worker":
+            if self.settings.queue_worker_enabled:
+                return None
+            return (
+                "queue_worker_gate_disabled",
+                "Queue-worker ComfyUI submission requires CINEFORGE_QUEUE_WORKER_ENABLED=true; public submission remains disabled.",
+            )
+        return ("submission_mode_invalid", f"Unsupported submission mode: {context.submission_mode}")
 
     def _gpu_lease_error(self, db: Session, context: WorkerSubmissionContext) -> str | None:
         if context.gpu_lease_id is None:
@@ -264,6 +277,31 @@ class ControlledComfySubmissionService:
         if lease.workload_id not in allowed_workload_ids:
             return f"GPU lease {context.gpu_lease_id} is not bound to job {context.job_id}."
         return None
+
+    def _release_context_gpu_lease(self, db: Session, context: WorkerSubmissionContext, reason: str) -> None:
+        if context.gpu_lease_id is None:
+            return
+        lease = db.get(GpuResourceLease, context.gpu_lease_id)
+        if lease is None or lease.status != "active":
+            return
+        now = datetime.now(UTC)
+        lease.status = "released"
+        lease.released_at = now
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=context.job_id,
+                action="gpu_lease_released",
+                details={
+                    "reason": reason,
+                    "actor": "worker",
+                    "worker_id": context.worker_id,
+                    "gpu_lease_id": str(context.gpu_lease_id),
+                    "status": "preflight_blocked",
+                },
+            )
+        )
+        db.commit()
 
     def _mark_preflight_blocked(
         self,
