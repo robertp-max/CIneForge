@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 import pytest
 
@@ -45,6 +47,17 @@ def _payload() -> dict:
         "fps": 24,
         "output_path": "delivery/final.mp4",
     }
+
+
+def _recipe_command_manifest(store: PostProductionPlanStore):
+    result = store.service.ffmpeg.build_audio_mux_command(
+        "video.mp4",
+        "mix.wav",
+        "delivery/final.mp4",
+        video_sha256="b" * 64,
+        audio_sha256="c" * 64,
+    )
+    return store.create_from_recipe_command(result)
 
 
 def test_local_post_production_plan_route_creates_lists_and_gets_offline_manifest(monkeypatch, tmp_path: Path):
@@ -101,7 +114,67 @@ def test_local_post_production_plan_route_rejects_invalid_hash_and_unsafe_path(m
     assert store.list() == []
 
 
+def test_local_post_production_recipe_command_routes_list_and_get_persisted_manifests(monkeypatch, tmp_path: Path):
+    store = _store(tmp_path)
+    monkeypatch.setattr("backend.app.api.routes.local_post_production._store", lambda: store)
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("recipe command read routes must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.post_production.subprocess.run", forbidden_run)
+    manifest = _recipe_command_manifest(store)
+    client = TestClient(app)
+
+    list_response = client.get("/local-post-production/recipe-commands")
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert [item["plan_id"] for item in listed] == [str(manifest.plan_id)]
+    assert listed[0]["state"] == "planned_offline"
+    assert listed[0]["execution_submitted"] is False
+    assert listed[0]["command_template_id"] == "audio_mux_v1"
+    assert listed[0]["command"] == manifest.command
+    assert listed[0]["input_hashes"] == ["b" * 64, "c" * 64]
+
+    get_response = client.get(f"/local-post-production/recipe-commands/{manifest.plan_id}")
+    assert get_response.status_code == 200
+    assert get_response.json() == listed[0]
+
+
+def test_local_post_production_recipe_command_routes_handle_invalid_and_missing_ids_consistently(
+    monkeypatch,
+    tmp_path: Path,
+):
+    store = _store(tmp_path)
+    monkeypatch.setattr("backend.app.api.routes.local_post_production._store", lambda: store)
+    client = TestClient(app)
+
+    invalid = client.get("/local-post-production/recipe-commands/not-a-uuid")
+    assert invalid.status_code == 422
+
+    missing = client.get(f"/local-post-production/recipe-commands/{uuid4()}")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Post-production recipe command plan not found."
+
+
 def test_local_post_production_routes_do_not_expose_execution_endpoint():
     paths = {route.path for route in app.routes}
+    method_paths = {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+    recipe_command_methods = {
+        method
+        for method, path in method_paths
+        if path.startswith("/local-post-production/recipe-commands")
+    }
+
     assert "/local-post-production/execute" not in paths
     assert "/local-post-production/plans/{plan_id}/execute" not in paths
+    assert not any(
+        path.startswith("/local-post-production/recipe-commands") and "execute" in path
+        for path in paths
+    )
+    assert recipe_command_methods == {"GET"}
+    assert ("POST", "/local-post-production/recipe-commands") not in method_paths

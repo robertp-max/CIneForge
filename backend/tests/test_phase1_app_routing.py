@@ -102,6 +102,8 @@ REQUIRED_METHOD_PATHS = {
     ("POST", "/local-post-production/plans"),
     ("GET", "/local-post-production/plans"),
     ("GET", "/local-post-production/plans/{plan_id}"),
+    ("GET", "/local-post-production/recipe-commands"),
+    ("GET", "/local-post-production/recipe-commands/{plan_id}"),
     ("GET", "/local-presets/catalog"),
     ("GET", "/local-presets"),
     ("GET", "/local-presets/{preset_id}"),
