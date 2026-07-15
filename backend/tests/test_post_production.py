@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -197,9 +198,14 @@ def test_post_production_plan_store_persists_generic_recipe_command_manifest_wit
         raise AssertionError("recipe command manifest creation must not execute FFmpeg")
 
     monkeypatch.setattr("backend.app.services.post_production.subprocess.run", forbidden_run)
+    monkeypatch.setattr("backend.app.services.ffmpeg.service.subprocess.run", forbidden_run)
     store = PostProductionPlanStore(root=tmp_path / "plans", service=PostProductionService(ffmpeg))
+    input_probe_jsons = [
+        {"streams": [{"codec_type": "video", "codec_name": "h264"}], "format": {"filename": "video.mp4"}},
+        {"streams": [{"codec_type": "audio", "codec_name": "pcm_s16le"}], "format": {"filename": "mix.wav"}},
+    ]
 
-    manifest = store.create_from_recipe_command(command_result)
+    manifest = store.create_from_recipe_command(command_result, input_probe_jsons=input_probe_jsons)
 
     assert manifest.state == "planned_offline"
     assert manifest.execution_submitted is False
@@ -207,6 +213,8 @@ def test_post_production_plan_store_persists_generic_recipe_command_manifest_wit
     assert manifest.command == command_result.command
     assert [str(path) for path in manifest.input_paths] == command_result.input_paths
     assert manifest.input_hashes == ["b" * 64, "c" * 64]
+    assert manifest.input_probe_jsons == input_probe_jsons
+    assert manifest.input_probe_count == 2
     assert str(manifest.output_path) == command_result.output_path
     assert manifest.output_sha256 is None
     assert manifest.final_probe_json is None
@@ -214,8 +222,11 @@ def test_post_production_plan_store_persists_generic_recipe_command_manifest_wit
     assert manifest.manifest_path == tmp_path / "plans" / "recipe_commands" / f"{manifest.plan_id}.json"
     assert manifest.manifest_path.is_file()
     assert (tmp_path / "plans" / "recipe_commands" / "events.jsonl").is_file()
+    assert json.loads(manifest.manifest_path.read_text(encoding="utf-8"))["input_probe_jsons"] == input_probe_jsons
     assert store.get_recipe_command(manifest.plan_id) == manifest
+    assert store.get_recipe_command(manifest.plan_id).input_probe_count == 2
     assert store.list_recipe_commands()[0].plan_id == manifest.plan_id
+    assert store.list_recipe_commands()[0].input_probe_jsons == input_probe_jsons
     assert store.list() == []
 
 
@@ -338,6 +349,17 @@ def test_post_production_plan_store_rejects_invalid_generic_recipe_manifest(tmp_
                 input_paths=[str(tmp_path / "clip_a.mp4")],
                 input_hashes=[],
             )
+        )
+
+    with pytest.raises(ValidationError, match="one input probe per input path"):
+        store.create_from_recipe_command(
+            RecipeCommandBuildResult(
+                command_template_id="decode_validate_v1",
+                command=["ffmpeg", "-v", "error"],
+                input_paths=[str(tmp_path / "clip_a.mp4")],
+                input_hashes=["a" * 64],
+            ),
+            input_probe_jsons=[],
         )
 
     with pytest.raises(ValidationError, match="structured command array"):

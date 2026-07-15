@@ -81,6 +81,8 @@ class PostProductionRecipeCommandManifest(BaseModel):
     command: list[str] = Field(min_length=1)
     input_paths: list[Path] = Field(min_length=1)
     input_hashes: list[str] = Field(min_length=1)
+    input_probe_jsons: list[dict[str, Any]] | None = None
+    input_probe_count: int = Field(default=0, ge=0)
     output_path: Path | None = None
     execution_submitted: bool = False
     output_sha256: str | None = None

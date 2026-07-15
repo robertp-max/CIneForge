@@ -57,7 +57,13 @@ def _recipe_command_manifest(store: PostProductionPlanStore):
         video_sha256="b" * 64,
         audio_sha256="c" * 64,
     )
-    return store.create_from_recipe_command(result)
+    return store.create_from_recipe_command(
+        result,
+        input_probe_jsons=[
+            {"streams": [{"codec_type": "video", "codec_name": "h264"}]},
+            {"streams": [{"codec_type": "audio", "codec_name": "pcm_s16le"}]},
+        ],
+    )
 
 
 def test_local_post_production_plan_route_creates_lists_and_gets_offline_manifest(monkeypatch, tmp_path: Path):
@@ -134,6 +140,8 @@ def test_local_post_production_recipe_command_routes_list_and_get_persisted_mani
     assert listed[0]["command_template_id"] == "audio_mux_v1"
     assert listed[0]["command"] == manifest.command
     assert listed[0]["input_hashes"] == ["b" * 64, "c" * 64]
+    assert listed[0]["input_probe_count"] == 2
+    assert listed[0]["input_probe_jsons"] == manifest.input_probe_jsons
 
     get_response = client.get(f"/local-post-production/recipe-commands/{manifest.plan_id}")
     assert get_response.status_code == 200

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter
@@ -97,7 +98,12 @@ class PostProductionPlanStore:
             raise not_found("Post-production plan not found.")
         return _MANIFEST_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
 
-    def create_from_recipe_command(self, result: RecipeCommandBuildResult) -> PostProductionRecipeCommandManifest:
+    def create_from_recipe_command(
+        self,
+        result: RecipeCommandBuildResult,
+        *,
+        input_probe_jsons: list[dict[str, Any]] | None = None,
+    ) -> PostProductionRecipeCommandManifest:
         self.service.ffmpeg.validate_command_template_id(result.command_template_id)
         if not result.command:
             raise ValidationError("Recipe command manifest requires a structured command array")
@@ -107,10 +113,17 @@ class PostProductionPlanStore:
             raise ValidationError("Recipe command manifest requires at least one input path")
         if len(result.input_paths) != len(result.input_hashes):
             raise ValidationError("Recipe command manifest requires one input hash per input path")
+        if input_probe_jsons is not None and len(input_probe_jsons) != len(result.input_paths):
+            raise ValidationError(
+                "Recipe command manifest requires one input probe per input path when probes are provided"
+            )
         input_hashes = [validate_sha256_hex(value) for value in result.input_hashes]
         input_paths = [self._resolve_recipe_command_path(path) for path in result.input_paths]
         output_path = (
             self._resolve_recipe_command_path(result.output_path) if result.output_path is not None else None
+        )
+        persisted_input_probe_jsons = (
+            [dict(probe) for probe in input_probe_jsons] if input_probe_jsons is not None else None
         )
 
         plan_id = uuid4()
@@ -123,6 +136,8 @@ class PostProductionPlanStore:
             command=list(result.command),
             input_paths=input_paths,
             input_hashes=input_hashes,
+            input_probe_jsons=persisted_input_probe_jsons,
+            input_probe_count=len(persisted_input_probe_jsons) if persisted_input_probe_jsons is not None else 0,
             output_path=output_path,
         )
         self._write_recipe_command_manifest(manifest)
