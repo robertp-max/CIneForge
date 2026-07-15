@@ -7,9 +7,11 @@ from fastapi import APIRouter, HTTPException, status
 from backend.app.core.config import get_settings
 from backend.app.core.errors import ValidationError
 from backend.app.schemas.benchmark_ladder import BenchmarkLadderManifest
+from backend.app.schemas.ffmpeg_recipes import FFmpegCommandTemplateRecord
 from backend.app.schemas.local_runtime import LocalRuntimeCatalog, OutputPolicy
 from backend.app.schemas.local_runtime_evidence import LocalRuntimeEvidence
 from backend.app.schemas.local_runtime_m4 import M4HardwarePreflightReport
+from backend.app.services.ffmpeg.service import ffmpeg_command_template_catalog
 from backend.app.services.local_runtime import local_runtime_catalog, output_policy
 from backend.app.services.local_runtime_evidence import LocalRuntimeEvidenceService
 from backend.app.services.local_runtime_m4 import M4HardwarePreflightService
@@ -37,6 +39,11 @@ def list_local_runtime_evidence() -> list[LocalRuntimeEvidence]:
 @router.get("/m4-preflight", response_model=M4HardwarePreflightReport)
 def get_m4_hardware_preflight() -> M4HardwarePreflightReport:
     return M4HardwarePreflightService(get_settings()).report()
+
+
+@router.get("/ffmpeg-recipes", response_model=list[FFmpegCommandTemplateRecord])
+def list_ffmpeg_recipes() -> list[FFmpegCommandTemplateRecord]:
+    return ffmpeg_command_template_catalog()
 
 
 @router.get("/m4-ladder", response_model=BenchmarkLadderManifest)

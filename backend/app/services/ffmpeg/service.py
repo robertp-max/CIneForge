@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.app.core.config import get_settings
 from backend.app.core.errors import UnsafePathError, ValidationError
+from backend.app.schemas.ffmpeg_recipes import FFmpegCommandTemplateRecord
 from backend.app.utils.path_safety import reject_path_traversal, resolve_inside
 
 
@@ -19,6 +20,27 @@ APPROVED_COMMAND_TEMPLATES = {
     "captions_srt_mux_v1": "mux reviewed captions/subtitles into a delivery file",
     "audio_loudness_normalize_v1": "EBU R128-style audio loudness normalization",
     "decode_validate_v1": "full decode validation to null sink",
+}
+
+_COMMAND_TEMPLATE_METADATA = {
+    "concat_stream_copy_v1": {
+        "category": "assembly",
+        "requires_probe_before_stream_copy": True,
+        "notes": "Allowed only when stored probe signatures prove stream-copy compatibility.",
+    },
+    "normalize_mezzanine_prores_v1": {"category": "normalization"},
+    "normalize_delivery_h264_v1": {"category": "normalization"},
+    "assemble_exact_duration_h264_v1": {
+        "category": "assembly",
+        "notes": "Used by CF-POST-01 deterministic exact-duration assembly planning.",
+    },
+    "captions_srt_mux_v1": {"category": "captions"},
+    "audio_loudness_normalize_v1": {"category": "audio"},
+    "decode_validate_v1": {
+        "category": "validation",
+        "requires_input_hashes": False,
+        "notes": "Validation recipe; still must use structured arguments and managed paths.",
+    },
 }
 
 
@@ -79,6 +101,23 @@ def generate_concat_manifest(paths: list[Path]) -> str:
         text = str(path).replace("\\", "/").replace("'", "'\\''")
         lines.append(f"file '{text}'")
     return "\n".join(lines) + "\n"
+
+
+def ffmpeg_command_template_catalog() -> list[FFmpegCommandTemplateRecord]:
+    records: list[FFmpegCommandTemplateRecord] = []
+    for template_id, description in sorted(APPROVED_COMMAND_TEMPLATES.items()):
+        metadata = _COMMAND_TEMPLATE_METADATA.get(template_id, {})
+        records.append(
+            FFmpegCommandTemplateRecord(
+                template_id=template_id,
+                description=description,
+                category=str(metadata.get("category") or "other"),
+                requires_input_hashes=bool(metadata.get("requires_input_hashes", True)),
+                requires_probe_before_stream_copy=bool(metadata.get("requires_probe_before_stream_copy", False)),
+                notes=metadata.get("notes"),
+            )
+        )
+    return records
 
 
 class FFmpegService:
