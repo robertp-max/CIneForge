@@ -305,6 +305,8 @@ Likely files:
 
 **Exit gate:** mocked end-to-end job completes with provenance; all terminal paths release the lease; direct/lease-less adapter bypass tests fail closed; the operator gate is proven; recovery and next-job tests pass.
 
+**Implementation status 2026-07-15:** M3 mocked controlled-runtime plumbing is implemented and remains offline-only. The backend has worker-only prompt submission and runtime-control permits, separated default-off `queue_worker_enabled`/`hardware_operator_enabled` gates, worker GPU lease acquire/heartbeat/bind/release helpers, static workflow security scanning enforced at submission readiness, progress/event persistence, mocked history/view/output collection, terminal timeout/interrupt/cancel wrappers, stale-reservation recovery, mocked runtime process recovery hooks, and a mocked end-to-end lifecycle test that submits, tracks, collects provenance, and releases the lease without touching live ComfyUI. Public `/prompt` and raw Comfy proxy routes remain absent. Full backend validation at checkpoint `230f9b6` passed with `486 passed, 9 skipped`; no live ComfyUI/GPU/render/benchmark action was run. M4 remains blocked until explicit operator approval for the hardware-operator-only probe path and serialized hardware ladder.
+
 ### M4 — Admit the first graphs and run the serialized hardware ladder
 
 **Purpose:** prove the architecture with only `CF-VID-01` and `CF-IMG-01`. M4 executes ladder Stages 0–3 and the controlled Stage 7 recovery exercise only; Stages 4–6 belong to separately admitted M6 archetypes.
