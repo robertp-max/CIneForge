@@ -20,12 +20,15 @@ from backend.app.schemas.post_production import (
     PostProductionPlanErrorRecord,
     PostProductionPlanManifest,
     PostProductionPlanSuccessRecord,
+    PostProductionRecipeCommandManifest,
 )
 from backend.app.schemas.production import FFmpegAssemblyPlan
-from backend.app.services.ffmpeg.service import validate_sha256_hex
+from backend.app.services.ffmpeg.service import RecipeCommandBuildResult, validate_sha256_hex
 from backend.app.services.post_production import PostProductionService
+from backend.app.utils.path_safety import resolve_inside
 
 _MANIFEST_ADAPTER = TypeAdapter(PostProductionPlanManifest)
+_RECIPE_COMMAND_MANIFEST_ADAPTER = TypeAdapter(PostProductionRecipeCommandManifest)
 
 
 class PostProductionPlanStore:
@@ -38,6 +41,8 @@ class PostProductionPlanStore:
         self.settings = settings or get_settings()
         self.root = root or (self.settings.storage_root / "post_production_plans")
         self.audit_path = self.root / "events.jsonl"
+        self.recipe_command_root = self.root / "recipe_commands"
+        self.recipe_command_audit_path = self.recipe_command_root / "events.jsonl"
         self.service = service or PostProductionService()
 
     def create_from_request(self, request: PostProductionAssemblyPlanCreate) -> PostProductionPlanManifest:
@@ -89,6 +94,62 @@ class PostProductionPlanStore:
         if not path.is_file():
             raise not_found("Post-production plan not found.")
         return _MANIFEST_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
+
+    def create_from_recipe_command(self, result: RecipeCommandBuildResult) -> PostProductionRecipeCommandManifest:
+        self.service.ffmpeg.validate_command_template_id(result.command_template_id)
+        if not result.command:
+            raise ValidationError("Recipe command manifest requires a structured command array")
+        if any(not isinstance(argument, str) or argument == "" for argument in result.command):
+            raise ValidationError("Recipe command manifest command arguments must be non-empty strings")
+        if not result.input_paths:
+            raise ValidationError("Recipe command manifest requires at least one input path")
+        if len(result.input_paths) != len(result.input_hashes):
+            raise ValidationError("Recipe command manifest requires one input hash per input path")
+        input_hashes = [validate_sha256_hex(value) for value in result.input_hashes]
+        input_paths = [self._resolve_recipe_command_path(path) for path in result.input_paths]
+        output_path = (
+            self._resolve_recipe_command_path(result.output_path) if result.output_path is not None else None
+        )
+
+        plan_id = uuid4()
+        manifest_path = self.recipe_command_root / f"{plan_id}.json"
+        manifest = PostProductionRecipeCommandManifest(
+            plan_id=plan_id,
+            created_at=datetime.now(UTC),
+            manifest_path=manifest_path,
+            command_template_id=result.command_template_id,
+            command=list(result.command),
+            input_paths=input_paths,
+            input_hashes=input_hashes,
+            output_path=output_path,
+        )
+        self._write_recipe_command_manifest(manifest)
+        self._append_recipe_command_event(
+            {
+                "event": "post_production_recipe_command_plan_created",
+                "plan_id": str(plan_id),
+                "command_template_id": result.command_template_id,
+                "execution_submitted": False,
+                "created_at": manifest.created_at.isoformat(),
+            }
+        )
+        return manifest
+
+    def get_recipe_command(self, plan_id: UUID) -> PostProductionRecipeCommandManifest:
+        path = self.recipe_command_root / f"{plan_id}.json"
+        if not path.is_file():
+            raise not_found("Post-production recipe command plan not found.")
+        return _RECIPE_COMMAND_MANIFEST_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
+
+    def list_recipe_commands(self, limit: int = 25) -> list[PostProductionRecipeCommandManifest]:
+        if limit < 1 or not self.recipe_command_root.is_dir():
+            return []
+        manifests: list[PostProductionRecipeCommandManifest] = []
+        for path in sorted(self.recipe_command_root.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if len(manifests) >= limit:
+                break
+            manifests.append(_RECIPE_COMMAND_MANIFEST_ADAPTER.validate_json(path.read_text(encoding="utf-8")))
+        return manifests
 
     def list(self, limit: int = 25) -> list[PostProductionPlanManifest]:
         if limit < 1 or not self.root.is_dir():
@@ -162,8 +223,23 @@ class PostProductionPlanStore:
         )
         return updated
 
+    def _resolve_recipe_command_path(self, path: str | Path) -> Path:
+        candidate = Path(path)
+        return resolve_inside(
+            self.service.ffmpeg.storage_root,
+            candidate,
+            allow_absolute=self.service.ffmpeg.settings.allow_absolute_input_paths or candidate.is_absolute(),
+        )
+
     def _write_manifest(self, manifest: PostProductionPlanManifest) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        payload = manifest.model_dump(mode="json")
+        temp_path = manifest.manifest_path.with_suffix(".json.tmp")
+        temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        temp_path.replace(manifest.manifest_path)
+
+    def _write_recipe_command_manifest(self, manifest: PostProductionRecipeCommandManifest) -> None:
+        self.recipe_command_root.mkdir(parents=True, exist_ok=True)
         payload = manifest.model_dump(mode="json")
         temp_path = manifest.manifest_path.with_suffix(".json.tmp")
         temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
@@ -172,4 +248,9 @@ class PostProductionPlanStore:
     def _append_event(self, event: dict) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         with self.audit_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, sort_keys=True) + "\n")
+
+    def _append_recipe_command_event(self, event: dict) -> None:
+        self.recipe_command_root.mkdir(parents=True, exist_ok=True)
+        with self.recipe_command_audit_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, sort_keys=True) + "\n")

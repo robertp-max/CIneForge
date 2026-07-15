@@ -54,3 +54,21 @@ class PostProductionPlanManifest(BaseModel):
     final_probe_json: dict[str, Any] | None = None
     error_message: str | None = None
     plan: FFmpegAssemblyPlan
+
+
+class PostProductionRecipeCommandManifest(BaseModel):
+    plan_id: UUID
+    state: str = "planned_offline"
+    created_at: datetime
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
+    manifest_path: Path
+    command_template_id: str
+    command: list[str] = Field(min_length=1)
+    input_paths: list[Path] = Field(min_length=1)
+    input_hashes: list[str] = Field(min_length=1)
+    output_path: Path | None = None
+    execution_submitted: bool = False
+    output_sha256: str | None = None
+    final_probe_json: dict[str, Any] | None = None
+    error: str | None = None
