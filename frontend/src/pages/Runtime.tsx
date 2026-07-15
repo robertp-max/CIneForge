@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   api,
+  type BenchmarkLadderManifest,
   type LocalArchetype,
   type LocalM4PreflightReport,
   type LocalPreset,
@@ -27,6 +28,7 @@ export function Runtime() {
   const [localArchetypes, setLocalArchetypes] = useState<LocalArchetype[]>([])
   const [localEvidence, setLocalEvidence] = useState<LocalRuntimeEvidence[]>([])
   const [m4Preflight, setM4Preflight] = useState<LocalM4PreflightReport | null>(null)
+  const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,13 +39,14 @@ export function Runtime() {
       setLoading(true)
       setError(null)
       try {
-        const [status, catalog, presets, archetypes, evidence, preflight] = await Promise.all([
+        const [status, catalog, presets, archetypes, evidence, preflight, ladder] = await Promise.all([
           api.runtimeStatus(),
           api.localRuntimeCatalog(),
           api.listLocalPresets(),
           api.listLocalArchetypes(),
           api.listLocalRuntimeEvidence(),
           api.localM4Preflight(),
+          api.localM4Ladder(),
         ])
         if (!cancelled) {
           setRuntime(status)
@@ -52,6 +55,7 @@ export function Runtime() {
           setLocalArchetypes(archetypes)
           setLocalEvidence(evidence)
           setM4Preflight(preflight)
+          setM4Ladder(ladder)
         }
       } catch (err) {
         if (!cancelled) {
@@ -196,6 +200,38 @@ export function Runtime() {
                 <p>{check.message}</p>
               </div>
               <StatusBadge status={check.passed ? 'passed' : 'blocked'} />
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>M4 Serialized Ladder</h2>
+          <span>{m4Ladder ? m4Ladder.allowed_stage_numbers.join(' → ') : 'loading'}</span>
+        </div>
+        <p>
+          {m4Ladder?.name ?? 'Loading read-only ladder manifest...'} {m4Ladder ? `Hardware: ${m4Ladder.hardware_profile}.` : ''}
+        </p>
+        <p className="mono">
+          deferred stages: {m4Ladder?.deferred_stage_numbers.join(', ') ?? 'loading'}; public generation:{' '}
+          {m4Ladder?.public_generation_enabled ? 'enabled' : 'disabled'}; serial:{' '}
+          {m4Ladder?.requires_serial_execution ? 'required' : 'not required'}
+        </p>
+        <div className="disabled-action-grid">
+          {m4Ladder?.stages.map((stage) => (
+            <article key={stage.stage_id} className="disabled-action">
+              <div>
+                <strong>Stage {stage.stage}: {stage.workload}</strong>
+                <p>{stage.minimum_pass_condition}</p>
+                <p className="mono">
+                  {stage.profile ? `${stage.profile}; ` : ''}
+                  {[stage.width, stage.height].every(Boolean) ? `${stage.width}x${stage.height}; ` : ''}
+                  {stage.frames ? `${stage.frames}f; ` : ''}
+                  {stage.requires_stage_success.length ? `after ${stage.requires_stage_success.join(', ')}` : 'no prerequisite stage'}
+                </p>
+              </div>
+              <StatusBadge status={stage.live_action_approved ? 'approved' : stage.status} />
             </article>
           ))}
         </div>

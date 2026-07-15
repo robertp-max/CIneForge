@@ -222,6 +222,43 @@ export type LocalM4PreflightReport = {
   safety_note: string
 }
 
+export type BenchmarkLadderStage = {
+  stage: number
+  stage_id: string
+  workload: string
+  minimum_pass_condition: string
+  archetypes: string[]
+  profile: string | null
+  width: number | null
+  height: number | null
+  frames: number | null
+  steps: number | null
+  status: string
+  requires_operator_approval: boolean
+  requires_hardware_operator_mode: boolean
+  requires_exclusive_gpu_lease: boolean
+  requires_queue_empty_before: boolean
+  live_action_approved: boolean
+  public_generation_enabled: boolean
+  requires_stage_success: number[]
+}
+
+export type BenchmarkLadderManifest = {
+  ladder_id: string
+  phase: 'M4'
+  name: string
+  hardware_profile: string
+  archetypes_in_scope: string[]
+  allowed_stage_numbers: number[]
+  deferred_stage_numbers: number[]
+  public_generation_enabled: boolean
+  queue_worker_general_execution_enabled: boolean
+  requires_serial_execution: boolean
+  requires_hardware_operator_mode: boolean
+  stages: BenchmarkLadderStage[]
+  evidence_note: string
+}
+
 export type LocalJobCreatePayload = {
   project_key: string
   run_stem: string
@@ -1597,6 +1634,7 @@ export const api = {
   localOutputPolicy: () => request<LocalRuntimeCatalog['output_policy']>('/local-runtime/output-policy'),
   listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
+  localM4Ladder: () => request<BenchmarkLadderManifest>('/local-runtime/m4-ladder'),
   listLocalPresets: () => request<LocalPreset[]>('/local-presets'),
   listLocalArchetypes: () => request<LocalArchetype[]>('/local-archetypes'),
   listLocalJobs: (limit = 25) => request<LocalJobManifest[]>(`/local-jobs?limit=${limit}`),
