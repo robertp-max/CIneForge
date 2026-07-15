@@ -341,6 +341,8 @@ Record cold/warm duration, queue wait, peak dedicated/shared memory, peak RAM, t
 
 **Stop rule:** if Stage 0 or 1 fails twice after approved recovery adjustments, block LTX video expansion and return the decision to the GPT-5.5 orchestrator.
 
+**Implementation status 2026-07-15:** M4 remains non-executing and blocked by default. `GET /local-runtime/m4-preflight` now reports a read-only hardware-operator preflight gate that requires public generation disabled, general queue-worker execution disabled, `CINEFORGE_HARDWARE_OPERATOR_ENABLED=true`, `CINEFORGE_M4_HARDWARE_PROBE_APPROVED=true`, CF-VID-01 smoke evidence, queue-empty smoke evidence, and a valid serialized ladder manifest. `storage/benchmark_ladders/m4_cf_vid01_ladder.json` and `GET /local-runtime/m4-ladder` define only stages 0, 1, 2, 3, and 7 for `CF-VID-01`, explicitly defer stages 4–6, keep every stage `live_action_approved=false`, and expose this state in the Runtime UI. These additions do not run ComfyUI, acquire a GPU lease, submit prompts, render media, benchmark, mutate runtime, or approve hardware execution.
+
 ### M5 — Deterministic `CF-POST-01`
 
 **Purpose:** provide safe post-production independently of model viability.
