@@ -7,9 +7,10 @@ import subprocess
 from pathlib import Path
 from typing import Iterable
 
-from backend.app.core.errors import ValidationError
+from backend.app.core.errors import UnsafePathError, ValidationError
 from backend.app.schemas.production import AspectRatio, FFmpegAssemblyInput, FFmpegAssemblyPlan, GeometryProfile
 from backend.app.services.ffmpeg.service import FFmpegService, sha256_file
+from backend.app.utils.path_safety import resolve_inside
 
 
 class PostProductionService:
@@ -36,10 +37,13 @@ class PostProductionService:
             )
         input_hashes = []
         for clip in clip_list:
+            safe_clip_path = self._resolve_media_path(clip.path)
             if clip.sha256:
                 input_hashes.append(clip.sha256)
-            elif clip.path.is_file():
-                input_hashes.append(sha256_file(clip.path))
+            elif safe_clip_path.is_file():
+                input_hashes.append(sha256_file(safe_clip_path))
+            else:
+                raise ValidationError(f"Assembly input hash is required and file is missing: {clip.path}")
         return FFmpegAssemblyPlan(
             target_duration_sec=target_duration_sec,
             aspect_ratio=geometry.aspect_ratio,
@@ -57,11 +61,15 @@ class PostProductionService:
         self.ffmpeg.validate_command_template_id(plan.command_template_id)
         if plan.output_path is None:
             raise ValidationError("Assembly output_path is required to build a command")
+        safe_output_path = self._resolve_media_path(plan.output_path)
+        safe_clip_paths = [self._resolve_media_path(clip.path) for clip in plan.clips]
+        if len(plan.input_hashes) != len(plan.clips):
+            raise ValidationError("Assembly plan must include one input hash per clip before command construction")
         # Deterministic concat via normalized intermediate filter graph. This is
         # intentionally an argument array, never a user-authored command string.
         args = ["ffmpeg", "-y"]
-        for clip in plan.clips:
-            args.extend(["-i", str(clip.path)])
+        for clip_path in safe_clip_paths:
+            args.extend(["-i", str(clip_path)])
         filters = []
         concat_inputs = []
         for index, clip in enumerate(plan.clips):
@@ -89,10 +97,20 @@ class PostProductionService:
                 "yuv420p",
                 "-movflags",
                 "+faststart",
-                str(plan.output_path),
+                str(safe_output_path),
             ]
         )
         return args
+
+    def _resolve_media_path(self, path: Path) -> Path:
+        try:
+            return resolve_inside(
+                self.ffmpeg.storage_root,
+                path,
+                allow_absolute=self.ffmpeg.settings.allow_absolute_input_paths,
+            )
+        except UnsafePathError:
+            raise
 
     def execute_assembly(self, plan: FFmpegAssemblyPlan, *, timeout_sec: int = 600) -> dict:
         command = self.build_command(plan)
