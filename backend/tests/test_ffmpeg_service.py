@@ -210,6 +210,116 @@ def test_caption_and_loudness_recipe_builders_are_structured_and_hash_gated(tmp_
         service.build_audio_loudness_normalize_command("../audio.wav", "audio/normalized.m4a", "2" * 64)
 
 
+def test_timing_conform_recipe_builder_is_structured_hash_gated_path_safe_and_non_executing(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "source.mov"
+    source.write_bytes(b"source")
+    service = FFmpegService(storage_root=tmp_path)
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("timing conform command builder must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.ffmpeg.service.subprocess.run", forbidden_run)
+
+    result = service.build_conform_timing_h264_command(
+        "source.mov",
+        "delivery/conformed.mp4",
+        "3" * 64,
+        target_duration_sec=12.5,
+        fps=24,
+        width=1920,
+        height=1080,
+    )
+
+    assert result.command_template_id == "conform_timing_h264_v1"
+    assert result.command[0:2] == ["ffmpeg", "-y"]
+    assert str(source.resolve()) in result.command
+    assert str((tmp_path / "delivery" / "conformed.mp4").resolve()) in result.command
+    assert "-vf" in result.command
+    filter_arg = result.command[result.command.index("-vf") + 1]
+    assert "trim=0:12.500000" in filter_arg
+    assert "fps=24" in filter_arg
+    assert "scale=1920:1080:force_original_aspect_ratio=decrease" in filter_arg
+    assert result.input_hashes == ["3" * 64]
+    assert result.output_path == str((tmp_path / "delivery" / "conformed.mp4").resolve())
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_conform_timing_h264_command(
+            "source.mov",
+            "delivery/conformed.mp4",
+            "bad",
+            target_duration_sec=12.5,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+    with pytest.raises(UnsafePathError):
+        service.build_conform_timing_h264_command(
+            "../source.mov",
+            "delivery/conformed.mp4",
+            "3" * 64,
+            target_duration_sec=12.5,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+    with pytest.raises(UnsafePathError):
+        service.build_conform_timing_h264_command(
+            "source.mov",
+            "../conformed.mp4",
+            "3" * 64,
+            target_duration_sec=12.5,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+    with pytest.raises(ValidationError, match="target_duration_sec"):
+        service.build_conform_timing_h264_command(
+            "source.mov",
+            "delivery/conformed.mp4",
+            "3" * 64,
+            target_duration_sec=0,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+
+
+def test_delivery_packaging_recipe_builder_is_structured_hash_gated_path_safe_and_non_executing(
+    monkeypatch, tmp_path
+):
+    master = tmp_path / "master.mov"
+    master.write_bytes(b"master")
+    service = FFmpegService(storage_root=tmp_path)
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("delivery packaging command builder must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.ffmpeg.service.subprocess.run", forbidden_run)
+
+    result = service.build_delivery_package_mp4_faststart_command("master.mov", "delivery/final.mp4", "4" * 64)
+
+    assert result.command_template_id == "delivery_package_mp4_faststart_v1"
+    assert result.command[0:2] == ["ffmpeg", "-y"]
+    assert str(master.resolve()) in result.command
+    assert "0:a:0?" in result.command
+    assert "libx264" in result.command
+    assert "yuv420p" in result.command
+    assert "+faststart" in result.command
+    assert result.input_hashes == ["4" * 64]
+    assert result.output_path == str((tmp_path / "delivery" / "final.mp4").resolve())
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_delivery_package_mp4_faststart_command("master.mov", "delivery/final.mp4", "bad")
+    with pytest.raises(ValidationError, match=".mp4"):
+        service.build_delivery_package_mp4_faststart_command("master.mov", "delivery/final.mov", "4" * 64)
+    with pytest.raises(UnsafePathError):
+        service.build_delivery_package_mp4_faststart_command("../master.mov", "delivery/final.mp4", "4" * 64)
+    with pytest.raises(UnsafePathError):
+        service.build_delivery_package_mp4_faststart_command("master.mov", "../final.mp4", "4" * 64)
+
+
 def test_ffmpeg_recipe_catalog_is_read_only_and_matches_allowlist():
     catalog = ffmpeg_command_template_catalog()
 

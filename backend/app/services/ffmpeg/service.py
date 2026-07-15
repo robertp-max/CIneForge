@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -17,9 +18,11 @@ APPROVED_COMMAND_TEMPLATES = {
     "normalize_mezzanine_prores_v1": "high quality mezzanine normalization",
     "normalize_delivery_h264_v1": "delivery-compatible H.264 normalization",
     "assemble_exact_duration_h264_v1": "deterministic exact-duration H.264 assembly with trim/scale/pad",
+    "conform_timing_h264_v1": "single-input timing conform to exact duration, frame rate, and delivery geometry",
     "captions_srt_mux_v1": "mux reviewed captions/subtitles into a delivery file",
     "audio_mux_v1": "mux reviewed audio/final mix into a delivery file",
     "audio_loudness_normalize_v1": "EBU R128-style audio loudness normalization",
+    "delivery_package_mp4_faststart_v1": "package a reviewed asset as MP4 with faststart metadata",
     "decode_validate_v1": "full decode validation to null sink",
 }
 
@@ -35,9 +38,11 @@ _COMMAND_TEMPLATE_METADATA = {
         "category": "assembly",
         "notes": "Used by CF-POST-01 deterministic exact-duration assembly planning.",
     },
+    "conform_timing_h264_v1": {"category": "timing_conform"},
     "captions_srt_mux_v1": {"category": "captions"},
     "audio_mux_v1": {"category": "audio"},
     "audio_loudness_normalize_v1": {"category": "audio"},
+    "delivery_package_mp4_faststart_v1": {"category": "delivery_packaging"},
     "decode_validate_v1": {
         "category": "validation",
         "notes": "Validation recipe; still must use structured arguments, input hashes, and managed paths.",
@@ -81,6 +86,22 @@ def validate_sha256_hex(value: str) -> str:
     if len(cleaned) != 64 or any(ch not in "0123456789abcdef" for ch in cleaned):
         raise ValidationError("SHA256 must be a 64-character hexadecimal string")
     return cleaned
+
+
+def _validate_positive_seconds(value: float, field_name: str) -> str:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise ValidationError(f"{field_name} must be a positive finite duration")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValidationError(f"{field_name} must be a positive finite duration")
+    return f"{seconds:.6f}"
+
+
+def _validate_positive_int(value: int, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValidationError(f"{field_name} must be a positive integer")
+    return value
 
 
 def _video_signature(probe: dict[str, Any]) -> tuple:
@@ -368,6 +389,72 @@ class FFmpegService:
             output_path=str(safe_output),
         )
 
+    def build_conform_timing_h264_command(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        input_sha256: str,
+        *,
+        target_duration_sec: float,
+        fps: int,
+        width: int,
+        height: int,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("conform_timing_h264_v1")
+        safe_input = resolve_inside(
+            self.storage_root,
+            input_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        validated_hash = validate_sha256_hex(input_sha256)
+        duration = _validate_positive_seconds(target_duration_sec, "target_duration_sec")
+        safe_fps = _validate_positive_int(fps, "fps")
+        safe_width = _validate_positive_int(width, "width")
+        safe_height = _validate_positive_int(height, "height")
+        video_filter = (
+            f"trim=0:{duration},setpts=PTS-STARTPTS,"
+            f"fps={safe_fps},"
+            f"scale={safe_width}:{safe_height}:force_original_aspect_ratio=decrease,"
+            f"pad={safe_width}:{safe_height}:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1,format=yuv420p"
+        )
+        return RecipeCommandBuildResult(
+            command_template_id="conform_timing_h264_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_input),
+                "-vf",
+                video_filter,
+                "-t",
+                duration,
+                "-r",
+                str(safe_fps),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_input)],
+            input_hashes=[validated_hash],
+            output_path=str(safe_output),
+        )
+
     def build_captions_srt_mux_command(
         self,
         video_path: str | Path,
@@ -452,6 +539,60 @@ class FFmpegService:
                 "aac",
                 "-b:a",
                 "192k",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_input)],
+            input_hashes=[validated_hash],
+            output_path=str(safe_output),
+        )
+
+    def build_delivery_package_mp4_faststart_command(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        input_sha256: str,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("delivery_package_mp4_faststart_v1")
+        safe_input = resolve_inside(
+            self.storage_root,
+            input_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        if safe_output.suffix.lower() != ".mp4":
+            raise ValidationError("Delivery packaging output must be an .mp4 file")
+        validated_hash = validate_sha256_hex(input_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="delivery_package_mp4_faststart_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_input),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0?",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "slow",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-f",
+                "mp4",
                 str(safe_output),
             ],
             input_paths=[str(safe_input)],
