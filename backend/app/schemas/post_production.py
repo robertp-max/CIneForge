@@ -6,9 +6,18 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from backend.app.schemas.production import FFmpegAssemblyPlan
+from backend.app.schemas.production import FFmpegAssemblyInput, FFmpegAssemblyPlan, GeometryProfile
+
+
+class PostProductionAssemblyPlanCreate(BaseModel):
+    clips: list[FFmpegAssemblyInput] = Field(min_length=1)
+    target_duration_sec: float = Field(gt=0)
+    geometry: GeometryProfile
+    fps: int = Field(ge=1, le=120)
+    output_path: Path
+
 
 
 class PostProductionPlanManifest(BaseModel):

@@ -15,7 +15,7 @@ from pydantic import TypeAdapter
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import not_found
-from backend.app.schemas.post_production import PostProductionPlanManifest
+from backend.app.schemas.post_production import PostProductionAssemblyPlanCreate, PostProductionPlanManifest
 from backend.app.schemas.production import FFmpegAssemblyPlan
 from backend.app.services.post_production import PostProductionService
 
@@ -33,6 +33,16 @@ class PostProductionPlanStore:
         self.root = root or (self.settings.storage_root / "post_production_plans")
         self.audit_path = self.root / "events.jsonl"
         self.service = service or PostProductionService()
+
+    def create_from_request(self, request: PostProductionAssemblyPlanCreate) -> PostProductionPlanManifest:
+        plan = self.service.build_assembly_plan(
+            request.clips,
+            target_duration_sec=request.target_duration_sec,
+            geometry=request.geometry,
+            fps=request.fps,
+            output_path=request.output_path,
+        )
+        return self.create_from_plan(plan)
 
     def create_from_plan(self, plan: FFmpegAssemblyPlan) -> PostProductionPlanManifest:
         command = self.service.build_command(plan)
