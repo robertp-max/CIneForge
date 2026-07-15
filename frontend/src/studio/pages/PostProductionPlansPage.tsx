@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, type PostProductionPlanManifest } from '../../api/client'
+import { api, type PostProductionPlanManifest, type PostProductionRecipeCommandManifest } from '../../api/client'
 import { ErrorNotice } from '../../components/Cards'
 import { Empty, PageTitle, Section, StatusPill } from '../proto/ui'
 
@@ -93,26 +93,64 @@ function ManifestCard({ manifest }: { manifest: PostProductionPlanManifest }) {
   )
 }
 
+function RecipeCommandCard({ manifest }: { manifest: PostProductionRecipeCommandManifest }) {
+  return (
+    <article className="panel">
+      <header className="panel-head">
+        <div>
+          <h2 className="mono">{manifest.plan_id}</h2>
+          <p>Read-only generic FFmpeg recipe command manifest evidence.</p>
+        </div>
+        <StatusPill status={manifest.state} />
+      </header>
+
+      <div className="disabled-action-grid">
+        <EvidenceRow label="State" value={manifest.state} />
+        <EvidenceRow label="Created" value={formatDate(manifest.created_at)} />
+        <EvidenceRow label="Updated" value={formatDate(manifest.updated_at)} />
+        <EvidenceRow label="Completed" value={formatDate(manifest.completed_at)} />
+        <EvidenceRow label="Command template" value={manifest.command_template_id || '—'} mono />
+        <EvidenceRow label="Execution submitted" value={formatBool(manifest.execution_submitted)} />
+        <EvidenceRow label="Manifest path" value={manifest.manifest_path || '—'} mono />
+        <EvidenceRow label="Output path" value={manifest.output_path || '—'} mono />
+        <EvidenceRow label="Input paths" value={manifest.input_paths.length} />
+        <EvidenceRow label="Input hashes" value={manifest.input_hashes.length} />
+        <EvidenceRow label="Output SHA-256" value={manifest.output_sha256 || '—'} mono />
+        <EvidenceRow label="Recorded error" value={manifest.error || '—'} />
+      </div>
+
+      <div className="debug-panel" aria-label="Read-only recipe command argv display">
+        <span className="eyebrow">RECIPE COMMAND ARGV · INERT TEXT ONLY</span>
+        <pre>
+          <code>{commandPreview(manifest.command)}</code>
+        </pre>
+      </div>
+    </article>
+  )
+}
+
 export function PostProductionPlansPage() {
   const [plans, setPlans] = useState<PostProductionPlanManifest[]>([])
+  const [recipeCommands, setRecipeCommands] = useState<PostProductionRecipeCommandManifest[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
 
-    api
-      .listPostProductionPlans(25)
-      .then((manifests) => {
+    Promise.all([api.listPostProductionPlans(25), api.listPostProductionRecipeCommands(25)])
+      .then(([planManifests, recipeCommandManifests]) => {
         if (!mounted) return
-        setPlans(manifests)
+        setPlans(planManifests)
+        setRecipeCommands(recipeCommandManifests)
         setError(null)
         setLoadState('ready')
       })
       .catch((caught: unknown) => {
         if (!mounted) return
         setPlans([])
-        setError(caught instanceof Error ? caught.message : 'Unable to load post-production plan manifests.')
+        setRecipeCommands([])
+        setError(caught instanceof Error ? caught.message : 'Unable to load post-production manifests.')
         setLoadState('error')
       })
 
@@ -133,66 +171,92 @@ export function PostProductionPlansPage() {
       .map((plan) => plan.created_at)
       .filter(Boolean)
       .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
+    const latestRecipeCreatedAt = recipeCommands
+      .map((manifest) => manifest.created_at)
+      .filter(Boolean)
+      .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
 
     return {
       stateSummary: stateSummary || 'No states recorded',
       executionSubmitted: plans.some((plan) => plan.execution_submitted),
       outputShaCount: plans.filter((plan) => Boolean(plan.output_sha256)).length,
       latestCreatedAt: latestCreatedAt ?? null,
+      recipeCommandCount: recipeCommands.length,
+      recipeCommandTemplates: new Set(recipeCommands.map((manifest) => manifest.command_template_id)).size,
+      recipeExecutionSubmitted: recipeCommands.some((manifest) => manifest.execution_submitted),
+      latestRecipeCreatedAt: latestRecipeCreatedAt ?? null,
     }
-  }, [plans])
+  }, [plans, recipeCommands])
 
   return (
     <div className="studio-page">
       <PageTitle
         eyebrow="OFFLINE POST-PRODUCTION"
-        title="Plan manifests"
-        description="Read-only evidence from GET /local-post-production/plans. This page does not create plans, execute FFmpeg, submit jobs, render media, or call ComfyUI/GPU."
+        title="Plan and recipe command manifests"
+        description="Read-only evidence from GET /local-post-production/plans and GET /local-post-production/recipe-commands. This page does not create plans, execute FFmpeg, submit jobs, render media, or call ComfyUI/GPU."
       />
 
       <section className="safety-banner" aria-label="Post-production safety boundary">
         <div>
           <strong>Read-only checkpoint</strong>
           <p>
-            Existing local manifests are displayed as inert text only. No command input, execution endpoint,
+            Existing local manifests are displayed as inert text only. No command input, copy, run, execution endpoint,
             benchmark, render, download, submission, ComfyUI, or GPU action is exposed here.
           </p>
         </div>
         <StatusPill status="GET only" />
       </section>
 
-      <Section title="Manifest summary" subtitle="Recent offline post-production plan evidence from the backend list endpoint.">
+      <Section title="Manifest summary" subtitle="Recent offline post-production evidence from backend GET list endpoints.">
         <div className="grid four">
-          <SummaryCard label="Total manifests" value={plans.length} note="Limit: 25 most recent records" />
-          <SummaryCard label="States" value={summary.stateSummary} note="Count by manifest state" />
+          <SummaryCard label="Plan manifests" value={plans.length} note="Limit: 25 most recent plan records" />
+          <SummaryCard label="Plan states" value={summary.stateSummary} note="Count by plan manifest state" />
           <SummaryCard
-            label="Execution submitted"
-            value={formatBool(summary.executionSubmitted)}
-            note="True means a stored manifest says execution was submitted elsewhere"
+            label="Recipe command manifests"
+            value={summary.recipeCommandCount}
+            note={`${summary.recipeCommandTemplates} template id(s); latest: ${formatDate(summary.latestRecipeCreatedAt)}`}
           />
           <SummaryCard
-            label="Outputs hashed"
+            label="Execution submitted"
+            value={formatBool(summary.executionSubmitted || summary.recipeExecutionSubmitted)}
+            note="True means stored evidence says execution was submitted elsewhere"
+          />
+          <SummaryCard
+            label="Plan outputs hashed"
             value={summary.outputShaCount}
-            note={`Latest created: ${formatDate(summary.latestCreatedAt)}`}
+            note={`Latest plan created: ${formatDate(summary.latestCreatedAt)}`}
           />
         </div>
       </Section>
 
       {loadState === 'loading' ? (
-        <Empty title="Loading manifests" detail="Reading existing plan manifests from the GET-only list endpoint." />
+        <Empty title="Loading manifests" detail="Reading existing manifests from GET-only list endpoints." />
       ) : null}
 
       {loadState === 'error' && error ? <ErrorNotice message={error} /> : null}
 
-      {loadState === 'ready' && plans.length === 0 ? (
-        <Empty title="No post-production manifests found" detail="The backend returned an empty manifest list." />
+      {loadState === 'ready' && plans.length === 0 && recipeCommands.length === 0 ? (
+        <Empty title="No post-production manifests found" detail="The backend returned empty manifest lists." />
       ) : null}
 
       {plans.length ? (
-        <Section title="Manifest evidence" subtitle="Each record is displayed as inert text; paths and commands are not links or controls.">
+        <Section title="Plan manifest evidence" subtitle="Each record is displayed as inert text; paths and commands are not links or controls.">
           <div className="disabled-action-grid">
             {plans.map((manifest) => (
               <ManifestCard key={manifest.plan_id} manifest={manifest} />
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {recipeCommands.length ? (
+        <Section
+          title="Recipe command manifest evidence"
+          subtitle="Read-only generic FFmpeg recipe command records from GET /local-post-production/recipe-commands; argv is displayed as inert text only."
+        >
+          <div className="disabled-action-grid">
+            {recipeCommands.map((manifest) => (
+              <RecipeCommandCard key={manifest.plan_id} manifest={manifest} />
             ))}
           </div>
         </Section>
