@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.db.base import ComfyJob
+from backend.app.db.base import ComfyJob, QueueStatus
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
 from backend.app.services.comfy.submission import (
     ControlledComfySubmissionService,
@@ -128,6 +128,49 @@ class QueueWorker:
             gpu_lease_id=gpu_lease_id,
         )
         return await submission_service.submit_reserved_job(db, context)
+
+    def timeout_job_once(self, db: Session, job_id: UUID, reason: str = "worker timeout") -> ComfyJob | None:
+        if not self._owns_job(db, job_id):
+            return None
+        return self.queue_service.mark_terminal_job(
+            db,
+            job_id,
+            QueueStatus.timeout,
+            reason,
+            actor="worker",
+            worker_id=self.worker_id,
+            error_message=reason,
+        )
+
+    def interrupt_job_once(self, db: Session, job_id: UUID, reason: str = "worker interruption") -> ComfyJob | None:
+        if not self._owns_job(db, job_id):
+            return None
+        return self.queue_service.mark_terminal_job(
+            db,
+            job_id,
+            QueueStatus.interrupted,
+            reason,
+            actor="worker",
+            worker_id=self.worker_id,
+            error_message=reason,
+        )
+
+    def cancel_job_once(self, db: Session, job_id: UUID, reason: str = "worker cancellation") -> ComfyJob | None:
+        if not self._owns_job(db, job_id):
+            return None
+        return self.queue_service.mark_terminal_job(
+            db,
+            job_id,
+            QueueStatus.canceled,
+            reason,
+            actor="worker",
+            worker_id=self.worker_id,
+            error_message=reason,
+        )
+
+    def _owns_job(self, db: Session, job_id: UUID) -> bool:
+        job = db.get(ComfyJob, job_id)
+        return job is not None and job.worker_id == self.worker_id
 
     def recover_stale_once(
         self,

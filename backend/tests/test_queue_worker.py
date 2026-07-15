@@ -6,10 +6,12 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.db.base import AuditLog, Base, ComfyJob, QueueStatus, WorkflowRun, WorkflowTemplate
+from backend.app.db.base import AuditLog, Base, ComfyJob, GpuResourceLease, QueueStatus, WorkflowRun, WorkflowTemplate
+from backend.app.schemas.voice import GpuLeaseAcquireRequest
 from backend.app.services.comfy.object_info_cache import ObjectInfoCacheService
-from backend.app.services.queue.service import SubmissionReadinessResult
+from backend.app.services.queue.service import QueueService, SubmissionReadinessResult
 from backend.app.services.queue.worker import QueueWorker
+from backend.app.services.runtime.gpu_leases import acquire_lease
 
 
 @pytest.fixture
@@ -33,7 +35,7 @@ def db_session(tmp_path) -> Generator[Session, None, None]:
         engine.dispose()
 
 
-def create_comfy_job(db: Session, status: QueueStatus = QueueStatus.pending) -> ComfyJob:
+def create_comfy_job(db: Session, status: QueueStatus = QueueStatus.pending, worker_id: str | None = None) -> ComfyJob:
     template = WorkflowTemplate(
         name=f"worker-test-template-{uuid4()}",
         version="1",
@@ -53,11 +55,28 @@ def create_comfy_job(db: Session, status: QueueStatus = QueueStatus.pending) -> 
     db.add(workflow_run)
     db.flush()
 
-    job = ComfyJob(workflow_run_id=workflow_run.id, status=status)
+    job = ComfyJob(workflow_run_id=workflow_run.id, status=status, worker_id=worker_id)
     db.add(job)
     db.commit()
     db.refresh(job)
     return job
+
+
+def bind_lease(db: Session, job: ComfyJob, *, worker_id: str = "worker-1") -> GpuResourceLease:
+    lease = acquire_lease(
+        db,
+        GpuLeaseAcquireRequest(
+            resource_key="gpu0",
+            exclusive_group="gpu-shared",
+            workload_type="comfy_job",
+            workload_id=str(job.id),
+            owner="queue-worker-test",
+            worker_id=worker_id,
+            ttl_seconds=300,
+        ),
+    )
+    QueueService().bind_gpu_lease(db, job.id, lease.id, "queue worker test lease", worker_id=worker_id)
+    return lease
 
 
 def audit_logs(db: Session) -> list[AuditLog]:
@@ -179,6 +198,57 @@ def test_worker_heartbeat_once_delegates_safely(db_session):
     assert persisted_job.prompt_id is None
     assert persisted_job.submitted_at is None
     assert persisted_job.websocket_events == []
+
+
+def test_worker_timeout_job_once_marks_terminal_and_releases_lease(db_session):
+    job = create_comfy_job(db_session, QueueStatus.running, worker_id="worker-1")
+    lease = bind_lease(db_session, job)
+
+    result = QueueWorker("worker-1").timeout_job_once(db_session, job.id, "timeout during mock run")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert result is not None
+    assert result.status == QueueStatus.timeout
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.timeout
+    assert persisted_job.completed_at is not None
+    assert persisted_job.error_message == "timeout during mock run"
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
+
+
+def test_worker_interrupt_and_cancel_terminal_helpers(db_session):
+    running = create_comfy_job(db_session, QueueStatus.running, worker_id="worker-1")
+    pending = create_comfy_job(db_session, QueueStatus.pending, worker_id="worker-1")
+    bind_lease(db_session, running)
+
+    interrupted = QueueWorker("worker-1").interrupt_job_once(db_session, running.id, "operator interrupted")
+    bind_lease(db_session, pending, worker_id="worker-1")
+    canceled = QueueWorker("worker-1").cancel_job_once(db_session, pending.id, "operator canceled")
+
+    db_session.expire_all()
+    assert interrupted is not None
+    assert canceled is not None
+    assert db_session.get(ComfyJob, running.id).status == QueueStatus.interrupted
+    assert db_session.get(ComfyJob, pending.id).status == QueueStatus.canceled
+
+
+def test_worker_terminal_helpers_ignore_jobs_owned_by_other_workers(db_session):
+    job = create_comfy_job(db_session, QueueStatus.running, worker_id="worker-2")
+    lease = bind_lease(db_session, job, worker_id="worker-2")
+
+    result = QueueWorker("worker-1").timeout_job_once(db_session, job.id, "wrong worker")
+
+    db_session.expire_all()
+    persisted_job = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert result is None
+    assert persisted_job is not None
+    assert persisted_job.status == QueueStatus.running
+    assert persisted_lease is not None
+    assert persisted_lease.status == "active"
 
 
 def test_worker_preflight_submission_once_delegates_only(db_session):
