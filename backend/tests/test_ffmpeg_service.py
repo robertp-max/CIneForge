@@ -91,6 +91,45 @@ def test_stream_copy_concat_manifest_rejects_missing_hashes_bad_probes_and_unsaf
         service.build_stream_copy_concat_manifest(["../escape.mp4"], [_probe()], ["a" * 64])
 
 
+def test_decode_validate_command_builder_is_structured_and_hash_gated(tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"clip")
+    result = FFmpegService(storage_root=tmp_path).build_decode_validate_command("clip.mp4", "A" * 64)
+
+    assert result.command_template_id == "decode_validate_v1"
+    assert result.command == ["ffmpeg", "-v", "error", "-i", str(clip.resolve()), "-f", "null", "NUL"]
+    assert result.input_hashes == ["a" * 64]
+    assert result.output_path is None
+
+
+def test_audio_mux_command_builder_is_structured_hash_gated_and_path_safe(tmp_path):
+    video = tmp_path / "video.mp4"
+    audio = tmp_path / "mix.wav"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    service = FFmpegService(storage_root=tmp_path)
+
+    result = service.build_audio_mux_command(
+        "video.mp4",
+        "mix.wav",
+        "out/final.mp4",
+        video_sha256="b" * 64,
+        audio_sha256="c" * 64,
+    )
+
+    assert result.command_template_id == "audio_mux_v1"
+    assert result.command[0:2] == ["ffmpeg", "-y"]
+    assert str(video.resolve()) in result.command
+    assert str(audio.resolve()) in result.command
+    assert str((tmp_path / "out" / "final.mp4").resolve()) in result.command
+    assert result.input_hashes == ["b" * 64, "c" * 64]
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_audio_mux_command("video.mp4", "mix.wav", "out/final.mp4", video_sha256="bad", audio_sha256="c" * 64)
+    with pytest.raises(UnsafePathError):
+        service.build_audio_mux_command("../video.mp4", "mix.wav", "out/final.mp4", video_sha256="b" * 64, audio_sha256="c" * 64)
+
+
 def test_ffmpeg_recipe_catalog_is_read_only_and_matches_allowlist():
     catalog = ffmpeg_command_template_catalog()
 

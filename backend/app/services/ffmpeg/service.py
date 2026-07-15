@@ -18,6 +18,7 @@ APPROVED_COMMAND_TEMPLATES = {
     "normalize_delivery_h264_v1": "delivery-compatible H.264 normalization",
     "assemble_exact_duration_h264_v1": "deterministic exact-duration H.264 assembly with trim/scale/pad",
     "captions_srt_mux_v1": "mux reviewed captions/subtitles into a delivery file",
+    "audio_mux_v1": "mux reviewed audio/final mix into a delivery file",
     "audio_loudness_normalize_v1": "EBU R128-style audio loudness normalization",
     "decode_validate_v1": "full decode validation to null sink",
 }
@@ -35,6 +36,7 @@ _COMMAND_TEMPLATE_METADATA = {
         "notes": "Used by CF-POST-01 deterministic exact-duration assembly planning.",
     },
     "captions_srt_mux_v1": {"category": "captions"},
+    "audio_mux_v1": {"category": "audio"},
     "audio_loudness_normalize_v1": {"category": "audio"},
     "decode_validate_v1": {
         "category": "validation",
@@ -56,6 +58,15 @@ class ConcatManifestBuildResult:
     input_paths: list[str]
     input_hashes: list[str]
     compatibility_reason: str
+
+
+@dataclass(frozen=True)
+class RecipeCommandBuildResult:
+    command_template_id: str
+    command: list[str]
+    input_paths: list[str]
+    input_hashes: list[str]
+    output_path: str | None = None
 
 
 def sha256_file(path: Path) -> str:
@@ -205,6 +216,75 @@ class FFmpegService:
             input_paths=[str(path) for path in safe_paths],
             input_hashes=validated_hashes,
             compatibility_reason=compatibility.reason,
+        )
+
+    def build_decode_validate_command(self, input_path: str | Path, input_sha256: str) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("decode_validate_v1")
+        safe_input = resolve_inside(
+            self.storage_root,
+            input_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        validated_hash = validate_sha256_hex(input_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="decode_validate_v1",
+            command=["ffmpeg", "-v", "error", "-i", str(safe_input), "-f", "null", "NUL"],
+            input_paths=[str(safe_input)],
+            input_hashes=[validated_hash],
+        )
+
+    def build_audio_mux_command(
+        self,
+        video_path: str | Path,
+        audio_path: str | Path,
+        output_path: str | Path,
+        *,
+        video_sha256: str,
+        audio_sha256: str,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("audio_mux_v1")
+        safe_video = resolve_inside(
+            self.storage_root,
+            video_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_audio = resolve_inside(
+            self.storage_root,
+            audio_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        video_hash = validate_sha256_hex(video_sha256)
+        audio_hash = validate_sha256_hex(audio_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="audio_mux_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_video),
+                "-i",
+                str(safe_audio),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-shortest",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_video), str(safe_audio)],
+            input_hashes=[video_hash, audio_hash],
+            output_path=str(safe_output),
         )
 
     def validate_command_template_id(self, template_id: str) -> None:
