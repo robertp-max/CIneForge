@@ -361,6 +361,8 @@ Likely files:
 - `backend/tests/test_ffmpeg_service.py`
 - `FFmpeg/FFMPEG_STRATEGY_COMMAND_LIBRARY.md`
 
+**Implementation status 2026-07-15:** M5 deterministic post-production hardening has started without executing FFmpeg. `PostProductionService` now resolves input/output media paths inside the configured storage root, requires a supplied input hash or existing file hash for each clip, and refuses command-array construction unless one hash per clip is present. `GET /local-runtime/ffmpeg-recipes` exposes the allowlisted command-template catalog as read-only metadata only, with `executes_from_catalog=false`, `user_authored_command_allowed=false`, and `structured_argument_array` command shape. The Runtime UI displays these recipes without execution controls or raw command inputs. No FFmpeg command has been run.
+
 ### M6 — Archetype expansion
 
 Repeat full admission and hardware gates in this order:
