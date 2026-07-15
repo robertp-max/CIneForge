@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   api,
   type LocalArchetype,
+  type LocalM4PreflightReport,
   type LocalPreset,
   type LocalRuntimeCatalog,
   type LocalRuntimeEvidence,
@@ -25,6 +26,7 @@ export function Runtime() {
   const [localPresets, setLocalPresets] = useState<LocalPreset[]>([])
   const [localArchetypes, setLocalArchetypes] = useState<LocalArchetype[]>([])
   const [localEvidence, setLocalEvidence] = useState<LocalRuntimeEvidence[]>([])
+  const [m4Preflight, setM4Preflight] = useState<LocalM4PreflightReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,12 +37,13 @@ export function Runtime() {
       setLoading(true)
       setError(null)
       try {
-        const [status, catalog, presets, archetypes, evidence] = await Promise.all([
+        const [status, catalog, presets, archetypes, evidence, preflight] = await Promise.all([
           api.runtimeStatus(),
           api.localRuntimeCatalog(),
           api.listLocalPresets(),
           api.listLocalArchetypes(),
           api.listLocalRuntimeEvidence(),
+          api.localM4Preflight(),
         ])
         if (!cancelled) {
           setRuntime(status)
@@ -48,6 +51,7 @@ export function Runtime() {
           setLocalPresets(presets)
           setLocalArchetypes(archetypes)
           setLocalEvidence(evidence)
+          setM4Preflight(preflight)
         }
       } catch (err) {
         if (!cancelled) {
@@ -168,6 +172,33 @@ export function Runtime() {
             <StatusBadge status={evidence.readiness_after_evidence} />
           </article>
         ))}
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>M4 Hardware Preflight</h2>
+          <span>{m4Preflight?.status ?? 'loading'}</span>
+        </div>
+        <p>
+          Operator hardware probe allowed:{' '}
+          <strong>{m4Preflight?.hardware_operator_probe_allowed ? 'yes' : 'no'}</strong>. Live actions executed by this
+          report: <strong>{m4Preflight?.live_actions_executed ? 'yes' : 'no'}</strong>.
+        </p>
+        <p>{m4Preflight?.next_allowed_action ?? 'Loading M4 preflight gate...'}</p>
+        {m4Preflight?.blocking_reasons.length ? (
+          <p className="mono">blocking: {m4Preflight.blocking_reasons.join(', ')}</p>
+        ) : null}
+        <div className="disabled-action-grid">
+          {m4Preflight?.checks.map((check) => (
+            <article key={check.code} className="disabled-action">
+              <div>
+                <strong>{check.code}</strong>
+                <p>{check.message}</p>
+              </div>
+              <StatusBadge status={check.passed ? 'passed' : 'blocked'} />
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="panel">

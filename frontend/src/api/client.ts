@@ -198,6 +198,30 @@ export type LocalRuntimeEvidence = {
   remaining_gates: string[]
 }
 
+export type LocalM4PreflightCheck = {
+  code: string
+  passed: boolean
+  message: string
+  evidence: Record<string, unknown>
+}
+
+export type LocalM4PreflightReport = {
+  phase: 'M4'
+  status: string
+  hardware_operator_probe_allowed: boolean
+  live_actions_executed: boolean
+  public_generation_enabled: boolean
+  public_prompt_enabled: boolean
+  required_submission_mode: 'hardware_operator'
+  queue_worker_enabled: boolean
+  hardware_operator_enabled: boolean
+  m4_hardware_probe_approved: boolean
+  checks: LocalM4PreflightCheck[]
+  blocking_reasons: string[]
+  next_allowed_action: string
+  safety_note: string
+}
+
 export type LocalJobCreatePayload = {
   project_key: string
   run_stem: string
@@ -1572,6 +1596,7 @@ export const api = {
   localRuntimeCatalog: () => request<LocalRuntimeCatalog>('/local-runtime/catalog'),
   localOutputPolicy: () => request<LocalRuntimeCatalog['output_policy']>('/local-runtime/output-policy'),
   listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
+  localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
   listLocalPresets: () => request<LocalPreset[]>('/local-presets'),
   listLocalArchetypes: () => request<LocalArchetype[]>('/local-archetypes'),
   listLocalJobs: (limit = 25) => request<LocalJobManifest[]>(`/local-jobs?limit=${limit}`),
