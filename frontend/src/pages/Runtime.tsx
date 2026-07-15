@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   api,
   type BenchmarkLadderManifest,
+  type FFmpegCommandTemplateRecord,
   type LocalArchetype,
   type LocalM4PreflightReport,
   type LocalPreset,
@@ -29,6 +30,7 @@ export function Runtime() {
   const [localEvidence, setLocalEvidence] = useState<LocalRuntimeEvidence[]>([])
   const [m4Preflight, setM4Preflight] = useState<LocalM4PreflightReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
+  const [ffmpegRecipes, setFFmpegRecipes] = useState<FFmpegCommandTemplateRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,7 +41,7 @@ export function Runtime() {
       setLoading(true)
       setError(null)
       try {
-        const [status, catalog, presets, archetypes, evidence, preflight, ladder] = await Promise.all([
+        const [status, catalog, presets, archetypes, evidence, preflight, ladder, recipes] = await Promise.all([
           api.runtimeStatus(),
           api.localRuntimeCatalog(),
           api.listLocalPresets(),
@@ -47,6 +49,7 @@ export function Runtime() {
           api.listLocalRuntimeEvidence(),
           api.localM4Preflight(),
           api.localM4Ladder(),
+          api.listFFmpegRecipes(),
         ])
         if (!cancelled) {
           setRuntime(status)
@@ -56,6 +59,7 @@ export function Runtime() {
           setLocalEvidence(evidence)
           setM4Preflight(preflight)
           setM4Ladder(ladder)
+          setFFmpegRecipes(recipes)
         }
       } catch (err) {
         if (!cancelled) {
@@ -232,6 +236,31 @@ export function Runtime() {
                 </p>
               </div>
               <StatusBadge status={stage.live_action_approved ? 'approved' : stage.status} />
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>FFmpeg Recipe Catalog</h2>
+          <span>{ffmpegRecipes.length ? `${ffmpegRecipes.length} recipes` : 'loading'}</span>
+        </div>
+        <p>
+          Recipes are allowlisted command templates only. The catalog is read-only and does not execute FFmpeg or accept raw command strings.
+        </p>
+        <div className="disabled-action-grid">
+          {ffmpegRecipes.map((recipe) => (
+            <article key={recipe.template_id} className="disabled-action">
+              <div>
+                <strong>{recipe.template_id}</strong>
+                <p>{recipe.description}</p>
+                <p className="mono">
+                  {recipe.category}; {recipe.command_shape}; executes: {recipe.executes_from_catalog ? 'yes' : 'no'}
+                  {recipe.requires_probe_before_stream_copy ? '; probe required' : ''}
+                </p>
+              </div>
+              <StatusBadge status={recipe.executes_from_catalog ? 'blocked' : 'read_only'} />
             </article>
           ))}
         </div>

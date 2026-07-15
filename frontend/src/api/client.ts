@@ -259,6 +259,19 @@ export type BenchmarkLadderManifest = {
   evidence_note: string
 }
 
+export type FFmpegCommandTemplateRecord = {
+  template_id: string
+  description: string
+  category: string
+  command_shape: string
+  read_only_catalog: boolean
+  executes_from_catalog: boolean
+  user_authored_command_allowed: boolean
+  requires_input_hashes: boolean
+  requires_probe_before_stream_copy: boolean
+  notes: string | null
+}
+
 export type LocalJobCreatePayload = {
   project_key: string
   run_stem: string
@@ -1635,6 +1648,7 @@ export const api = {
   listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
   localM4Ladder: () => request<BenchmarkLadderManifest>('/local-runtime/m4-ladder'),
+  listFFmpegRecipes: () => request<FFmpegCommandTemplateRecord[]>('/local-runtime/ffmpeg-recipes'),
   listLocalPresets: () => request<LocalPreset[]>('/local-presets'),
   listLocalArchetypes: () => request<LocalArchetype[]>('/local-archetypes'),
   listLocalJobs: (limit = 25) => request<LocalJobManifest[]>(`/local-jobs?limit=${limit}`),
