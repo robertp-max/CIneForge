@@ -23,6 +23,7 @@ APPROVED_COMMAND_TEMPLATES = {
     "audio_mux_v1": "mux reviewed audio/final mix into a delivery file",
     "audio_loudness_normalize_v1": "EBU R128-style audio loudness normalization",
     "delivery_package_mp4_faststart_v1": "package a reviewed asset as MP4 with faststart metadata",
+    "transition_crossfade_h264_v1": "crossfade two reviewed video assets into H.264 delivery geometry",
     "decode_validate_v1": "full decode validation to null sink",
 }
 
@@ -43,6 +44,10 @@ _COMMAND_TEMPLATE_METADATA = {
     "audio_mux_v1": {"category": "audio"},
     "audio_loudness_normalize_v1": {"category": "audio"},
     "delivery_package_mp4_faststart_v1": {"category": "delivery_packaging"},
+    "transition_crossfade_h264_v1": {
+        "category": "transitions",
+        "notes": "Canonical M5 transition recipe; builds argv only and never executes FFmpeg.",
+    },
     "decode_validate_v1": {
         "category": "validation",
         "notes": "Validation recipe; still must use structured arguments, input hashes, and managed paths.",
@@ -452,6 +457,86 @@ class FFmpegService:
             ],
             input_paths=[str(safe_input)],
             input_hashes=[validated_hash],
+            output_path=str(safe_output),
+        )
+
+    def build_transition_crossfade_h264_command(
+        self,
+        first_video_path: str | Path,
+        second_video_path: str | Path,
+        output_path: str | Path,
+        *,
+        first_video_sha256: str,
+        second_video_sha256: str,
+        transition_duration_sec: float,
+        transition_offset_sec: float,
+        fps: int,
+        width: int,
+        height: int,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("transition_crossfade_h264_v1")
+        safe_first_video = resolve_inside(
+            self.storage_root,
+            first_video_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_second_video = resolve_inside(
+            self.storage_root,
+            second_video_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        first_hash = validate_sha256_hex(first_video_sha256)
+        second_hash = validate_sha256_hex(second_video_sha256)
+        transition_duration = _validate_positive_seconds(transition_duration_sec, "transition_duration_sec")
+        transition_offset = _validate_positive_seconds(transition_offset_sec, "transition_offset_sec")
+        safe_fps = _validate_positive_int(fps, "fps")
+        safe_width = _validate_positive_int(width, "width")
+        safe_height = _validate_positive_int(height, "height")
+        geometry_filter = (
+            f"fps={safe_fps},"
+            f"scale={safe_width}:{safe_height}:force_original_aspect_ratio=decrease,"
+            f"pad={safe_width}:{safe_height}:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1,format=yuv420p"
+        )
+        filter_complex = (
+            f"[0:v]{geometry_filter}[v0];"
+            f"[1:v]{geometry_filter}[v1];"
+            f"[v0][v1]xfade=transition=fade:duration={transition_duration}:offset={transition_offset},"
+            "format=yuv420p[v]"
+        )
+        return RecipeCommandBuildResult(
+            command_template_id="transition_crossfade_h264_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_first_video),
+                "-i",
+                str(safe_second_video),
+                "-filter_complex",
+                filter_complex,
+                "-map",
+                "[v]",
+                "-an",
+                "-r",
+                str(safe_fps),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-movflags",
+                "+faststart",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_first_video), str(safe_second_video)],
+            input_hashes=[first_hash, second_hash],
             output_path=str(safe_output),
         )
 

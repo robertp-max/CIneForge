@@ -286,6 +286,153 @@ def test_timing_conform_recipe_builder_is_structured_hash_gated_path_safe_and_no
         )
 
 
+def test_transition_crossfade_recipe_builder_is_structured_hash_gated_path_safe_and_non_executing(
+    monkeypatch, tmp_path
+):
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    service = FFmpegService(storage_root=tmp_path)
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("transition command builder must not execute FFmpeg")
+
+    monkeypatch.setattr("backend.app.services.ffmpeg.service.subprocess.run", forbidden_run)
+
+    result = service.build_transition_crossfade_h264_command(
+        "first.mp4",
+        "second.mp4",
+        "delivery/crossfade.mp4",
+        first_video_sha256="5" * 64,
+        second_video_sha256="6" * 64,
+        transition_duration_sec=1.25,
+        transition_offset_sec=4.0,
+        fps=24,
+        width=1920,
+        height=1080,
+    )
+
+    assert result.command_template_id == "transition_crossfade_h264_v1"
+    assert result.command[0:2] == ["ffmpeg", "-y"]
+    assert str(first.resolve()) in result.command
+    assert str(second.resolve()) in result.command
+    assert str((tmp_path / "delivery" / "crossfade.mp4").resolve()) in result.command
+    assert "-filter_complex" in result.command
+    filter_arg = result.command[result.command.index("-filter_complex") + 1]
+    assert "xfade=transition=fade:duration=1.250000:offset=4.000000" in filter_arg
+    assert "fps=24" in filter_arg
+    assert "scale=1920:1080:force_original_aspect_ratio=decrease" in filter_arg
+    assert "pad=1920:1080:(ow-iw)/2:(oh-ih)/2" in filter_arg
+    assert "[v]" in result.command
+    assert "libx264" in result.command
+    assert "+faststart" in result.command
+    assert result.input_paths == [str(first.resolve()), str(second.resolve())]
+    assert result.input_hashes == ["5" * 64, "6" * 64]
+    assert result.output_path == str((tmp_path / "delivery" / "crossfade.mp4").resolve())
+
+
+@pytest.mark.parametrize(
+    "first_hash, second_hash",
+    [
+        ("bad", "6" * 64),
+        ("5" * 64, "not-a-sha"),
+    ],
+)
+def test_transition_crossfade_recipe_builder_rejects_invalid_hashes(tmp_path, first_hash, second_hash):
+    service = FFmpegService(storage_root=tmp_path)
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_transition_crossfade_h264_command(
+            "first.mp4",
+            "second.mp4",
+            "delivery/crossfade.mp4",
+            first_video_sha256=first_hash,
+            second_video_sha256=second_hash,
+            transition_duration_sec=1.25,
+            transition_offset_sec=4.0,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+
+
+def test_transition_crossfade_recipe_builder_rejects_unsafe_paths(tmp_path):
+    service = FFmpegService(storage_root=tmp_path)
+
+    with pytest.raises(UnsafePathError):
+        service.build_transition_crossfade_h264_command(
+            "../first.mp4",
+            "second.mp4",
+            "delivery/crossfade.mp4",
+            first_video_sha256="5" * 64,
+            second_video_sha256="6" * 64,
+            transition_duration_sec=1.25,
+            transition_offset_sec=4.0,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+    with pytest.raises(UnsafePathError):
+        service.build_transition_crossfade_h264_command(
+            "first.mp4",
+            "../second.mp4",
+            "delivery/crossfade.mp4",
+            first_video_sha256="5" * 64,
+            second_video_sha256="6" * 64,
+            transition_duration_sec=1.25,
+            transition_offset_sec=4.0,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+    with pytest.raises(UnsafePathError):
+        service.build_transition_crossfade_h264_command(
+            "first.mp4",
+            "second.mp4",
+            "../crossfade.mp4",
+            first_video_sha256="5" * 64,
+            second_video_sha256="6" * 64,
+            transition_duration_sec=1.25,
+            transition_offset_sec=4.0,
+            fps=24,
+            width=1920,
+            height=1080,
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"transition_duration_sec": 0}, "transition_duration_sec"),
+        ({"transition_offset_sec": 0}, "transition_offset_sec"),
+        ({"fps": 0}, "fps"),
+        ({"width": 0}, "width"),
+        ({"height": 0}, "height"),
+    ],
+)
+def test_transition_crossfade_recipe_builder_rejects_invalid_parameters(tmp_path, kwargs, message):
+    params = {
+        "transition_duration_sec": 1.25,
+        "transition_offset_sec": 4.0,
+        "fps": 24,
+        "width": 1920,
+        "height": 1080,
+    }
+    params.update(kwargs)
+    service = FFmpegService(storage_root=tmp_path)
+
+    with pytest.raises(ValidationError, match=message):
+        service.build_transition_crossfade_h264_command(
+            "first.mp4",
+            "second.mp4",
+            "delivery/crossfade.mp4",
+            first_video_sha256="5" * 64,
+            second_video_sha256="6" * 64,
+            **params,
+        )
+
+
 def test_delivery_packaging_recipe_builder_is_structured_hash_gated_path_safe_and_non_executing(
     monkeypatch, tmp_path
 ):
@@ -330,6 +477,8 @@ def test_ffmpeg_recipe_catalog_is_read_only_and_matches_allowlist():
     assert all(record.user_authored_command_allowed is False for record in catalog)
     concat = next(record for record in catalog if record.template_id == "concat_stream_copy_v1")
     assert concat.requires_probe_before_stream_copy is True
+    transition = next(record for record in catalog if record.template_id == "transition_crossfade_h264_v1")
+    assert transition.category == "transitions"
 
 
 def test_ffmpeg_recipe_catalog_route_is_read_only():
