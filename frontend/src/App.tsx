@@ -17,6 +17,7 @@ const PAGE_TO_ROUTE: Record<PageId, string> = {
   routing: 'model-routing',
   workflows: 'workflows',
   exports: 'exports',
+  postProduction: 'post-production',
   settings: 'settings',
 }
 
@@ -32,6 +33,7 @@ const ROUTE_TO_PAGE: Record<string, PageId> = {
   routing: 'routing',
   workflows: 'workflows',
   exports: 'exports',
+  'post-production': 'postProduction',
   settings: 'settings',
 }
 

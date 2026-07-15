@@ -15,6 +15,7 @@ export type PageId =
   | 'routing'
   | 'workflows'
   | 'exports'
+  | 'postProduction'
   | 'settings'
 
 export type ShellView = 'projects' | 'new-project' | 'studio'
@@ -50,6 +51,7 @@ const navItems: { id: PageId; label: string; icon: ShellIconName }[] = [
   { id: 'routing', label: 'Model routing', icon: 'cpu' },
   { id: 'workflows', label: 'Workflows', icon: 'layers' },
   { id: 'exports', label: 'Exports', icon: 'download' },
+  { id: 'postProduction', label: 'Post-production', icon: 'film' },
 ]
 
 const labels: Record<PageId | 'projects' | 'new-project', string> = {
@@ -64,6 +66,7 @@ const labels: Record<PageId | 'projects' | 'new-project', string> = {
   routing: 'Model Routing',
   workflows: 'Workflows',
   exports: 'Exports',
+  postProduction: 'Post-production',
   settings: 'Project Settings',
 }
 

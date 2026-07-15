@@ -163,6 +163,30 @@ export type LocalJobManifest = {
   steps: number | null
 }
 
+export type PostProductionPlanManifest = {
+  plan_id: string
+  state: string
+  created_at: string
+  updated_at: string | null
+  completed_at: string | null
+  manifest_path: string
+  command_template_id: string
+  command: string[]
+  input_paths: string[]
+  input_hashes: string[]
+  probe_count: number
+  output_path: string
+  target_duration_sec: number
+  calculated_duration_sec: number
+  exact_duration_preserved: boolean
+  execution_submitted: boolean
+  ffmpeg_job_id: string | null
+  output_sha256: string | null
+  final_probe_json: Record<string, unknown> | null
+  error_message: string | null
+  plan: Record<string, unknown>
+}
+
 export type LocalRuntimeEvidence = {
   evidence_id: string
   archetype_id: string
@@ -1655,6 +1679,8 @@ export const api = {
   getLocalJob: (jobId: string) => request<LocalJobManifest>(`/local-jobs/${jobId}`),
   createLocalJob: (payload: LocalJobCreatePayload) =>
     request<LocalJobManifest>('/local-jobs', { method: 'POST', body: JSON.stringify(payload) }),
+  listPostProductionPlans: (limit = 25) =>
+    request<PostProductionPlanManifest[]>(`/local-post-production/plans?limit=${limit}`),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (payload: { name: string; description?: string | null }) =>

@@ -11,6 +11,7 @@ import { ImagesPage } from './pages/ImagesPage'
 import { RoutingPage } from './pages/RoutingPage'
 import { WorkflowsPage } from './pages/WorkflowsPage'
 import { ExportsPage } from './pages/ExportsPage'
+import { PostProductionPlansPage } from './pages/PostProductionPlansPage'
 import { SettingsPage } from './pages/SettingsPage'
 
 const PAGE_META: Record<PageId, { title: string; description: string }> = {
@@ -50,6 +51,10 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
     title: 'Exports',
     description: 'Planning exports plus the final assembly, manifest, and provenance destination.',
   },
+  postProduction: {
+    title: 'Post-production',
+    description: 'Read-only offline FFmpeg assembly plan manifests; no execution controls.',
+  },
   settings: {
     title: 'Project Settings',
     description: 'Duration, approval, continuity, consent, and aspect policies from the server.',
@@ -58,22 +63,24 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
 
 export function StudioRouter({ page }: { page: PageId }) {
   const { data, loadState } = useStudio()
+  const canRenderWithoutStory = page === 'postProduction'
 
-  if (!data || loadState === 'empty') {
+  if ((!data || loadState === 'empty') && !canRenderWithoutStory) {
     return <StoryBootstrap />
   }
 
   const meta = PAGE_META[page]
   const content = {
     overview: <OverviewPage />,
-    storyboard: <StoryboardPage key={data.revision} />,
-    story: <StoryPage key={data.revision} />,
+    storyboard: data ? <StoryboardPage key={data.revision} /> : null,
+    story: data ? <StoryPage key={data.revision} /> : null,
     characters: <CharactersPage />,
     voices: <VoicesPage />,
     images: <ImagesPage />,
     routing: <RoutingPage />,
     workflows: <WorkflowsPage />,
     exports: <ExportsPage />,
+    postProduction: <PostProductionPlansPage />,
     settings: <SettingsPage />,
   }[page]
   const pageOwnsLayout = !(['overview', 'characters', 'settings'] as PageId[]).includes(page)
