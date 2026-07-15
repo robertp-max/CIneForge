@@ -1,6 +1,10 @@
+from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
+
+from backend.app.core.errors import UnsafePathError
+from backend.app.utils.path_safety import sanitize_project_folder
 
 
 class ComfyMutationBlocked(RuntimeError):
@@ -9,6 +13,25 @@ class ComfyMutationBlocked(RuntimeError):
 
 class ComfyRuntimeRouteBlocked(RuntimeError):
     pass
+
+
+def _safe_view_filename(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        raise UnsafePathError("ComfyUI view filename cannot be empty")
+    if "\\" in raw or "/" in raw or ":" in raw:
+        raise UnsafePathError("ComfyUI view filename must be a plain filename")
+    path = PurePosixPath(raw)
+    if path.name != raw or raw in {".", ".."}:
+        raise UnsafePathError("ComfyUI view filename must be a plain filename")
+    return raw
+
+
+def _safe_view_type(value: str) -> str:
+    raw = value.strip()
+    if raw not in {"output", "input", "temp"}:
+        raise UnsafePathError("ComfyUI view type must be output, input, or temp")
+    return raw
 
 
 class ComfyUIClient:
@@ -97,3 +120,57 @@ class ComfyUIClient:
         response = await self._client.post("/free", json={"unload_models": unload_models, "free_memory": free_memory})
         response.raise_for_status()
         return response.json() if response.content else {"status": "ok"}
+
+
+class ComfyWorkerRuntimeClient:
+    """Worker-only ComfyUI history/view client.
+
+    This class exposes read/collection routes needed by the controlled worker.
+    It is constructible only from explicitly tracked worker code and should not
+    be mounted as a public API proxy.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 10.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+        tracked_worker_runtime: bool = False,
+    ) -> None:
+        if not tracked_worker_runtime:
+            raise ComfyRuntimeRouteBlocked(
+                "UNTRACKED_COMFY_RUNTIME_ACCESS: Comfy history/view routes may only be used by the tracked backend worker"
+            )
+        self.base_url = base_url.rstrip("/")
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, transport=transport)
+
+    async def __aenter__(self) -> "ComfyWorkerRuntimeClient":
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def get_history(self, prompt_id: str) -> dict[str, Any]:
+        safe_prompt_id = _safe_view_filename(prompt_id)
+        response = await self._client.get(f"/history/{safe_prompt_id}")
+        response.raise_for_status()
+        return response.json()
+
+    async def get_prompt_history(self) -> dict[str, Any]:
+        response = await self._client.get("/history")
+        response.raise_for_status()
+        return response.json()
+
+    async def view_output(self, filename: str, subfolder: str = "", output_type: str = "output") -> bytes:
+        params = {
+            "filename": _safe_view_filename(filename),
+            "subfolder": sanitize_project_folder(subfolder) if subfolder else "",
+            "type": _safe_view_type(output_type),
+        }
+        response = await self._client.get("/view", params=params)
+        response.raise_for_status()
+        return response.content

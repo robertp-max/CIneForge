@@ -1,7 +1,8 @@
 import httpx
 import pytest
 
-from backend.app.services.comfy.client import ComfyMutationBlocked, ComfyRuntimeRouteBlocked, ComfyUIClient
+from backend.app.core.errors import UnsafePathError
+from backend.app.services.comfy.client import ComfyMutationBlocked, ComfyRuntimeRouteBlocked, ComfyUIClient, ComfyWorkerRuntimeClient
 
 
 @pytest.mark.asyncio
@@ -65,5 +66,58 @@ async def test_comfy_client_runtime_output_and_websocket_routes_are_blocked():
             await client.view_output("clip.mp4")
         with pytest.raises(ComfyRuntimeRouteBlocked):
             await client.connect_progress_websocket("client-1")
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_client_reads_history_and_view_with_safe_params():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/history/prompt-1":
+            return httpx.Response(200, json={"prompt-1": {"outputs": {}}})
+        if request.url.path == "/history":
+            return httpx.Response(200, json={"all": []})
+        if request.url.path == "/view":
+            assert request.url.params["filename"] == "clip.mp4"
+            assert request.url.params["subfolder"] == "Project_A"
+            assert request.url.params["type"] == "output"
+            return httpx.Response(200, content=b"video-bytes")
+        return httpx.Response(404)
+
+    async with ComfyWorkerRuntimeClient(
+        "http://comfy.test",
+        tracked_worker_runtime=True,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        history = await client.get_history("prompt-1")
+        prompt_history = await client.get_prompt_history()
+        content = await client.view_output("clip.mp4", subfolder="Project A")
+
+    assert history == {"prompt-1": {"outputs": {}}}
+    assert prompt_history == {"all": []}
+    assert content == b"video-bytes"
+    assert [request.url.path for request in requests] == ["/history/prompt-1", "/history", "/view"]
+
+
+def test_worker_runtime_client_rejects_untracked_construction():
+    with pytest.raises(ComfyRuntimeRouteBlocked, match="UNTRACKED_COMFY_RUNTIME_ACCESS"):
+        ComfyWorkerRuntimeClient("http://comfy.test")
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_client_rejects_unsafe_view_paths_without_http_call():
+    requests: list[httpx.Request] = []
+    transport = httpx.MockTransport(lambda request: requests.append(request) or httpx.Response(200, content=b""))
+
+    async with ComfyWorkerRuntimeClient("http://comfy.test", tracked_worker_runtime=True, transport=transport) as client:
+        with pytest.raises(UnsafePathError):
+            await client.get_history("../prompt-1")
+        with pytest.raises(UnsafePathError):
+            await client.view_output("../clip.mp4", subfolder="Project A")
+        with pytest.raises(UnsafePathError):
+            await client.view_output("clip.mp4", subfolder="Project A", output_type="remote")
 
     assert requests == []
