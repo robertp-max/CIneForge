@@ -130,6 +130,86 @@ def test_audio_mux_command_builder_is_structured_hash_gated_and_path_safe(tmp_pa
         service.build_audio_mux_command("../video.mp4", "mix.wav", "out/final.mp4", video_sha256="b" * 64, audio_sha256="c" * 64)
 
 
+def test_normalization_recipe_builders_are_structured_hash_gated_and_path_safe(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    service = FFmpegService(storage_root=tmp_path)
+
+    delivery = service.build_normalize_delivery_h264_command("source.mp4", "delivery/final.mp4", "D" * 64)
+    assert delivery.command_template_id == "normalize_delivery_h264_v1"
+    assert delivery.command[0:2] == ["ffmpeg", "-y"]
+    assert "libx264" in delivery.command
+    assert "+faststart" in delivery.command
+    assert delivery.input_hashes == ["d" * 64]
+    assert delivery.output_path == str((tmp_path / "delivery" / "final.mp4").resolve())
+
+    mezzanine = service.build_normalize_mezzanine_prores_command("source.mp4", "mezzanine/final.mov", "e" * 64)
+    assert mezzanine.command_template_id == "normalize_mezzanine_prores_v1"
+    assert "prores_ks" in mezzanine.command
+    assert "pcm_s16le" in mezzanine.command
+    assert mezzanine.input_hashes == ["e" * 64]
+
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_normalize_delivery_h264_command("source.mp4", "delivery/final.mp4", "bad")
+    with pytest.raises(UnsafePathError):
+        service.build_normalize_mezzanine_prores_command("source.mp4", "../outside.mov", "e" * 64)
+
+
+def test_caption_and_loudness_recipe_builders_are_structured_and_hash_gated(tmp_path):
+    video = tmp_path / "video.mp4"
+    captions = tmp_path / "captions.srt"
+    audio = tmp_path / "audio.wav"
+    video.write_bytes(b"video")
+    captions.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    audio.write_bytes(b"audio")
+    service = FFmpegService(storage_root=tmp_path)
+
+    mux = service.build_captions_srt_mux_command(
+        "video.mp4",
+        "captions.srt",
+        "delivery/captioned.mp4",
+        video_sha256="f" * 64,
+        captions_sha256="1" * 64,
+    )
+    assert mux.command_template_id == "captions_srt_mux_v1"
+    assert "mov_text" in mux.command
+    assert mux.input_hashes == ["f" * 64, "1" * 64]
+
+    loudness = service.build_audio_loudness_normalize_command("audio.wav", "audio/normalized.m4a", "2" * 64)
+    assert loudness.command_template_id == "audio_loudness_normalize_v1"
+    assert "loudnorm=I=-16:TP=-1.5:LRA=11" in loudness.command
+    assert loudness.input_hashes == ["2" * 64]
+
+    with pytest.raises(ValidationError, match=".srt"):
+        service.build_captions_srt_mux_command(
+            "video.mp4",
+            "captions.txt",
+            "delivery/captioned.mp4",
+            video_sha256="f" * 64,
+            captions_sha256="1" * 64,
+        )
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_captions_srt_mux_command(
+            "video.mp4",
+            "captions.srt",
+            "delivery/captioned.mp4",
+            video_sha256="not-a-hash",
+            captions_sha256="1" * 64,
+        )
+    with pytest.raises(UnsafePathError):
+        service.build_captions_srt_mux_command(
+            "video.mp4",
+            "captions.srt",
+            "../captioned.mp4",
+            video_sha256="f" * 64,
+            captions_sha256="1" * 64,
+        )
+    with pytest.raises(ValidationError, match="SHA256"):
+        service.build_audio_loudness_normalize_command("audio.wav", "audio/normalized.m4a", "bad")
+    with pytest.raises(UnsafePathError):
+        service.build_audio_loudness_normalize_command("../audio.wav", "audio/normalized.m4a", "2" * 64)
+
+
 def test_ffmpeg_recipe_catalog_is_read_only_and_matches_allowlist():
     catalog = ffmpeg_command_template_catalog()
 

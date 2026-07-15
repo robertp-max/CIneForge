@@ -40,8 +40,7 @@ _COMMAND_TEMPLATE_METADATA = {
     "audio_loudness_normalize_v1": {"category": "audio"},
     "decode_validate_v1": {
         "category": "validation",
-        "requires_input_hashes": False,
-        "notes": "Validation recipe; still must use structured arguments and managed paths.",
+        "notes": "Validation recipe; still must use structured arguments, input hashes, and managed paths.",
     },
 }
 
@@ -284,6 +283,179 @@ class FFmpegService:
             ],
             input_paths=[str(safe_video), str(safe_audio)],
             input_hashes=[video_hash, audio_hash],
+            output_path=str(safe_output),
+        )
+
+    def build_normalize_delivery_h264_command(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        input_sha256: str,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("normalize_delivery_h264_v1")
+        safe_input = resolve_inside(
+            self.storage_root,
+            input_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        validated_hash = validate_sha256_hex(input_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="normalize_delivery_h264_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_input),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_input)],
+            input_hashes=[validated_hash],
+            output_path=str(safe_output),
+        )
+
+    def build_normalize_mezzanine_prores_command(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        input_sha256: str,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("normalize_mezzanine_prores_v1")
+        safe_input = resolve_inside(
+            self.storage_root,
+            input_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        validated_hash = validate_sha256_hex(input_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="normalize_mezzanine_prores_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_input),
+                "-c:v",
+                "prores_ks",
+                "-profile:v",
+                "3",
+                "-pix_fmt",
+                "yuv422p10le",
+                "-c:a",
+                "pcm_s16le",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_input)],
+            input_hashes=[validated_hash],
+            output_path=str(safe_output),
+        )
+
+    def build_captions_srt_mux_command(
+        self,
+        video_path: str | Path,
+        captions_path: str | Path,
+        output_path: str | Path,
+        *,
+        video_sha256: str,
+        captions_sha256: str,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("captions_srt_mux_v1")
+        safe_video = resolve_inside(
+            self.storage_root,
+            video_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_captions = resolve_inside(
+            self.storage_root,
+            captions_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        if safe_captions.suffix.lower() != ".srt":
+            raise ValidationError("Captions mux requires a reviewed .srt captions file")
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        video_hash = validate_sha256_hex(video_sha256)
+        captions_hash = validate_sha256_hex(captions_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="captions_srt_mux_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_video),
+                "-i",
+                str(safe_captions),
+                "-c:v",
+                "copy",
+                "-c:a",
+                "copy",
+                "-c:s",
+                "mov_text",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_video), str(safe_captions)],
+            input_hashes=[video_hash, captions_hash],
+            output_path=str(safe_output),
+        )
+
+    def build_audio_loudness_normalize_command(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        input_sha256: str,
+    ) -> RecipeCommandBuildResult:
+        self.validate_command_template_id("audio_loudness_normalize_v1")
+        safe_input = resolve_inside(
+            self.storage_root,
+            input_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        safe_output = resolve_inside(
+            self.storage_root,
+            output_path,
+            allow_absolute=self.settings.allow_absolute_input_paths,
+        )
+        validated_hash = validate_sha256_hex(input_sha256)
+        return RecipeCommandBuildResult(
+            command_template_id="audio_loudness_normalize_v1",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(safe_input),
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                str(safe_output),
+            ],
+            input_paths=[str(safe_input)],
+            input_hashes=[validated_hash],
             output_path=str(safe_output),
         )
 
