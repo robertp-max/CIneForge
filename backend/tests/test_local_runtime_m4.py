@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.config import Settings
 from backend.app.main import app
+from backend.app.services.benchmarks.ladder import BenchmarkLadderService, write_ladder_manifest
 from backend.app.services.local_runtime_evidence import LocalRuntimeEvidenceService
 from backend.app.services.local_runtime_m4 import M4HardwarePreflightService
 
@@ -56,6 +57,13 @@ def _write_smoke_evidence(tmp_path: Path) -> LocalRuntimeEvidenceService:
     return LocalRuntimeEvidenceService(Settings(storage_root=tmp_path / "storage"), evidence_path=path)
 
 
+def _write_m4_ladder(tmp_path: Path) -> BenchmarkLadderService:
+    path = tmp_path / "storage" / "benchmark_ladders" / "m4_cf_vid01_ladder.json"
+    payload = json.loads(Path("storage/benchmark_ladders/m4_cf_vid01_ladder.json").read_text(encoding="utf-8"))
+    write_ladder_manifest(path, payload)
+    return BenchmarkLadderService(Settings(storage_root=tmp_path / "storage"), ladder_path=path)
+
+
 def test_m4_preflight_defaults_to_blocked_without_operator_gate_or_approval():
     report = M4HardwarePreflightService().report()
 
@@ -74,7 +82,11 @@ def test_m4_preflight_blocks_when_smoke_evidence_is_missing(tmp_path: Path):
         hardware_operator_enabled=True,
         m4_hardware_probe_approved=True,
     )
-    report = M4HardwarePreflightService(settings, LocalRuntimeEvidenceService(settings)).report()
+    report = M4HardwarePreflightService(
+        settings,
+        LocalRuntimeEvidenceService(settings),
+        _write_m4_ladder(tmp_path),
+    ).report()
 
     assert report.hardware_operator_probe_allowed is False
     assert "cf_vid01_smoke_evidence_present" in report.blocking_reasons
@@ -87,7 +99,7 @@ def test_m4_preflight_can_report_operator_probe_ready_without_running_live_work(
         queue_worker_enabled=False,
         m4_hardware_probe_approved=True,
     )
-    service = M4HardwarePreflightService(settings, _write_smoke_evidence(tmp_path))
+    service = M4HardwarePreflightService(settings, _write_smoke_evidence(tmp_path), _write_m4_ladder(tmp_path))
 
     report = service.report()
 
@@ -98,6 +110,7 @@ def test_m4_preflight_can_report_operator_probe_ready_without_running_live_work(
     assert report.public_generation_enabled is False
     assert report.public_prompt_enabled is False
     assert report.blocking_reasons == []
+    assert any(check.code == "m4_ladder_manifest_valid" and check.passed for check in report.checks)
 
 
 def test_m4_preflight_route_is_read_only_and_blocked_by_default():

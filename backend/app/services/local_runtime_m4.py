@@ -9,7 +9,9 @@ probe path is administratively allowed.
 from __future__ import annotations
 
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.errors import ValidationError
 from backend.app.schemas.local_runtime_m4 import M4HardwarePreflightReport, M4PreflightCheck, M4PreflightStatus
+from backend.app.services.benchmarks.ladder import BenchmarkLadderService
 from backend.app.services.local_runtime import local_runtime_catalog
 from backend.app.services.local_runtime_evidence import LocalRuntimeEvidenceService
 
@@ -19,9 +21,11 @@ class M4HardwarePreflightService:
         self,
         settings: Settings | None = None,
         evidence_service: LocalRuntimeEvidenceService | None = None,
+        ladder_service: BenchmarkLadderService | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.evidence_service = evidence_service or LocalRuntimeEvidenceService(self.settings)
+        self.ladder_service = ladder_service or BenchmarkLadderService(self.settings)
 
     def report(self) -> M4HardwarePreflightReport:
         checks: list[M4PreflightCheck] = []
@@ -62,6 +66,41 @@ class M4HardwarePreflightService:
                 evidence={"m4_hardware_probe_approved": self.settings.m4_hardware_probe_approved},
             )
         )
+
+        try:
+            ladder = self.ladder_service.get_m4_ladder()
+        except FileNotFoundError as exc:
+            checks.append(
+                M4PreflightCheck(
+                    code="m4_ladder_manifest_valid",
+                    passed=False,
+                    message="M4 serialized ladder manifest is missing.",
+                    evidence={"missing_path": exc.filename},
+                )
+            )
+        except ValidationError as exc:
+            checks.append(
+                M4PreflightCheck(
+                    code="m4_ladder_manifest_valid",
+                    passed=False,
+                    message="M4 serialized ladder manifest is invalid.",
+                    evidence={"error": str(exc)},
+                )
+            )
+        else:
+            checks.append(
+                M4PreflightCheck(
+                    code="m4_ladder_manifest_valid",
+                    passed=True,
+                    message="M4 serialized ladder manifest is present and valid.",
+                    evidence={
+                        "ladder_id": ladder.ladder_id,
+                        "allowed_stage_numbers": ladder.allowed_stage_numbers,
+                        "deferred_stage_numbers": ladder.deferred_stage_numbers,
+                        "stage_count": len(ladder.stages),
+                    },
+                )
+            )
 
         try:
             evidence = self.evidence_service.get_cf_vid01_smoke()
