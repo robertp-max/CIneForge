@@ -47,6 +47,7 @@ This file-only check verifies:
 - no frontend/API-client raw `/prompt` or `/api/prompt` references, including single-quoted, double-quoted, and backtick literals,
 - no exact public raw `/prompt` FastAPI route,
 - no GitHub Actions workflow live-probe/media fragments,
+- no package-script live-probe/media fragments in repo/frontend/backend `package.json` scripts,
 - no accidental assistant-analysis/debug text leaks in tracked source/docs/workflows/artifacts,
 - no `/local-generation` or `/local-operator` execute/submit/approve/prompt child routes,
 - no `/local-operator/run` route while allowing `/local-operator/runbooks` reference metadata.
