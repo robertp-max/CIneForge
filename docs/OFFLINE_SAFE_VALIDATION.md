@@ -43,8 +43,8 @@ This file-only check verifies:
 
 - no enabled/ready local archetypes,
 - no enabled/ready local presets,
-- no frontend live-probe call sites or raw live-probe `fetch(...)` calls outside API client definitions,
-- no frontend/API-client raw `/prompt` or `/api/prompt` references,
+- no frontend live-probe call sites or raw live-probe `fetch(...)` calls outside API client definitions, including single-quoted, double-quoted, and backtick literals,
+- no frontend/API-client raw `/prompt` or `/api/prompt` references, including single-quoted, double-quoted, and backtick literals,
 - no exact public raw `/prompt` FastAPI route,
 - no GitHub Actions workflow live-probe/media fragments,
 - no accidental assistant-analysis/debug text leaks in tracked source/docs/workflows/artifacts,
