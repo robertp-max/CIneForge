@@ -22,6 +22,8 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
     assert report.tracked_worktree_clean is True
     assert "checkpoint loop must restart now" in report.reminder
     assert "After each commit, immediately continue" in rendered
+    assert "Record validation truthfully" in rendered
+    assert "staged contents intentionally match" in rendered
     assert "No FFmpeg/ffprobe execution" in rendered
     assert "No ComfyUI/GPU/render/benchmark" in rendered
 

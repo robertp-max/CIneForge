@@ -47,6 +47,8 @@ def build_watchdog_report(repo_root: Path) -> CheckpointWatchdogReport:
             "No ComfyUI/GPU/render/benchmark/runtime-health probe without explicit scoped live approval.",
             "No prompt submission, queue execution, public generation, or public raw /prompt route.",
             "Keep local archetypes/presets disabled unless evidence gates and approval explicitly change that scope.",
+            "Record validation truthfully in each checkpoint; if the full offline-safe suite was not run, say so.",
+            "Before each checkpoint commit, verify staged contents intentionally match the checkpoint and no unrelated files are included.",
             "After each commit, immediately continue with the next offline-safe gap unless blocked by the live boundary.",
         ),
     )
