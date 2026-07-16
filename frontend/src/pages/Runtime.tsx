@@ -12,6 +12,7 @@ import {
   type LocalOperatorRunPacket,
   type LocalPreset,
   type LocalPresetReadinessRecord,
+  type LocalPublicReadinessReport,
   type LocalPresetReadinessReport,
   type LocalReadinessReason,
   type LocalReadinessSummary,
@@ -192,6 +193,7 @@ export function Runtime() {
   const [localEvidence, setLocalEvidence] = useState<LocalRuntimeEvidence[]>([])
   const [m4Preflight, setM4Preflight] = useState<LocalM4PreflightReport | null>(null)
   const [localMvpReadiness, setLocalMvpReadiness] = useState<LocalMVPReadinessReport | null>(null)
+  const [localPublicReadiness, setLocalPublicReadiness] = useState<LocalPublicReadinessReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [operatorPackets, setOperatorPackets] = useState<LocalOperatorRunPacket[]>([])
   const [operatorPacketMode, setOperatorPacketMode] = useState<LocalOperatorRunMode>('m4_hardware_ladder_probe')
@@ -219,6 +221,7 @@ export function Runtime() {
           evidence,
           preflight,
           readiness,
+          publicReadiness,
           operatorPacketList,
           ladder,
           recipes,
@@ -231,6 +234,7 @@ export function Runtime() {
           api.listLocalRuntimeEvidence(),
           api.localM4Preflight(),
           api.localMVPReadiness(),
+          api.localPublicReadiness(),
           api.listLocalOperatorPackets(),
           api.localM4Ladder(),
           api.listFFmpegRecipes(),
@@ -244,6 +248,7 @@ export function Runtime() {
           setLocalEvidence(evidence)
           setM4Preflight(preflight)
           setLocalMvpReadiness(readiness)
+          setLocalPublicReadiness(publicReadiness)
           setOperatorPackets(operatorPacketList)
           setM4Ladder(ladder)
           setFFmpegRecipes(recipes)
@@ -266,6 +271,11 @@ export function Runtime() {
   const visibleLocalMvpBlockers = localMvpBlockers.slice(0, 4)
   const hiddenLocalMvpBlockerCount = Math.max(0, localMvpBlockers.length - visibleLocalMvpBlockers.length)
   const visibleOperatorPackets = operatorPackets.slice(0, 3)
+  const visiblePublicReleaseBlockers = localPublicReadiness?.remaining_public_release_blockers.slice(0, 4) ?? []
+  const hiddenPublicReleaseBlockerCount = Math.max(
+    0,
+    (localPublicReadiness?.remaining_public_release_blockers.length ?? 0) - visiblePublicReleaseBlockers.length,
+  )
 
   async function handleCreateOperatorPacket(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -419,6 +429,82 @@ export function Runtime() {
           ))}
           {hiddenLocalMvpBlockerCount ? <li>+{hiddenLocalMvpBlockerCount} more blockers</li> : null}
           {!localMvpReadiness ? <li>Loading checkpoint blockers...</li> : null}
+        </ul>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Public Release Readiness</h2>
+          <StatusBadge status={localPublicReadiness?.status ?? 'loading'} />
+        </div>
+        <p>
+          {localPublicReadiness?.safety_note ??
+            'Loading fail-closed public-release readiness report; no live probe or public generation surface is enabled.'}
+        </p>
+        <div className="disabled-action-grid">
+          <article className="disabled-action">
+            <div>
+              <strong>Public release status</strong>
+              <p>
+                Ready: <span className="mono">{localPublicReadiness ? String(localPublicReadiness.public_release_ready) : 'loading'}</span>; public
+                prompt route enabled:{' '}
+                <span className="mono">{localPublicReadiness ? String(localPublicReadiness.public_prompt_enabled) : 'loading'}</span>.
+              </p>
+            </div>
+            <StatusBadge status={localPublicReadiness?.public_release_ready ? 'ready' : 'blocked'} />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Archetype evidence</strong>
+              <p>
+                {localPublicReadiness
+                  ? `${localPublicReadiness.archetype_summary.ready}/${localPublicReadiness.archetype_summary.total} ready; ${localPublicReadiness.archetype_summary.blocked} blocked.`
+                  : 'Loading archetype readiness summary...'}
+              </p>
+            </div>
+            <StatusBadge status={localPublicReadiness?.archetype_summary.ready ? 'benchmark_required' : 'blocked'} />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Preset evidence</strong>
+              <p>
+                {localPublicReadiness
+                  ? `${localPublicReadiness.preset_summary.ready}/${localPublicReadiness.preset_summary.total} ready; ${localPublicReadiness.preset_summary.blocked} blocked.`
+                  : 'Loading preset readiness summary...'}
+              </p>
+            </div>
+            <StatusBadge status={localPublicReadiness?.preset_summary.ready ? 'benchmark_required' : 'blocked'} />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Live/public boundary</strong>
+              <p>
+                Live execution approved by endpoint:{' '}
+                <span className="mono">
+                  {localPublicReadiness ? String(localPublicReadiness.live_execution_approved_by_endpoint) : 'loading'}
+                </span>; internet-facing enabled:{' '}
+                <span className="mono">
+                  {localPublicReadiness ? String(localPublicReadiness.internet_facing_enabled) : 'loading'}
+                </span>.
+              </p>
+            </div>
+            <StatusBadge status="read_only" />
+          </article>
+        </div>
+        <div className="panel-title">
+          <h3>Remaining public-release blockers</h3>
+          <span>
+            {localPublicReadiness
+              ? `${localPublicReadiness.remaining_public_release_blockers.length} blockers`
+              : 'loading'}
+          </span>
+        </div>
+        <ul className="feature-list">
+          {visiblePublicReleaseBlockers.map((blocker) => (
+            <li key={blocker}>{blocker}</li>
+          ))}
+          {hiddenPublicReleaseBlockerCount ? <li>+{hiddenPublicReleaseBlockerCount} more blockers</li> : null}
+          {!localPublicReadiness ? <li>Loading public-release blockers...</li> : null}
         </ul>
       </section>
 

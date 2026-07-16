@@ -125,6 +125,7 @@ REQUIRED_METHOD_PATHS = {
     ("GET", "/local-runtime/evidence"),
     ("GET", "/local-runtime/ffmpeg-recipes"),
     ("GET", "/local-runtime/local-mvp-readiness"),
+    ("GET", "/local-runtime/public-readiness"),
     ("GET", "/local-runtime/evidence/cf-vid-01-smoke"),
     ("GET", "/runtime-catalog"),
     ("GET", "/providers"),

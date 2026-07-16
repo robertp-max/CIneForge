@@ -9,11 +9,13 @@ from backend.app.core.errors import ValidationError
 from backend.app.schemas.benchmark_ladder import BenchmarkLadderManifest
 from backend.app.schemas.ffmpeg_recipes import FFmpegCommandTemplateRecord
 from backend.app.schemas.local_mvp_readiness import LocalMVPReadinessReport
+from backend.app.schemas.local_public_readiness import LocalPublicReadinessReport
 from backend.app.schemas.local_runtime import LocalRuntimeCatalog, OutputPolicy
 from backend.app.schemas.local_runtime_evidence import LocalRuntimeEvidence
 from backend.app.schemas.local_runtime_m4 import M4HardwarePreflightReport
 from backend.app.services.ffmpeg.service import ffmpeg_command_template_catalog
 from backend.app.services.local_mvp_readiness import LocalMVPReadinessService
+from backend.app.services.local_public_readiness import LocalPublicReadinessService
 from backend.app.services.local_runtime import local_runtime_catalog, output_policy
 from backend.app.services.local_runtime_evidence import LocalRuntimeEvidenceService
 from backend.app.services.local_runtime_m4 import M4HardwarePreflightService
@@ -46,6 +48,11 @@ def get_m4_hardware_preflight() -> M4HardwarePreflightReport:
 @router.get("/local-mvp-readiness", response_model=LocalMVPReadinessReport)
 def get_local_mvp_readiness() -> LocalMVPReadinessReport:
     return LocalMVPReadinessService(get_settings()).report()
+
+
+@router.get("/public-readiness", response_model=LocalPublicReadinessReport)
+def get_local_public_readiness() -> LocalPublicReadinessReport:
+    return LocalPublicReadinessService(get_settings()).report()
 
 
 @router.get("/ffmpeg-recipes", response_model=list[FFmpegCommandTemplateRecord])

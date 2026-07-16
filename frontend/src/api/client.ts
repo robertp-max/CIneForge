@@ -300,6 +300,33 @@ export type LocalMVPM5PostProductionReadinessSummary = {
   safe_metadata_source: string
 }
 
+export type LocalPublicReadinessReport = {
+  checkpoint_id: 'local_public_release_readiness'
+  status: 'blocked'
+  public_release_ready: boolean
+  public_generation_enabled: boolean
+  public_prompt_enabled: boolean
+  internet_facing_enabled: boolean
+  autonomous_generation_enabled: boolean
+  live_execution_performed_by_endpoint: boolean
+  live_execution_approved_by_endpoint: boolean
+  archetype_summary: LocalReadinessSummary
+  preset_summary: LocalReadinessSummary
+  local_mvp_status: string
+  m4_hardware_probe_allowed: boolean
+  m5_ffmpeg_execution_endpoint_present: boolean
+  checks: Array<{
+    code: string
+    passed: boolean
+    severity: 'info' | 'warning' | 'blocker'
+    message: string
+    evidence: Record<string, unknown>
+  }>
+  remaining_public_release_blockers: string[]
+  safe_metadata_sources: string[]
+  safety_note: string
+}
+
 export type LocalMVPReadinessReport = {
   checkpoint_id: 'local_mvp_readiness'
   status: 'checkpoint_only' | 'blocked'
@@ -2015,6 +2042,7 @@ export const api = {
   listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
   localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
+  localPublicReadiness: () => request<LocalPublicReadinessReport>('/local-runtime/public-readiness'),
   listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
   createLocalOperatorPacket: (payload: LocalOperatorRunPacketCreatePayload) =>
     request<LocalOperatorRunPacket>('/local-operator/packets', {
