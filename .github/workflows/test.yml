@@ -31,4 +31,4 @@ jobs:
         run: npm ci
 
       - name: Run offline-safe validation
-        run: python scripts/run_offline_safe_validation.py --watchdog-json artifacts/watchdog/ci.json
+        run: python scripts/run_offline_safe_validation.py --watchdog-json artifacts/watchdog/ci.json --fail-on-dirty

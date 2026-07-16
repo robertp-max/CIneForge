@@ -10,7 +10,7 @@ from scripts.run_offline_safe_validation import BACKEND_TESTS, run_validation
 def test_github_actions_uses_watchdog_json_output():
     workflow = Path(".github/workflows/test.yml").read_text(encoding="utf-8")
 
-    assert "python scripts/run_offline_safe_validation.py --watchdog-json artifacts/watchdog/ci.json" in workflow
+    assert "python scripts/run_offline_safe_validation.py --watchdog-json artifacts/watchdog/ci.json --fail-on-dirty" in workflow
 
 
 def test_github_actions_stays_on_offline_safe_runner_only():
