@@ -21,6 +21,7 @@ from backend.app.schemas.local_operator import (
     LocalOperatorLocalMVPSummary,
     LocalOperatorM4PreflightSummary,
     LocalOperatorM5RecipeSummary,
+    LocalOperatorApprovalTemplate,
     LocalOperatorEvidenceField,
     LocalOperatorRunMode,
     LocalOperatorRunPacket,
@@ -168,6 +169,56 @@ def _m5_runbook(mode: LocalOperatorRunMode) -> LocalOperatorRunbook:
         forbidden_actions=list(_FORBIDDEN_RUNBOOK_ACTIONS),
         safe_metadata_sources=[*_SAFE_METADATA_SOURCES, "backend.app.services.ffmpeg.service.ffmpeg_command_template_catalog"],
     )
+
+
+_REQUIRED_APPROVAL_SHAPE = [
+    "Action family: M4 ComfyUI/GPU ladder, M5 FFmpeg/ffprobe probe validation, or M5 FFmpeg assembly validation.",
+    "Target: exact archetype, recipe/template ID, packet ID, plan ID, stage number(s), or input/output manifest IDs.",
+    "Scope: one stage/run/recipe at a time unless a bounded serial range is explicitly listed.",
+    "Local-only constraint: public/autonomous generation stays disabled and no internet-facing exposure is enabled.",
+    "Live-tool acknowledgement: explicitly states that ComfyUI/GPU/render/benchmark or FFmpeg/ffprobe work may run.",
+]
+
+_NON_APPROVAL_EXAMPLES = ["k", "ok", "continue", "go on", "what's next", "approve storyboard", "create packet"]
+
+
+def local_operator_approval_templates() -> list[LocalOperatorApprovalTemplate]:
+    return [
+        LocalOperatorApprovalTemplate(
+            mode=LocalOperatorRunMode.m4_hardware_ladder_probe,
+            title="M4 local ComfyUI/GPU approval template",
+            required_approval_shape=list(_REQUIRED_APPROVAL_SHAPE),
+            example_approval=(
+                "I approve a local M4 ComfyUI/GPU hardware probe for CF-VID-01, Stage 0 only, "
+                "using the current M4 ladder and operator packet <packet-id>. Keep public/autonomous generation disabled."
+            ),
+            non_approval_examples=list(_NON_APPROVAL_EXAMPLES),
+        ),
+        LocalOperatorApprovalTemplate(
+            mode=LocalOperatorRunMode.m5_ffmpeg_probe_validation,
+            title="M5 local FFmpeg/ffprobe probe approval template",
+            required_approval_shape=list(_REQUIRED_APPROVAL_SHAPE),
+            example_approval=(
+                "I approve a local M5 FFmpeg/ffprobe validation run for recipe <template-id> using plan <plan-id> only. "
+                "Use allowlisted structured arguments, no raw command strings, and keep public/autonomous generation disabled."
+            ),
+            non_approval_examples=list(_NON_APPROVAL_EXAMPLES),
+        ),
+        LocalOperatorApprovalTemplate(
+            mode=LocalOperatorRunMode.m5_ffmpeg_assembly_validation,
+            title="M5 local FFmpeg assembly approval template",
+            required_approval_shape=list(_REQUIRED_APPROVAL_SHAPE),
+            example_approval=(
+                "I approve a local M5 FFmpeg assembly validation run for recipe <template-id> using plan <plan-id> only. "
+                "Use allowlisted structured arguments, no raw command strings, and keep public/autonomous generation disabled."
+            ),
+            non_approval_examples=list(_NON_APPROVAL_EXAMPLES),
+        ),
+    ]
+
+
+def get_local_operator_approval_template(mode: LocalOperatorRunMode) -> LocalOperatorApprovalTemplate | None:
+    return next((template for template in local_operator_approval_templates() if template.mode == mode), None)
 
 
 def local_operator_runbooks() -> list[LocalOperatorRunbook]:

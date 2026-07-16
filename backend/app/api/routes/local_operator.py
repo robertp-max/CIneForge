@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from backend.app.core.config import get_settings
 from backend.app.core.errors import ValidationError
 from backend.app.schemas.local_operator import (
+    LocalOperatorApprovalTemplate,
     LocalOperatorRunMode,
     LocalOperatorRunPacket,
     LocalOperatorRunPacketCreate,
@@ -20,7 +21,9 @@ from backend.app.schemas.local_operator import (
 )
 from backend.app.services.local_operator import (
     LocalOperatorRunPacketStore,
+    get_local_operator_approval_template,
     get_local_operator_runbook,
+    local_operator_approval_templates,
     local_operator_runbooks,
 )
 
@@ -53,6 +56,19 @@ def list_local_operator_run_packets(limit: int = Query(default=25, ge=1, le=100)
 @router.get("/packets/{packet_id}", response_model=LocalOperatorRunPacket)
 def get_local_operator_run_packet(packet_id: UUID) -> LocalOperatorRunPacket:
     return _store().get(packet_id)
+
+
+@router.get("/approval-templates", response_model=list[LocalOperatorApprovalTemplate])
+def list_local_operator_approval_templates() -> list[LocalOperatorApprovalTemplate]:
+    return local_operator_approval_templates()
+
+
+@router.get("/approval-templates/{mode}", response_model=LocalOperatorApprovalTemplate)
+def get_local_operator_approval_template_route(mode: LocalOperatorRunMode) -> LocalOperatorApprovalTemplate:
+    template = get_local_operator_approval_template(mode)
+    if template is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local operator approval template not found.")
+    return template
 
 
 @router.get("/runbooks", response_model=list[LocalOperatorRunbook])

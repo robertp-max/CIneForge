@@ -77,6 +77,20 @@ class LocalOperatorRunbookStep(BaseModel):
     endpoint_executes_step: bool = False
 
 
+class LocalOperatorApprovalTemplate(BaseModel):
+    mode: LocalOperatorRunMode
+    title: str
+    required_approval_shape: list[str]
+    example_approval: str
+    non_approval_examples: list[str]
+    endpoint_records_approval: bool = False
+    endpoint_starts_live_execution: bool = False
+    safety_note: str = (
+        "This template is reference text only. It does not record approval, start live work, submit prompts, "
+        "run FFmpeg/ffprobe, contact ComfyUI, acquire GPU leases, render, benchmark, or enable public generation."
+    )
+
+
 class LocalOperatorRunbook(BaseModel):
     mode: LocalOperatorRunMode
     title: str

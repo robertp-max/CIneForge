@@ -11,7 +11,13 @@ import pytest
 from backend.app.core.config import Settings
 from backend.app.main import app
 from backend.app.schemas.local_operator import LocalOperatorRunMode, LocalOperatorRunPacketCreate
-from backend.app.services.local_operator import LocalOperatorRunPacketStore, get_local_operator_runbook, local_operator_runbooks
+from backend.app.services.local_operator import (
+    LocalOperatorRunPacketStore,
+    get_local_operator_approval_template,
+    get_local_operator_runbook,
+    local_operator_approval_templates,
+    local_operator_runbooks,
+)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -26,6 +32,46 @@ def _payload(mode: str = "m4_hardware_ladder_probe") -> dict:
         "notes": "prepare offline packet only",
         "acknowledge_no_execution": True,
     }
+
+
+def test_local_operator_approval_templates_are_reference_only_without_recording_approval(monkeypatch):
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("approval templates must not execute subprocesses")
+
+    monkeypatch.setattr(subprocess, "run", forbidden_run)
+
+    templates = local_operator_approval_templates()
+
+    assert {template.mode for template in templates} == set(LocalOperatorRunMode)
+    for template in templates:
+        assert template.endpoint_records_approval is False
+        assert template.endpoint_starts_live_execution is False
+        assert "k" in template.non_approval_examples
+        assert "ok" in template.non_approval_examples
+        assert "continue" in template.non_approval_examples
+        assert any("Action family" in item for item in template.required_approval_shape)
+        assert "public/autonomous generation disabled" in template.example_approval
+
+    m4 = get_local_operator_approval_template(LocalOperatorRunMode.m4_hardware_ladder_probe)
+    assert m4 is not None
+    assert "ComfyUI/GPU" in m4.example_approval
+
+
+def test_local_operator_approval_template_routes_are_get_only_and_non_executing():
+    client = TestClient(app)
+
+    list_response = client.get("/local-operator/approval-templates")
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert len(payload) == len(LocalOperatorRunMode)
+    assert all(item["endpoint_records_approval"] is False for item in payload)
+    assert all(item["endpoint_starts_live_execution"] is False for item in payload)
+    assert all("k" in item["non_approval_examples"] for item in payload)
+
+    get_response = client.get("/local-operator/approval-templates/m5_ffmpeg_probe_validation")
+    assert get_response.status_code == 200
+    assert get_response.json()["mode"] == "m5_ffmpeg_probe_validation"
+    assert get_response.json()["endpoint_records_approval"] is False
 
 
 def test_local_operator_runbooks_are_reference_only_without_raw_commands(monkeypatch):
@@ -188,6 +234,8 @@ def test_local_operator_route_contract_has_no_live_child_routes_or_prompt():
 
     assert {method for method, path in method_paths if path == "/local-operator/packets"} == {"GET", "POST"}
     assert {method for method, path in method_paths if path == "/local-operator/packets/{packet_id}"} == {"GET"}
+    assert {method for method, path in method_paths if path == "/local-operator/approval-templates"} == {"GET"}
+    assert {method for method, path in method_paths if path == "/local-operator/approval-templates/{mode}"} == {"GET"}
     assert {method for method, path in method_paths if path == "/local-operator/runbooks"} == {"GET"}
     assert {method for method, path in method_paths if path == "/local-operator/runbooks/{mode}"} == {"GET"}
     assert "/prompt" not in {path for _method, path in method_paths}

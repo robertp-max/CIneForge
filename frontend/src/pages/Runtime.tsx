@@ -8,6 +8,7 @@ import {
   type LocalArchetypeReadinessReport,
   type LocalM4PreflightReport,
   type LocalMVPReadinessReport,
+  type LocalOperatorApprovalTemplate,
   type LocalOperatorRunMode,
   type LocalOperatorRunPacket,
   type LocalOperatorRunbook,
@@ -197,6 +198,7 @@ export function Runtime() {
   const [localPublicReadiness, setLocalPublicReadiness] = useState<LocalPublicReadinessReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [operatorPackets, setOperatorPackets] = useState<LocalOperatorRunPacket[]>([])
+  const [operatorApprovalTemplates, setOperatorApprovalTemplates] = useState<LocalOperatorApprovalTemplate[]>([])
   const [operatorRunbooks, setOperatorRunbooks] = useState<LocalOperatorRunbook[]>([])
   const [operatorPacketMode, setOperatorPacketMode] = useState<LocalOperatorRunMode>('m4_hardware_ladder_probe')
   const [operatorPacketRequestedBy, setOperatorPacketRequestedBy] = useState('local-operator')
@@ -225,6 +227,7 @@ export function Runtime() {
           readiness,
           publicReadiness,
           operatorPacketList,
+          operatorApprovalTemplateList,
           operatorRunbookList,
           ladder,
           recipes,
@@ -239,6 +242,7 @@ export function Runtime() {
           api.localMVPReadiness(),
           api.localPublicReadiness(),
           api.listLocalOperatorPackets(),
+          api.listLocalOperatorApprovalTemplates(),
           api.listLocalOperatorRunbooks(),
           api.localM4Ladder(),
           api.listFFmpegRecipes(),
@@ -254,6 +258,7 @@ export function Runtime() {
           setLocalMvpReadiness(readiness)
           setLocalPublicReadiness(publicReadiness)
           setOperatorPackets(operatorPacketList)
+          setOperatorApprovalTemplates(operatorApprovalTemplateList)
           setOperatorRunbooks(operatorRunbookList)
           setM4Ladder(ladder)
           setFFmpegRecipes(recipes)
@@ -276,6 +281,7 @@ export function Runtime() {
   const visibleLocalMvpBlockers = localMvpBlockers.slice(0, 4)
   const hiddenLocalMvpBlockerCount = Math.max(0, localMvpBlockers.length - visibleLocalMvpBlockers.length)
   const visibleOperatorPackets = operatorPackets.slice(0, 3)
+  const visibleOperatorApprovalTemplates = operatorApprovalTemplates.slice(0, 3)
   const visibleOperatorRunbooks = operatorRunbooks.slice(0, 3)
   const visiblePublicReleaseBlockers = localPublicReadiness?.remaining_public_release_blockers.slice(0, 4) ?? []
   const hiddenPublicReleaseBlockerCount = Math.max(
@@ -512,6 +518,43 @@ export function Runtime() {
           {hiddenPublicReleaseBlockerCount ? <li>+{hiddenPublicReleaseBlockerCount} more blockers</li> : null}
           {!localPublicReadiness ? <li>Loading public-release blockers...</li> : null}
         </ul>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Local Operator Approval Templates</h2>
+          <span>{operatorApprovalTemplates.length ? `${operatorApprovalTemplates.length} template` : 'loading'}</span>
+        </div>
+        <p>
+          These templates show the exact level of specificity required for a future live approval. They are reference text
+          only and do not record approval or start FFmpeg, ffprobe, ComfyUI, GPU, render, benchmark, queue, or prompt work.
+        </p>
+        <div className="disabled-action-grid">
+          {visibleOperatorApprovalTemplates.map((template) => (
+            <article key={template.mode} className="disabled-action">
+              <div>
+                <strong>{template.title}</strong>
+                <p>{template.safety_note}</p>
+                <p className="mono">
+                  records_approval={String(template.endpoint_records_approval)}; starts_live=
+                  {String(template.endpoint_starts_live_execution)}; non_approval_examples=
+                  {template.non_approval_examples.slice(0, 4).join(', ')}
+                </p>
+                <p>{template.example_approval}</p>
+              </div>
+              <StatusBadge status="read_only" />
+            </article>
+          ))}
+          {!visibleOperatorApprovalTemplates.length ? (
+            <article className="disabled-action">
+              <div>
+                <strong>Loading approval templates</strong>
+                <p>Read-only approval templates will appear when backend metadata loads.</p>
+              </div>
+              <StatusBadge status="loading" />
+            </article>
+          ) : null}
+        </div>
       </section>
 
       <section className="panel">

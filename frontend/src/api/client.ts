@@ -493,6 +493,17 @@ export type LocalOperatorRunPacketCreatePayload = {
   acknowledge_no_execution: boolean
 }
 
+export type LocalOperatorApprovalTemplate = {
+  mode: LocalOperatorRunMode
+  title: string
+  required_approval_shape: string[]
+  example_approval: string
+  non_approval_examples: string[]
+  endpoint_records_approval: boolean
+  endpoint_starts_live_execution: boolean
+  safety_note: string
+}
+
 export type LocalOperatorRunbook = {
   mode: LocalOperatorRunMode
   title: string
@@ -2073,6 +2084,7 @@ export const api = {
   localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
   localPublicReadiness: () => request<LocalPublicReadinessReport>('/local-runtime/public-readiness'),
   listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
+  listLocalOperatorApprovalTemplates: () => request<LocalOperatorApprovalTemplate[]>('/local-operator/approval-templates'),
   listLocalOperatorRunbooks: () => request<LocalOperatorRunbook[]>('/local-operator/runbooks'),
   createLocalOperatorPacket: (payload: LocalOperatorRunPacketCreatePayload) =>
     request<LocalOperatorRunPacket>('/local-operator/packets', {

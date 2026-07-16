@@ -107,6 +107,8 @@ REQUIRED_METHOD_PATHS = {
     ("POST", "/local-operator/packets"),
     ("GET", "/local-operator/packets"),
     ("GET", "/local-operator/packets/{packet_id}"),
+    ("GET", "/local-operator/approval-templates"),
+    ("GET", "/local-operator/approval-templates/{mode}"),
     ("GET", "/local-operator/runbooks"),
     ("GET", "/local-operator/runbooks/{mode}"),
     ("POST", "/local-jobs"),
