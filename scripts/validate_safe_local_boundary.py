@@ -87,7 +87,34 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
     archetype_path = repo_root / "storage" / "archetypes" / "catalog.json"
     preset_path = repo_root / "storage" / "presets" / "catalog.json"
 
-    leak_scan_roots = [repo_root / name for name in ("backend", "frontend", "scripts", "docs", "artifacts", ".github")]
+    leak_scan_roots = [
+        repo_root / name
+        for name in (
+            "backend",
+            "frontend",
+            "scripts",
+            "docs",
+            "artifacts",
+            ".github",
+            "API",
+            "Architecture",
+            "Benchmarks",
+            "ComfyUI",
+            "Database",
+            "Elite",
+            "FFmpeg",
+            "Findings",
+            "LoRAs",
+            "Models",
+            "MVP",
+            "Orchestration",
+            "Quantization",
+            "Risk-Register",
+            "Runtime",
+            "Sources",
+            "Workflows",
+        )
+    ]
     leak_scan_files = [repo_root / name for name in ("README.md", "CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md")]
     for root in leak_scan_roots:
         for pattern in ("*.py", "*.md", "*.ts", "*.tsx", "*.yml", "*.yaml"):
