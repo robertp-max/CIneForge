@@ -45,12 +45,17 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
     (tmp_path / "storage" / "archetypes").mkdir(parents=True)
     (tmp_path / "storage" / "presets").mkdir(parents=True)
     (tmp_path / "frontend" / "src" / "api").mkdir(parents=True)
+    (tmp_path / "frontend" / "src" / "pages").mkdir(parents=True)
     (tmp_path / "backend" / "app").mkdir(parents=True)
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / "storage" / "archetypes" / "catalog.json").write_text('{"archetypes":[]}', encoding="utf-8")
     (tmp_path / "storage" / "presets" / "catalog.json").write_text('{"presets":[]}', encoding="utf-8")
     (tmp_path / "frontend" / "src" / "api" / "client.ts").write_text(
         "export const api = { rawPrompt: () => fetch('/api/prompt') }",
+        encoding="utf-8",
+    )
+    (tmp_path / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
+        "fetch('/health/gpu')",
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows" / "test.yml").write_text(
@@ -64,8 +69,10 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
 
     assert report.passed is False
     assert "frontend_raw_prompt_reference" in codes
+    assert "frontend_live_probe_fetch" in codes
     assert "github_workflow_live_fragment" in codes
     assert "frontend/src/api/client.ts" in paths
+    assert "frontend/src/pages/Runtime.tsx" in paths
     assert ".github/workflows/test.yml" in paths
 
 
