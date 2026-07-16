@@ -27,11 +27,11 @@ Optional clean tracked tree plus source-scoped untracked-file enforcement after 
 The runner performs:
 
 1. Static safe/local boundary validation.
-2. Curated backend tests for local catalogs, runtime catalog evidence reads, local jobs, offline generation manifests, readiness reports, operator packets/runbooks/templates, post-production manifests, production gates, CF-VID-01 workflow-template contracts, and workflow admission/registry logic.
+2. Curated backend tests for local catalogs, runtime catalog evidence reads, path/output safety, local jobs, offline generation manifests, readiness reports, operator packets/runbooks/templates, post-production manifests, production gates, CF-VID-01 workflow-template contracts, and workflow admission/registry logic.
 3. Frontend lint and build.
 4. `git diff --check`.
 
-Current checkpoint result: `171 passed`, frontend lint/build passed, static boundary validation passed, endpoint-matrix path/method sync passed, offline docs boundary checks passed, and the checkpoint watchdog banner printed.
+Current checkpoint result: `175 passed`, frontend lint/build passed, static boundary validation passed, endpoint-matrix path/method sync passed, offline docs boundary checks passed, and the checkpoint watchdog banner printed.
 
 ## Static boundary check only
 
