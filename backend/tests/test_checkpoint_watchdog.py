@@ -62,6 +62,24 @@ def test_checkpoint_watchdog_json_mode(monkeypatch, tmp_path: Path, capsys):
     assert any("No FFmpeg/ffprobe" in item for item in payload["invariants"])
 
 
+def test_checkpoint_watchdog_json_fail_on_dirty_returns_nonzero(monkeypatch, tmp_path: Path, capsys):
+    def fake_run_git(_repo_root: Path, args: list[str]) -> str:
+        if args == ["log", "--oneline", "-1"]:
+            return "abc123 checkpoint: dirty-json"
+        if args == ["status", "--short", "--untracked-files=no"]:
+            return " M README.md"
+        if args == ["diff", "--cached", "--name-only"]:
+            return "README.md\n"
+        return "unexpected"
+
+    monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
+
+    assert main([str(tmp_path), "--json", "--fail-on-dirty"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tracked_worktree_clean"] is False
+    assert payload["staged_files"] == ["README.md"]
+
+
 def test_checkpoint_watchdog_fail_on_dirty_returns_nonzero(monkeypatch, tmp_path: Path, capsys):
     def fake_run_git(_repo_root: Path, args: list[str]) -> str:
         if args == ["log", "--oneline", "-1"]:
