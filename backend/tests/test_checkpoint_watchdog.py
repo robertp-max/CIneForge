@@ -48,6 +48,7 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
     assert "Record validation truthfully" in rendered
     assert "staged contents intentionally match" in rendered
     assert "No FFmpeg/ffprobe execution" in rendered
+    assert "public raw /prompt or /api/prompt" in rendered
     assert "No ComfyUI/GPU/render/benchmark" in rendered
 
 
