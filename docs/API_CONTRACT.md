@@ -3,9 +3,9 @@
 Implemented endpoints:
 
 - `GET /health` returns app liveness, runtime isolation mode, queue-worker flag, and autonomy mode.
-- `GET /health/comfy` checks configured `CINEFORGE_COMFYUI_BASE_URL` and returns `unavailable` instead of failing if ComfyUI is offline.
-- `GET /health/gpu` checks `nvidia-smi` availability and parses one telemetry sample when available.
-- `GET /health/ffmpeg` reports `ffmpeg` and `ffprobe` availability.
+- `GET /health/comfy` is a live ComfyUI reachability probe. It is not part of the default offline-safe validation path and requires explicit operator approval before use.
+- `GET /health/gpu` is a live GPU telemetry probe. It is not part of the default offline-safe validation path and requires explicit operator approval before use.
+- `GET /health/ffmpeg` is a live FFmpeg/ffprobe availability probe. It is not part of the default offline-safe validation path and requires explicit operator approval before use.
 - `POST /projects` validates `name` and optional `description`, returning a stub project record.
 - `GET /projects/{project_id}` returns an existing stub project or `404`.
 - `POST /campaigns` validates `project_id`, `name`, and optional positive duration, returning a stub campaign record.
@@ -18,10 +18,11 @@ Example `POST /projects`:
 { "name": "Demo Project", "description": "Smoke test" }
 ```
 
-Known stubs:
+Known local/offline boundary:
 
-- Project/campaign/job persistence is not DB-backed in Sprint 1A.
-- No route submits work to ComfyUI.
-- No route executes FFmpeg assembly.
-- No route executes autonomy.
+- Use `scripts/run_offline_safe_validation.py` for the default no-live validation path.
+- `GET /local-runtime/*`, `/local-generation/*`, `/local-operator/*`, and `/local-post-production/*` include read-only or manifest-only local surfaces documented in `docs/SAFE_LOCAL_ENDPOINTS.md`.
+- No public raw `/prompt` route submits work to ComfyUI.
+- Local operator packet/runbook/template routes do not record approval or start live work.
+- No offline/local route executes FFmpeg assembly or autonomy.
 

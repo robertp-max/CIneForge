@@ -32,10 +32,10 @@ Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characte
 - Dashboard: system cards, backend root status, recent backend-backed activity, Phase 2 safety milestone.
 - Projects: create projects, list projects, read project by ID.
 - Campaigns: create campaigns for existing projects, list campaigns, read campaign by ID.
-- Jobs: list persisted jobs and read job status by ID without creating jobs.
-- Queue: read-only queue capability surface and supported queue states.
-- Runtime: ComfyUI reachability, `object_info` availability, and disabled runtime actions.
-- System Health: readable cards and optional raw debug panels for health endpoints.
+- Jobs: list persisted jobs, prepare offline local/semantic manifests with no-execution acknowledgements, and read job status by ID without live submission.
+- Queue: read-only queue metadata surface; runtime worker status is not auto-probed.
+- Runtime: file-backed local readiness, safe-boundary, public-readiness, operator packet/runbook/template, M4 ladder/preflight, evidence, and FFmpeg recipe metadata without live probes.
+- System Health: backend health card only; ComfyUI/GPU/FFmpeg live probes are not auto-called by the UI.
 - Roadmap / Disabled Features: phase status and intentional capability gates.
 
 ## Integrated Backend Endpoints
@@ -43,10 +43,20 @@ Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characte
 - `GET /health`
 - `GET /`
 - `GET /favicon.ico`
-- `GET /health/comfy`
-- `GET /health/gpu`
-- `GET /health/ffmpeg`
-- `GET /runtime/status`
+- `GET /local-runtime/catalog`
+- `GET /local-runtime/local-mvp-readiness`
+- `GET /local-runtime/public-readiness`
+- `GET /local-runtime/safe-boundary`
+- `GET /local-archetypes/readiness`
+- `GET /local-presets/readiness`
+- `GET /local-operator/approval-templates`
+- `GET /local-operator/runbooks`
+- `GET /local-operator/packets`
+- `POST /local-operator/packets` (manifest-only; no approval/execution)
+- `GET/POST /local-generation/semantic-requests` (offline manifests only)
+- `POST /local-generation/storyboard-handoffs` (offline manifests only)
+- `GET /local-post-production/plans`
+- `GET /local-post-production/recipe-commands`
 - `GET /projects`
 - `POST /projects`
 - `GET /projects/{project_id}`
@@ -66,9 +76,16 @@ Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characte
 - Model downloads or model registry mutation.
 - Queue mutation endpoints.
 - Autonomous production execution.
+- Automatic live calls to `/runtime/status`, `/health/comfy`, `/health/gpu`, or `/health/ffmpeg` from the UI.
 
-These are intentionally gated, not missing because the UI is broken. The visible MVP exposes current live backend capability and makes unavailable generation behavior explicit.
+These are intentionally gated, not missing because the UI is broken. The visible MVP exposes offline/read-only local readiness and manifest preparation surfaces while keeping live probes and generation disabled.
 
-## Next Recommended Step
+## Validation
 
-Phase 2 backend capability is now present as a worker/runtime-only controlled submission service behind readiness checks. The next recommended step is to add worker telemetry and operator-facing readiness visibility without exposing a public Generate button.
+Use:
+
+```powershell
+.\.venv\Scripts\python scripts\run_offline_safe_validation.py
+```
+
+The current checkpoint reports `138 passed, 71 warnings`, frontend lint/build passed, and static safe-boundary validation passed. The suite does not run live runtime/media actions.
