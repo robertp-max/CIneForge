@@ -88,7 +88,7 @@ Run the static safe/local boundary check:
 .\.venv\Scripts\python scripts\validate_safe_local_boundary.py
 ```
 
-Run the curated offline-safe validation suite:
+Run the curated offline-safe validation suite. It runs static boundary checks, selected backend tests, frontend lint/build, `git diff --check`, and prints the checkpoint watchdog restart banner:
 
 ```powershell
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
