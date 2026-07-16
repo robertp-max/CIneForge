@@ -1,37 +1,43 @@
 # Local Smoke Test Plan
 
-Without ComfyUI:
+Date: 2026-07-16
 
-1. Install dependencies in a virtual environment.
-2. Run `pytest`.
-3. Start the API with Uvicorn.
-4. Check `GET /health`, `GET /health/comfy`, `GET /health/gpu`, and `GET /health/ffmpeg`.
-5. Confirm `/health/comfy` returns `unavailable` when ComfyUI is offline.
+This document is historical and has been re-scoped to the current local-only safety boundary. The default smoke path is offline-safe validation. Live health probes, ComfyUI checks, GPU telemetry checks, FFmpeg/ffprobe checks, rendering, and benchmarking require explicit operator approval as described in `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md`.
 
-With ComfyUI online later:
+## Default offline-safe smoke path
 
-1. Start the isolated ComfyUI runtime outside CineForge.
-2. Set `CINEFORGE_COMFYUI_BASE_URL`.
-3. Recheck `GET /health/comfy`.
-4. Use object-info validation against a known workflow template.
+Run:
 
-FFmpeg:
+```powershell
+.\.venv\Scripts\python scripts\run_offline_safe_validation.py
+```
 
-1. Confirm `/health/ffmpeg`.
-2. Run unit tests for stream-copy compatibility with fixture probe JSON.
-3. Do not run heavy assembly in Sprint 1A.
+This runs static safe-boundary validation, curated backend tests, frontend lint/build, and `git diff --check` without contacting ComfyUI, probing GPU/runtime health, running FFmpeg/ffprobe, submitting prompts, creating live jobs, rendering media, or benchmarking.
 
-GPU telemetry:
+Current checkpoint result: `138 passed, 71 warnings`, frontend lint/build passed, and static boundary validation passed.
 
-1. Confirm `/health/gpu`.
-2. If `nvidia-smi` is unavailable, the endpoint should fail gracefully.
-3. Parser tests cover full CSV and WDDM `N/A` fields.
+## Live probes are not part of the default smoke path
 
-Do not test yet:
+The following actions are live probes or live-tool checks and must not be run from the default smoke path:
 
-- Real video generation.
-- Model downloads.
-- ComfyUI installation or mutation.
+- `GET /health/comfy`
+- `GET /health/gpu`
+- `GET /health/ffmpeg`
+- `GET /runtime/status`
+- ComfyUI `object_info` validation against a live runtime
+- direct or controlled ComfyUI prompt submission
+- FFmpeg/ffprobe availability or media validation against local binaries
+- GPU telemetry sampling
+- benchmark ladder stages
+
+If a future operator explicitly approves one of these checks, approval must name the action family, target, scope, local-only constraint, and live-tool acknowledgement.
+
+## Still forbidden without explicit approval
+
+- Real video/image generation.
+- Model or node downloads.
+- ComfyUI installation/update/mutation.
 - Autonomous execution.
 - Parallel GPU generation.
-
+- Raw public `/prompt` proxy exposure.
+- Raw FFmpeg command-string execution.
