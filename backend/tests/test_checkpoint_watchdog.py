@@ -52,6 +52,26 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
     assert "No ComfyUI/GPU/render/benchmark" in rendered
 
 
+def test_checkpoint_watchdog_text_mode_lists_staged_files(monkeypatch, tmp_path: Path):
+    def fake_run_git(_repo_root: Path, args: list[str]) -> str:
+        if args == ["log", "--oneline", "-1"]:
+            return "abc123 checkpoint: staged"
+        if args == ["status", "--short", "--untracked-files=no"]:
+            return "M  README.md"
+        if args == ["diff", "--cached", "--name-only"]:
+            return "README.md\nbackend/tests/test_checkpoint_watchdog.py\n"
+        return "unexpected"
+
+    monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
+
+    rendered = format_watchdog_report(build_watchdog_report(tmp_path))
+
+    assert "Staged files: 2" in rendered
+    assert "Staged file list:" in rendered
+    assert "- README.md" in rendered
+    assert "- backend/tests/test_checkpoint_watchdog.py" in rendered
+
+
 def test_checkpoint_watchdog_json_mode(monkeypatch, tmp_path: Path, capsys):
     def fake_run_git(_repo_root: Path, args: list[str]) -> str:
         if args == ["log", "--oneline", "-1"]:

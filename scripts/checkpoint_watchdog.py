@@ -70,6 +70,9 @@ def format_watchdog_report(report: CheckpointWatchdogReport) -> str:
         f"Staged files: {len(report.staged_files)}",
         "Invariants:",
     ]
+    if report.staged_files:
+        lines.append("Staged file list:")
+        lines.extend(f"- {path}" for path in report.staged_files)
     lines.extend(f"- {item}" for item in report.invariants)
     lines.append("================================================================")
     return "\n".join(lines)
