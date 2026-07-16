@@ -40,7 +40,7 @@ router = APIRouter(prefix="/storyboard", tags=["storyboard"])
 
 def _domain_error(error: service.StoryboardDomainError, conflict: bool = False) -> HTTPException:
     return HTTPException(
-        status_code=status.HTTP_409_CONFLICT if conflict else status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_409_CONFLICT if conflict else status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail=str(error),
     )
 
