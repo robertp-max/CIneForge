@@ -19,8 +19,8 @@ APPROVAL_REQUIRED_PHRASES = {
     ],
 }
 
-CURRENT_VALIDATION_RESULT = "189 passed"
-STALE_VALIDATION_WARNING_RESULT_RE = r"(?:15[0-9]|16[0-9]|17[0-9]|18[0-8]) passed(?:, \d+ warnings)?|189 passed, \d+ warnings"
+CURRENT_VALIDATION_RESULT = "193 passed"
+STALE_VALIDATION_WARNING_RESULT_RE = r"(?:15[0-9]|16[0-9]|17[0-9]|18[0-9]|19[0-2]) passed(?:, \d+ warnings)?|193 passed, \d+ warnings"
 
 NON_APPROVAL_PHRASES = ["`k`", "`ok`", "`continue`", "`f`", "abusive", "threat"]
 
