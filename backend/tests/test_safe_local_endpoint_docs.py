@@ -120,6 +120,8 @@ def test_safe_local_endpoint_matrix_does_not_document_live_execution_as_allowed(
     matrix = Path("docs/SAFE_LOCAL_ENDPOINTS.md").read_text(encoding="utf-8")
 
     assert "Executes live tools? | Records approval? | Starts generation/media work?" in matrix
+    assert "any `/local-*` route with an exact `/execute`, `/submit`, `/run`, `/approve`, or `/prompt` child segment" in matrix
+    assert "/local-operator/runbooks` remains allowed reference metadata" in matrix
     for forbidden in FORBIDDEN_ALLOWED_TABLE_ROWS:
         assert forbidden not in matrix
 

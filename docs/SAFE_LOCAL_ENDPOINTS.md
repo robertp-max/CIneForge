@@ -48,8 +48,8 @@ This matrix documents local/offline CineForge surfaces that are allowed before e
 The local/offline lane must not expose these route shapes:
 
 - `/prompt` or `/api/prompt` public raw proxy,
-- `/local-generation/*/execute`, `/submit`, `/run`, `/approve`, or `/prompt`,
-- `/local-operator/run`, `/execute`, `/submit`, `/approve`, or `/prompt`,
+- any `/local-*` route with an exact `/execute`, `/submit`, `/run`, `/approve`, or `/prompt` child segment,
+- `/local-operator/run` while `/local-operator/runbooks` remains allowed reference metadata,
 - generic FFmpeg command-string execution endpoints,
 - public/autonomous generation enablement endpoints.
 
