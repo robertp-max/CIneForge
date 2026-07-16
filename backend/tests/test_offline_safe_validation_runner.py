@@ -13,6 +13,26 @@ def test_github_actions_uses_watchdog_json_output():
     assert "python scripts/run_offline_safe_validation.py --watchdog-json artifacts/watchdog/ci.json" in workflow
 
 
+def test_github_actions_stays_on_offline_safe_runner_only():
+    workflow = Path(".github/workflows/test.yml").read_text(encoding="utf-8")
+    forbidden_live_fragments = [
+        "/runtime/status",
+        "/health/comfy",
+        "/health/gpu",
+        "/health/ffmpeg",
+        "ffmpeg ",
+        "ffprobe ",
+        "comfyui",
+        "/prompt",
+        "benchmark",
+        "render",
+    ]
+
+    assert "Run offline-safe validation" in workflow
+    for fragment in forbidden_live_fragments:
+        assert fragment not in workflow.lower()
+
+
 def test_offline_safe_validation_runner_invokes_static_backend_frontend_and_diff(monkeypatch, tmp_path: Path):
     repo = tmp_path
     (repo / ".venv" / "Scripts").mkdir(parents=True)

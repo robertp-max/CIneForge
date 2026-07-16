@@ -89,4 +89,4 @@ Use:
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
-The current checkpoint reports `152 passed, 71 warnings`, frontend lint/build passed, static safe-boundary validation passed, and the checkpoint watchdog banner printed. The suite does not run live runtime/media actions.
+The current checkpoint reports `153 passed, 71 warnings`, frontend lint/build passed, static safe-boundary validation passed, and the checkpoint watchdog banner printed. The suite does not run live runtime/media actions.
