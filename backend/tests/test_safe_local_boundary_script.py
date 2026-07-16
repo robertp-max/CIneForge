@@ -85,11 +85,11 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         encoding="utf-8",
     )
     (repo / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
-        "api.runtimeStatus(); fetch(`/health/gpu`); fetch(`/api/prompt`); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute')",
+        "api.runtimeStatus(); fetch(`/health/gpu`); fetch(`/api/prompt`); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute'); fetch('/local-post-production/plans/abc/execute'); fetch('/local-runtime/ffmpeg-recipes/execute')",
         encoding="utf-8",
     )
     (repo / "backend" / "app" / "routes.py").write_text(
-        '@router.post("/prompt")\ndef prompt(): pass',
+        '@router.post("/prompt")\ndef prompt(): pass\n@router.post("/local-post-production/plans/{plan_id}/execute")\ndef execute_plan(): pass',
         encoding="utf-8",
     )
 
@@ -106,6 +106,16 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         and "checkpoint-watchdog/execute" in finding.detail
         for finding in findings
     )
+    assert any(
+        finding.code == "frontend_forbidden_local_child_route"
+        and "local-post-production/plans/abc/execute" in finding.detail
+        for finding in findings
+    )
+    assert any(
+        finding.code == "frontend_forbidden_local_child_route"
+        and "local-runtime/ffmpeg-recipes/execute" in finding.detail
+        for finding in findings
+    )
     assert any(finding.code == "frontend_live_probe_fetch" and "/health/gpu" in finding.detail for finding in findings)
     assert any(finding.code == "frontend_raw_prompt_reference" and "/api/prompt" in finding.detail for finding in findings)
     assert any(
@@ -115,4 +125,9 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         for finding in findings
     )
     assert "raw_prompt_route" in codes
+    assert any(
+        finding.code == "backend_forbidden_local_child_route"
+        and "local-post-production/plans/{plan_id}/execute" in finding.detail
+        for finding in findings
+    )
     assert all(isinstance(finding, BoundaryFinding) for finding in findings)
