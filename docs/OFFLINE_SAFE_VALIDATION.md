@@ -17,7 +17,7 @@ The runner performs:
 3. Frontend lint and build.
 4. `git diff --check`.
 
-Current checkpoint result: `134 passed, 71 warnings`, frontend lint/build passed, and static boundary validation passed.
+Current checkpoint result: `136 passed, 71 warnings`, frontend lint/build passed, static boundary validation passed, and endpoint-matrix sync passed.
 
 ## Static boundary check only
 
