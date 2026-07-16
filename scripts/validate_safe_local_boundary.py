@@ -22,6 +22,7 @@ LIVE_WORKFLOW_FRAGMENT_RE = re.compile(
 RAW_PROMPT_ROUTE_RE = re.compile(
     r"@(router|app)\.(post|get|put|patch|delete)\(\s*['\"]/(prompt|api/prompt)['\"]"
 )
+RAW_PROMPT_STRING_RE = re.compile(r"['\"]/(prompt|api/prompt)['\"]")
 FORBIDDEN_LOCAL_CHILD_RE = re.compile(
     r"local-(generation|operator)/.+(execute|submit|approve|prompt)|"
     r"local-(generation|operator)/(execute|submit|approve|prompt)|"
@@ -123,6 +124,8 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
         text = path.read_text(encoding="utf-8", errors="ignore")
         for match in LIVE_FRONTEND_CALL_RE.finditer(text):
             findings.append(BoundaryFinding("frontend_live_probe_callsite", str(path), match.group(0)))
+        for match in RAW_PROMPT_STRING_RE.finditer(text):
+            findings.append(BoundaryFinding("frontend_raw_prompt_reference", str(path), match.group(0)))
         for match in FORBIDDEN_LOCAL_CHILD_RE.finditer(text):
             findings.append(BoundaryFinding("frontend_forbidden_local_child_route", str(path), match.group(0)))
 
