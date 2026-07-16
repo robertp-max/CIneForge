@@ -49,6 +49,9 @@ REQUIRED_DOCUMENTED_ENDPOINTS = {
 
 
 MATRIX_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")
+SAFE_MATRIX_ROW_RE = re.compile(
+    r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \| (?P<purpose>[^|]+) \| (?P<executes>Yes|No) \| (?P<approves>Yes|No) \| (?P<starts>Yes|No) \|"
+)
 
 
 FORBIDDEN_LOCAL_EXECUTION_SEGMENTS = {"execute", "submit", "approve", "prompt", "run"}
@@ -134,6 +137,16 @@ def test_safe_local_endpoint_matrix_does_not_document_live_execution_as_allowed(
     assert "/local-operator/runbooks` remains allowed reference metadata" in matrix
     for forbidden in FORBIDDEN_ALLOWED_TABLE_ROWS:
         assert forbidden not in matrix
+
+
+def test_safe_local_endpoint_matrix_rows_remain_non_executing_non_approving():
+    matrix = Path("docs/SAFE_LOCAL_ENDPOINTS.md").read_text(encoding="utf-8")
+    rows = [match.groupdict() for line in matrix.splitlines() if (match := SAFE_MATRIX_ROW_RE.match(line))]
+
+    assert rows
+    assert all(row["executes"] == "No" for row in rows)
+    assert all(row["approves"] == "No" for row in rows)
+    assert all(row["starts"] == "No" for row in rows)
 
 
 def test_app_has_no_local_execution_child_routes():
