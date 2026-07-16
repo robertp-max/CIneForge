@@ -6,7 +6,7 @@ transaction boundary (proposal_apply).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -33,7 +33,7 @@ class MutationError(ValueError):
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _optional_uuid(value: Any) -> UUID | None:
