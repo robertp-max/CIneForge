@@ -94,7 +94,7 @@ Run the curated offline-safe validation suite. It runs static boundary checks, s
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
-Checkpoint watchdog helpers:
+Checkpoint watchdog helpers. A watchdog/status check is not a stopping point; after reading it, immediately continue the offline-safe loop unless blocked by the live boundary.
 
 ```powershell
 .\.venv\Scripts\python scripts\checkpoint_watchdog.py --json
