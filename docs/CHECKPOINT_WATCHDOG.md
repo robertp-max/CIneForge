@@ -19,16 +19,17 @@ Do not stop for status chatter. Stop only if blocked by an explicit live-approva
 
 ## Invariants
 
-- No FFmpeg or ffprobe execution without explicit scoped live approval.
-- No ComfyUI, GPU probe, runtime health probe, render, benchmark, queue execution, prompt submission, or public generation without explicit scoped live approval.
-- Casual `ok`, `k`, `continue`, planning approval, Storyboard approval, packet creation, or runbook viewing is not live approval.
-- Public raw `/prompt` and `/api/prompt` routes remain absent.
-- Public/autonomous generation remains disabled.
-- Local endpoints remain read-only or manifest-only; no execute/submit/approve/prompt child routes.
-- Local archetypes and presets stay disabled/not-ready unless explicit gates and approvals change scope.
+- No FFmpeg/ffprobe execution without explicit scoped live approval.
+- No ComfyUI/GPU/render/benchmark/runtime-health probe without explicit scoped live approval.
+- No prompt submission, queue execution, public generation, or public raw /prompt route.
+- Keep local archetypes/presets disabled unless evidence gates and approval explicitly change that scope.
 - Record validation truthfully in each checkpoint; if the full offline-safe suite was not run, say so.
 - Before each checkpoint commit, verify staged contents intentionally match the checkpoint and no unrelated files are included.
-- After each checkpoint commit, immediately resume offline-safe work.
+- After each commit, immediately continue with the next offline-safe gap unless blocked by the live boundary.
+- Casual `ok`, `k`, `continue`, planning approval, Storyboard approval, packet creation, or runbook viewing is not live approval.
+- Public raw `/api/prompt` routes remain absent.
+- Public/autonomous generation remains disabled.
+- Local endpoints remain read-only or manifest-only; no execute/submit/approve/prompt child routes.
 
 ## Tooling
 

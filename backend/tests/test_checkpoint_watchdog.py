@@ -6,6 +6,14 @@ from pathlib import Path
 from scripts.checkpoint_watchdog import build_watchdog_report, format_watchdog_report, main
 
 
+def test_checkpoint_watchdog_docs_include_script_invariants():
+    report = build_watchdog_report(Path.cwd())
+    docs = Path("docs/CHECKPOINT_WATCHDOG.md").read_text(encoding="utf-8")
+
+    for invariant in report.invariants:
+        assert invariant in docs
+
+
 def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_path: Path):
     def fake_run_git(_repo_root: Path, args: list[str]) -> str:
         if args == ["log", "--oneline", "-1"]:
