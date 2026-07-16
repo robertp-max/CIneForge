@@ -6,6 +6,15 @@ from pathlib import Path
 from scripts.checkpoint_watchdog import build_watchdog_report, format_watchdog_report, main
 
 
+def test_runtime_ui_does_not_truncate_watchdog_invariants():
+    runtime_page = Path("frontend/src/pages/Runtime.tsx").read_text(encoding="utf-8")
+
+    assert "localCheckpointWatchdog?.invariants ?? []" in runtime_page
+    assert ".slice(0, 5).map((invariant)" not in runtime_page
+    assert ".slice(0, 4).map((invariant)" not in runtime_page
+    assert "A watchdog/status answer is not a stopping point" not in runtime_page  # UI must use API data, not hard-coded text.
+
+
 def test_checkpoint_watchdog_docs_include_script_invariants():
     report = build_watchdog_report(Path.cwd())
     docs = Path("docs/CHECKPOINT_WATCHDOG.md").read_text(encoding="utf-8")
