@@ -50,6 +50,10 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / "storage" / "archetypes" / "catalog.json").write_text('{"archetypes":[]}', encoding="utf-8")
     (tmp_path / "storage" / "presets" / "catalog.json").write_text('{"presets":[]}', encoding="utf-8")
+    (tmp_path / "frontend" / "package.json").write_text(
+        '{"scripts":{"bad":"ffprobe -version"}}',
+        encoding="utf-8",
+    )
     (tmp_path / "frontend" / "src" / "api" / "client.ts").write_text(
         "export const api = { rawPrompt: () => fetch('/api/prompt') }",
         encoding="utf-8",
@@ -71,8 +75,10 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
     assert "frontend_raw_prompt_reference" in codes
     assert "frontend_live_probe_fetch" in codes
     assert "github_workflow_live_fragment" in codes
+    assert "package_script_live_fragment" in codes
     assert "frontend/src/api/client.ts" in paths
     assert "frontend/src/pages/Runtime.tsx" in paths
+    assert "frontend/package.json" in paths
     assert ".github/workflows/test.yml" in paths
 
 
