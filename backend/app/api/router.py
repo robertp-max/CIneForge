@@ -6,7 +6,9 @@ from backend.app.api.routes import (
     health,
     jobs,
     local_archetypes,
+    local_generation,
     local_jobs,
+    local_operator,
     local_post_production,
     local_presets,
     local_runtime,
@@ -31,7 +33,9 @@ api_router.include_router(production.router)
 api_router.include_router(campaigns.router)
 api_router.include_router(jobs.router)
 api_router.include_router(local_archetypes.router)
+api_router.include_router(local_generation.router)
 api_router.include_router(local_jobs.router)
+api_router.include_router(local_operator.router)
 api_router.include_router(local_post_production.router)
 api_router.include_router(local_presets.router)
 api_router.include_router(local_runtime.router)

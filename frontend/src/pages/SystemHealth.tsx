@@ -7,9 +7,6 @@ import { StatusCard } from '../components/Cards'
 type HealthState = {
   root: RootStatus | null
   backend: HealthResponse | null
-  comfy: HealthResponse | null
-  gpu: HealthResponse | null
-  ffmpeg: HealthResponse | null
 }
 
 function statusOf(response: HealthResponse | null): string {
@@ -20,9 +17,6 @@ export function SystemHealth() {
   const [health, setHealth] = useState<HealthState>({
     root: null,
     backend: null,
-    comfy: null,
-    gpu: null,
-    ffmpeg: null,
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,15 +28,9 @@ export function SystemHealth() {
       setLoading(true)
       setError(null)
       try {
-        const [root, backend, comfy, gpu, ffmpeg] = await Promise.all([
-          api.rootStatus(),
-          api.health(),
-          api.comfyHealth(),
-          api.gpuHealth(),
-          api.ffmpegHealth(),
-        ])
+        const [root, backend] = await Promise.all([api.rootStatus(), api.health()])
         if (!cancelled) {
-          setHealth({ root, backend, comfy, gpu, ffmpeg })
+          setHealth({ root, backend })
         }
       } catch (err) {
         if (!cancelled) {
@@ -65,8 +53,8 @@ export function SystemHealth() {
     <div className="page">
       <PageHeader
         eyebrow="System Health"
-        title="Read-only runtime checks"
-        description="Health cards call the FastAPI health endpoints and degrade gracefully when services are offline."
+        title="Read-only backend checks"
+        description="This page reads only backend/root metadata automatically. Live ComfyUI, GPU, and FFmpeg probes require explicit external approval and are not auto-run."
       />
 
       {error ? <ErrorNotice message={error} /> : null}
@@ -86,30 +74,33 @@ export function SystemHealth() {
         />
         <StatusCard
           title="ComfyUI"
-          status={statusOf(health.comfy)}
-          detail="External ComfyUI reachability only; no prompt submission."
-          meta="GET /health/comfy"
+          status="not probed"
+          detail="External ComfyUI reachability is not automatically checked from this UI. Approval is required before any live runtime probe."
+          meta="Live /health/comfy probe disabled in UI"
         />
         <StatusCard
           title="GPU"
-          status={statusOf(health.gpu)}
-          detail="nvidia-smi based telemetry status."
-          meta="GET /health/gpu"
+          status="not probed"
+          detail="GPU telemetry is not automatically checked from this UI. Hardware readiness is not claimed."
+          meta="Live /health/gpu probe disabled in UI"
         />
         <StatusCard
           title="FFmpeg"
-          status={statusOf(health.ffmpeg)}
-          detail="ffmpeg and ffprobe binary availability."
-          meta="GET /health/ffmpeg"
+          status="not probed"
+          detail="ffmpeg and ffprobe availability are not automatically checked from this UI."
+          meta="Live /health/ffmpeg probe disabled in UI"
         />
       </section>
 
       <section className="panel">
         <div className="panel-title">
           <h2>Raw Status Summary</h2>
-          <span>Optional debug response</span>
+          <span>Backend/root only</span>
         </div>
-        <DebugPanel title="Health payloads" data={health} />
+        <DebugPanel
+          title="Health payloads"
+          data={{ ...health, externalRuntimeProbes: 'not auto-probed; approval required' }}
+        />
       </section>
     </div>
   )

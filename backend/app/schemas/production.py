@@ -500,6 +500,7 @@ class CompiledWorkflow(BaseModel):
     patched_workflow: dict[str, Any]
     output_prefix: str
     production: bool
+    workflow_snapshot_path: Path | None = None
 
 
 class OutputDiscoveryRecord(BaseModel):

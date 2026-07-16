@@ -7,9 +7,6 @@ import { StatusCard } from '../components/Cards'
 
 type DashboardHealth = {
   backend: HealthResponse | null
-  comfy: HealthResponse | null
-  gpu: HealthResponse | null
-  ffmpeg: HealthResponse | null
 }
 
 type DashboardProps = {
@@ -23,9 +20,6 @@ function statusOf(response: HealthResponse | null): string {
 export function Dashboard({ onBackendStatus }: DashboardProps) {
   const [health, setHealth] = useState<DashboardHealth>({
     backend: null,
-    comfy: null,
-    gpu: null,
-    ffmpeg: null,
   })
   const [projects, setProjects] = useState<Project[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -41,12 +35,9 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
       setLoading(true)
       setError(null)
       try {
-        const [root, backend, comfy, gpu, ffmpeg, projectList, campaignList, jobList] = await Promise.all([
+        const [root, backend, projectList, campaignList, jobList] = await Promise.all([
           api.rootStatus(),
           api.health(),
-          api.comfyHealth(),
-          api.gpuHealth(),
-          api.ffmpegHealth(),
           api.listProjects(),
           api.listCampaigns(),
           api.listJobs(),
@@ -57,7 +48,7 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
         }
 
         setRootStatus(root)
-        setHealth({ backend, comfy, gpu, ffmpeg })
+        setHealth({ backend })
         setProjects(projectList)
         setCampaigns(campaignList)
         setJobs(jobList)
@@ -85,7 +76,7 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
       <PageHeader
         eyebrow="CineForge"
         title="Local AI Video Orchestration MVP."
-        description="A polished local control dashboard for DB-backed planning, runtime readiness, and the intentionally gated generation path."
+        description="A polished local control dashboard for DB-backed planning, backend health, and the intentionally gated generation path."
       />
 
       <section className="safety-banner">
@@ -113,26 +104,26 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
         />
         <StatusCard
           title="ComfyUI"
-          status={statusOf(health.comfy)}
-          detail="Reachability is read-only. Prompt submission remains blocked."
-          meta="GET /health/comfy"
+          status="not probed"
+          detail="ComfyUI reachability is not auto-probed by the dashboard. Explicit external approval is required before any live runtime check."
+          meta="Live /health/comfy probe disabled in UI"
         />
         <StatusCard
           title="GPU"
-          status={statusOf(health.gpu)}
-          detail="GPU telemetry reports availability without failing the UI."
-          meta="GET /health/gpu"
+          status="not probed"
+          detail="GPU telemetry is not auto-probed by the dashboard. Hardware readiness is not claimed from this surface."
+          meta="Live /health/gpu probe disabled in UI"
         />
         <StatusCard
           title="FFmpeg"
-          status={statusOf(health.ffmpeg)}
-          detail="Binary availability is checked. Assembly is disabled."
-          meta="GET /health/ffmpeg"
+          status="not probed"
+          detail="FFmpeg and ffprobe availability are not auto-probed by the dashboard. Assembly remains disabled."
+          meta="Live /health/ffmpeg probe disabled in UI"
         />
         <StatusCard
           title="Queue"
-          status="degraded"
-          detail="Controlled worker submission exists; public generation remains disabled."
+          status="read-only"
+          detail="Visible jobs come from the backend read path; runtime worker status is not auto-probed."
           meta={`${jobs.length} visible jobs`}
         />
       </section>
@@ -141,7 +132,7 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
         <article className="panel">
           <div className="panel-title">
             <h2>Recent Activity</h2>
-            <span>{loading ? 'Loading' : 'Live backend data where available'}</span>
+            <span>{loading ? 'Loading' : 'Backend read data where available'}</span>
           </div>
           {projects.length === 0 && campaigns.length === 0 && jobs.length === 0 ? (
             <EmptyState
@@ -181,10 +172,13 @@ export function Dashboard({ onBackendStatus }: DashboardProps) {
             <span>Phase 2</span>
           </div>
           <p>
-            Controlled ComfyUI submission now runs only through the worker/runtime service boundary after readiness
-            checks. Public UI generation, WebSockets, outputs, and autonomy remain disabled.
+            Controlled ComfyUI submission remains behind the worker/runtime service boundary and explicit approval.
+            Public UI generation, WebSockets, outputs, live probes, and autonomy remain disabled.
           </p>
-          <DebugPanel title="Backend status snapshot" data={{ rootStatus, health }} />
+          <DebugPanel
+            title="Backend status snapshot"
+            data={{ rootStatus, backendHealth: health.backend, externalRuntimeProbes: 'not auto-probed' }}
+          />
         </article>
       </section>
     </div>

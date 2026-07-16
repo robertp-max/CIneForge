@@ -10,17 +10,17 @@ What works now:
 
 - FastAPI backend scaffold.
 - Configuration loading from `.env`.
-- Health endpoints for app, ComfyUI reachability, GPU telemetry, and FFmpeg availability.
+- Health endpoints for app plus explicit/operator-invoked ComfyUI reachability, GPU telemetry, and FFmpeg availability probes; frontend local readiness pages no longer auto-call the live probes.
 - SQLAlchemy schema foundation aligned to the research packet.
 - Queue state machine primitives.
 - Workflow manifest validation and immutable snapshot writing.
 - DB-free local runtime catalog for the selected LTX-2.3 Distilled 1.1 FP8 artifact.
-- Local archetype catalog (`CF-VID-01`..`CF-VID-04`, `CF-IMG-01`) and exactly 64 disabled/gated presets.
-- File-backed local job manifests that create ComfyUI project output folders and offline workflow snapshots without submitting prompts.
+- Local archetype catalog covering the canonical `CF-IMG-01`..`CF-IMG-05`, `CF-VID-01`..`CF-VID-05`, `CF-UTIL-01`, and `CF-POST-01` set as disabled/gated planning records plus exactly 64 disabled/gated presets.
+- File-backed local job, semantic-generation, post-production, recipe-command, and operator-review manifests that prepare offline evidence without submitting prompts or executing FFmpeg/ffprobe.
 - Path safety helpers.
 - Offline-safe ComfyUI client wrapper.
 - `nvidia-smi` parser for benchmark telemetry.
-- FFmpeg/ffprobe validation primitives.
+- FFmpeg/ffprobe validation primitives and structured allowlisted recipe builders; current local APIs persist/read manifests only and do not execute media tools.
 - Non-executing AI/autonomy schemas and validators.
 - Pytest coverage for the Sprint 1A primitives.
 - Persisted `Project -> Story -> Chapter -> Scene -> Shot` planning hierarchy.
@@ -31,11 +31,11 @@ What does not work yet:
 
 - No general user-facing or preset-enabled production video generation.
 - No autonomous production execution.
-- No full benchmark ladder, recovery/OOM exercise, or human QA sign-off.
+- No live benchmark ladder evidence, recovery/OOM exercise, or human QA sign-off.
 - No app-level ComfyUI Manager/download/update enforcement yet.
 - A GPU queue-worker skeleton exists (`backend/app/services/queue/worker.py`), but it is not production-enabled for public/preset generation.
 - No image/video generation is triggered by Storyboard Phase A approval.
-- Project and campaign APIs are still planning/scaffold surfaces; the new `/local-jobs` path is file-backed but generation-disabled.
+- Project and campaign APIs are still planning/scaffold surfaces; `/local-jobs`, `/local-generation/*`, `/local-post-production/*`, and `/local-operator/packets` are file-backed/offline-only unless a separate future operator-approved live runner is added.
 
 ## Default video policy (2026-07)
 
@@ -43,7 +43,7 @@ What does not work yet:
 - Source identity: official LTX-2.3 22B Distilled **1.1**; the BF16 source checkpoint is not itself an FP8 artifact.
 - Runtime precision: proven FP8 only via a recorded method (`loader_level`, `converted_derivative`, or `official_artifact`); never silently substitute a non-1.1 FP8 file.
 - M0 records a local full-checkpoint FP8 artifact as `converted_derivative`; CF-VID-01 has passed a minimal local T2V smoke, but admission remains `benchmark_required` until conversion provenance, full benchmark evidence, recovery behavior, and human QA are recorded.
-- `/local-runtime/catalog` exposes the DB-free local model/output contract; `/local-presets`, `/local-archetypes`, and `/local-jobs` expose the local file-backed ComfyUI lane.
+- `/local-runtime/catalog` and `/local-runtime/local-mvp-readiness` expose the DB-free local model/output/readiness contract; `/local-presets`, `/local-archetypes`, `/local-jobs`, `/local-generation/*`, and `/local-operator/packets` expose the local file-backed ComfyUI lane without submitting generation.
 - Outputs are saved under the local ComfyUI output root (`C:\AI\ComfyUI_windows_portable\ComfyUI\output` by default), with one sanitized folder per CineForge project and safe `filename_prefix=<project-folder>/<run-stem>`.
 - Wan and older LTXV lanes are historical or optional secondary evidence, disabled by default.
 - Storyboard approval does not automatically start generation.

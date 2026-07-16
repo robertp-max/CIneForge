@@ -266,6 +266,61 @@ export type LocalM4PreflightReport = {
   safety_note: string
 }
 
+export type LocalMVPReadinessCheck = {
+  code: string
+  passed: boolean
+  severity: 'info' | 'warning' | 'blocker'
+  message: string
+  evidence: Record<string, unknown>
+}
+
+export type LocalMVPM4PreflightSummary = {
+  phase: 'M4'
+  status: string
+  hardware_operator_probe_allowed: boolean
+  live_actions_executed: boolean
+  public_generation_enabled: boolean
+  public_prompt_enabled: boolean
+  check_count: number
+  passed_check_count: number
+  blocking_reasons: string[]
+  next_allowed_action: string
+}
+
+export type LocalMVPM5PostProductionReadinessSummary = {
+  phase: 'M5'
+  recipe_catalog_count: number
+  recipe_template_ids: string[]
+  ffmpeg_recipes_read_only: boolean
+  ffmpeg_recipes_execute_from_catalog: boolean
+  user_authored_ffmpeg_commands_allowed: boolean
+  ffmpeg_execution_endpoint_present: boolean
+  recipe_command_routes_read_only: boolean
+  live_ffmpeg_probe_or_execute_performed: boolean
+  safe_metadata_source: string
+}
+
+export type LocalMVPReadinessReport = {
+  checkpoint_id: 'local_mvp_readiness'
+  status: 'checkpoint_only' | 'blocked'
+  local_only_target: boolean
+  public_generation_disabled: boolean
+  autonomous_generation_disabled: boolean
+  generation_enabled: boolean
+  public_generation_enabled: boolean
+  queue_worker_enabled: boolean
+  hardware_operator_enabled: boolean
+  live_execution_performed_by_endpoint: boolean
+  live_execution_approved_by_endpoint: boolean
+  local_operator_live_runs_allowed_by_endpoint: boolean
+  m4_preflight: LocalMVPM4PreflightSummary
+  m5_post_production: LocalMVPM5PostProductionReadinessSummary
+  checks: LocalMVPReadinessCheck[]
+  remaining_blockers_before_local_operator_live_runs: string[]
+  safe_metadata_sources: string[]
+  safety_note: string
+}
+
 export type BenchmarkLadderStage = {
   stage: number
   stage_id: string
@@ -285,6 +340,170 @@ export type BenchmarkLadderStage = {
   live_action_approved: boolean
   public_generation_enabled: boolean
   requires_stage_success: number[]
+}
+
+export type LocalReadinessStatus = 'blocked' | 'benchmark_required' | 'ready'
+
+export type LocalReadinessReason = {
+  code: string
+  severity: 'info' | 'warning' | 'blocker'
+  message: string
+  source: string
+  evidence: Record<string, unknown>
+}
+
+export type WorkflowRegistryReadinessSnapshot = {
+  registry_available: boolean
+  archetype_id: string | null
+  version: string | null
+  readiness: string | null
+  implemented: boolean
+  dependency_verified: boolean
+  locally_tested: boolean
+  benchmark_passed: boolean
+  human_approved: boolean
+  publicly_enabled: boolean
+  supported_modes: string[]
+  supported_profiles: string[]
+  required_classes_count: number
+  dependency_count: number
+  missing_required_dependencies: string[]
+  blocked_reasons: string[]
+}
+
+export type WorkflowAdmissionReadinessSnapshot = {
+  evaluated: boolean
+  admitted_for_local_execution: boolean
+  finding_codes: string[]
+  findings: LocalReadinessReason[]
+}
+
+export type ProductionGateReadinessSnapshot = {
+  production_ready: boolean
+  missing_gates: string[]
+  blocked_reasons: string[]
+}
+
+export type LocalArchetypeReadinessRecord = {
+  archetype_id: string
+  name: string
+  modality: string
+  quality_profiles: string[]
+  catalog_present: boolean
+  catalog_readiness: string
+  catalog_enabled: boolean
+  source_exists: boolean
+  status: LocalReadinessStatus
+  public_generation_enabled: boolean
+  live_execution_required_for_promotion: boolean
+  admitted_for_local_execution: boolean
+  production_ready: boolean
+  workflow_registry: WorkflowRegistryReadinessSnapshot
+  admission: WorkflowAdmissionReadinessSnapshot
+  production_gates: ProductionGateReadinessSnapshot
+  reasons: LocalReadinessReason[]
+}
+
+export type LocalReadinessSummary = {
+  total: number
+  blocked: number
+  benchmark_required: number
+  ready: number
+  public_generation_enabled: boolean
+}
+
+export type LocalArchetypeReadinessReport = {
+  catalog_version: string
+  public_generation_enabled: boolean
+  live_execution_performed_by_endpoint: boolean
+  records: LocalArchetypeReadinessRecord[]
+  summary: LocalReadinessSummary
+  safe_metadata_sources: string[]
+  safety_note: string
+}
+
+export type LocalPresetReadinessRecord = {
+  preset_id: string
+  name: string
+  modality: string
+  model_key: string
+  quality_profile: string
+  default_archetype_id: string
+  catalog_readiness: string
+  catalog_enabled: boolean
+  status: LocalReadinessStatus
+  public_generation_enabled: boolean
+  live_execution_required_for_promotion: boolean
+  admitted_for_local_execution: boolean
+  production_ready: boolean
+  default_archetype_status: LocalReadinessStatus | null
+  workflow_registry: WorkflowRegistryReadinessSnapshot
+  admission: WorkflowAdmissionReadinessSnapshot
+  production_gates: ProductionGateReadinessSnapshot
+  reasons: LocalReadinessReason[]
+}
+
+export type LocalPresetReadinessReport = {
+  catalog_version: string
+  public_generation_enabled: boolean
+  live_execution_performed_by_endpoint: boolean
+  records: LocalPresetReadinessRecord[]
+  summary: LocalReadinessSummary
+  safe_metadata_sources: string[]
+  safety_note: string
+}
+
+export type LocalOperatorRunMode =
+  | 'm4_hardware_ladder_probe'
+  | 'm5_ffmpeg_probe_validation'
+  | 'm5_ffmpeg_assembly_validation'
+
+export type LocalOperatorRunPacket = {
+  packet_id: string
+  state: 'pending_explicit_operator_approval'
+  created_at: string
+  manifest_path: string
+  request: {
+    mode: LocalOperatorRunMode
+    requested_by: string
+    target_ref: string | null
+    notes: string | null
+    acknowledge_no_execution: boolean
+  }
+  approval_recorded: boolean
+  live_execution_started: boolean
+  generation_submitted: boolean
+  ffmpeg_submitted: boolean
+  comfy_prompt_id: string | null
+  queue_job_id: string | null
+  local_mvp: {
+    status: string
+    local_only_target: boolean
+    public_generation_disabled: boolean
+    autonomous_generation_disabled: boolean
+    live_execution_approved_by_endpoint: boolean
+    local_operator_live_runs_allowed_by_endpoint: boolean
+  }
+  m4_preflight: {
+    status: string
+    hardware_operator_probe_allowed: boolean
+    live_actions_executed: boolean
+    check_count: number
+    passed_check_count: number
+    blocking_reasons: string[]
+    next_allowed_action: string
+  } | null
+  m5_recipes: {
+    recipe_catalog_count: number
+    ffmpeg_recipes_read_only: boolean
+    ffmpeg_execution_endpoint_present: boolean
+    live_ffmpeg_probe_or_execute_performed: boolean
+    user_authored_ffmpeg_commands_allowed: boolean
+  } | null
+  blocking_reasons: string[]
+  operator_checklist: string[]
+  safe_metadata_sources: string[]
+  safety_note: string
 }
 
 export type BenchmarkLadderManifest = {
@@ -330,6 +549,102 @@ export type LocalJobCreatePayload = {
   frames?: number | null
   fps?: number | null
   steps?: number | null
+}
+
+export type SemanticGenerationRequestPayload = {
+  preset_id: string
+  archetype_id: string
+  quality_profile: string
+  mode: 't2v' | 'i2v' | 'control' | 'lipdub' | 'continuation'
+  prompt: string
+  negative_prompt?: string
+  reference_image_asset_ids?: string[]
+  first_image_asset_id?: string | null
+  last_image_asset_id?: string | null
+  source_video_asset_id?: string | null
+  mask_or_control_asset_id?: string | null
+  character_reference_ids?: string[]
+  seed?: number
+  aspect_ratio?: string
+  width: number
+  height: number
+  frame_count: number
+  fps?: number
+  target_duration_sec: number
+  upscale_factor?: number
+  output_profile?: string
+  output_prefix: string
+  production?: boolean
+}
+
+export type ProductionGateBlockingReason = {
+  code: string
+  message: string
+  subject: string | null
+  evidence: Record<string, unknown>
+}
+
+export type ProductionGateReport = {
+  allowed: boolean
+  blocking_reasons: ProductionGateBlockingReason[]
+  warnings: string[]
+}
+
+export type SemanticCompiledWorkflowMetadata = {
+  archetype_id: string
+  template_id: string
+  template_version: string
+  workflow_api_sha256: string
+  patch_payload: Record<string, unknown>
+  output_prefix: string
+  production: boolean
+}
+
+export type SemanticGenerationRequestManifest = {
+  request_id: string
+  state: 'blocked_by_gates' | 'prepared_offline'
+  created_at: string
+  manifest_path: string
+  request: SemanticGenerationRequestPayload
+  gate_report: ProductionGateReport
+  generation_submitted: boolean
+  comfy_prompt_id: string | null
+  queue_job_id: string | null
+  workflow_snapshot_path: string | null
+  compiled_workflow_metadata: SemanticCompiledWorkflowMetadata | null
+}
+
+export type StoryboardHandoffRequestPayload = {
+  story_id: string
+  shot_id?: string | null
+  preset_id?: string
+  archetype_id?: string
+  quality_profile?: string
+  mode?: 't2v' | 'i2v' | 'control' | 'lipdub' | 'continuation'
+  output_project_key?: string | null
+  run_stem?: string | null
+}
+
+export type StoryboardHandoffManifestSummary = {
+  shot_id: string
+  request_id: string
+  state: 'blocked_by_gates' | 'prepared_offline'
+  gate_allowed: boolean
+  blocking_codes: string[]
+  generation_submitted: boolean
+}
+
+export type StoryboardHandoffReport = {
+  story_id: string
+  active_storyboard_version_id: string | null
+  active_storyboard_content_hash: string | null
+  selected_shot_count: number
+  created_manifests: StoryboardHandoffManifestSummary[]
+  blocked_reasons: string[]
+  generation_submitted: boolean
+  execution_started: boolean
+  automatic_from_approval: boolean
+  safety_note: string
 }
 
 export type HealthResponse = Record<string, unknown> & {
@@ -1691,14 +2006,36 @@ export const api = {
   localOutputPolicy: () => request<LocalRuntimeCatalog['output_policy']>('/local-runtime/output-policy'),
   listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
+  localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
+  listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
   localM4Ladder: () => request<BenchmarkLadderManifest>('/local-runtime/m4-ladder'),
   listFFmpegRecipes: () => request<FFmpegCommandTemplateRecord[]>('/local-runtime/ffmpeg-recipes'),
   listLocalPresets: () => request<LocalPreset[]>('/local-presets'),
+  getLocalPresetReadiness: (presetId: string) =>
+    request<LocalPresetReadinessRecord>(`/local-presets/${encodeURIComponent(presetId)}/readiness`),
+  listLocalPresetReadiness: () => request<LocalPresetReadinessReport>('/local-presets/readiness'),
   listLocalArchetypes: () => request<LocalArchetype[]>('/local-archetypes'),
+  getLocalArchetypeReadiness: (archetypeId: string) =>
+    request<LocalArchetypeReadinessRecord>(`/local-archetypes/${encodeURIComponent(archetypeId)}/readiness`),
+  listLocalArchetypeReadiness: () => request<LocalArchetypeReadinessReport>('/local-archetypes/readiness'),
   listLocalJobs: (limit = 25) => request<LocalJobManifest[]>(`/local-jobs?limit=${limit}`),
   getLocalJob: (jobId: string) => request<LocalJobManifest>(`/local-jobs/${jobId}`),
   createLocalJob: (payload: LocalJobCreatePayload) =>
     request<LocalJobManifest>('/local-jobs', { method: 'POST', body: JSON.stringify(payload) }),
+  listSemanticGenerationRequestManifests: (limit = 25) =>
+    request<SemanticGenerationRequestManifest[]>(`/local-generation/semantic-requests?limit=${limit}`),
+  getSemanticGenerationRequestManifest: (requestId: string) =>
+    request<SemanticGenerationRequestManifest>(`/local-generation/semantic-requests/${requestId}`),
+  createSemanticGenerationRequestManifest: (payload: SemanticGenerationRequestPayload) =>
+    request<SemanticGenerationRequestManifest>('/local-generation/semantic-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  createStoryboardHandoff: (payload: StoryboardHandoffRequestPayload) =>
+    request<StoryboardHandoffReport>('/local-generation/storyboard-handoffs', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listPostProductionPlans: (limit = 25) =>
     request<PostProductionPlanManifest[]>(`/local-post-production/plans?limit=${limit}`),
   listPostProductionRecipeCommands: (limit = 25) =>

@@ -59,6 +59,7 @@ class SemanticWorkflowCompiler:
             patched_workflow=patched.patched_workflow,
             output_prefix=str(patch_payload["output_prefix"]),
             production=request.production,
+            workflow_snapshot_path=patched.snapshot_path,
         )
 
     def _technical_failures(self, request: SemanticGenerationRequest, record) -> list[CompileFailure]:

@@ -3,15 +3,18 @@ import pytest
 
 from backend.app.core.config import Settings
 from backend.app.main import app
-from backend.app.schemas.local_archetypes import LocalArchetypeCatalog
+from backend.app.schemas.local_archetypes import CANONICAL_REGISTRY_ARCHETYPE_IDS, LocalArchetypeCatalog
 from backend.app.services.local_archetypes import LocalArchetypeCatalogService
+from backend.app.services.workflows.registry import WorkflowRegistryService
 
 
 def test_local_archetype_catalog_contains_required_ids():
     catalog = LocalArchetypeCatalogService().load()
 
     ids = {archetype.archetype_id for archetype in catalog.archetypes}
-    assert {"CF-VID-01", "CF-VID-02", "CF-VID-03", "CF-VID-04", "CF-IMG-01"} <= ids
+    registry_ids = {record.archetype_id for record in WorkflowRegistryService().load()}
+    assert registry_ids == CANONICAL_REGISTRY_ARCHETYPE_IDS
+    assert registry_ids <= ids
 
     vid01 = next(archetype for archetype in catalog.archetypes if archetype.archetype_id == "CF-VID-01")
     assert vid01.default_model_key == "ltx2_3_22b_distilled_1_1_fp8"
@@ -21,6 +24,12 @@ def test_local_archetype_catalog_contains_required_ids():
     assert "review" in vid01.quality_profiles
 
     assert all(archetype.enabled is False for archetype in catalog.archetypes)
+    assert all(archetype.readiness != "ready" for archetype in catalog.archetypes)
+    assert all(
+        archetype.readiness == "blocked"
+        for archetype in catalog.archetypes
+        if archetype.archetype_id in CANONICAL_REGISTRY_ARCHETYPE_IDS - {"CF-VID-01"}
+    )
 
 
 def test_local_archetype_catalog_fails_closed_when_configured_catalog_missing(tmp_path):
@@ -50,7 +59,7 @@ def test_local_archetype_routes():
 
     catalog_response = client.get("/local-archetypes/catalog")
     assert catalog_response.status_code == 200
-    assert len(catalog_response.json()["archetypes"]) >= 5
+    assert len(catalog_response.json()["archetypes"]) >= len(CANONICAL_REGISTRY_ARCHETYPE_IDS)
 
     list_response = client.get("/local-archetypes", params={"modality": "video"})
     assert list_response.status_code == 200

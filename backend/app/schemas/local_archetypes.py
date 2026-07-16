@@ -29,6 +29,24 @@ class LocalArchetype(BaseModel):
     notes: str = ""
 
 
+CANONICAL_REGISTRY_ARCHETYPE_IDS = frozenset(
+    {
+        "CF-IMG-01",
+        "CF-IMG-02",
+        "CF-IMG-03",
+        "CF-IMG-04",
+        "CF-IMG-05",
+        "CF-VID-01",
+        "CF-VID-02",
+        "CF-VID-03",
+        "CF-VID-04",
+        "CF-VID-05",
+        "CF-UTIL-01",
+        "CF-POST-01",
+    }
+)
+
+
 class LocalArchetypeCatalog(BaseModel):
     catalog_version: str
     source_path: Path | None = None
@@ -38,8 +56,7 @@ class LocalArchetypeCatalog(BaseModel):
     @classmethod
     def required_archetypes_present(cls, archetypes: list[LocalArchetype]) -> list[LocalArchetype]:
         ids = {archetype.archetype_id for archetype in archetypes}
-        required = {"CF-VID-01", "CF-VID-02", "CF-VID-03", "CF-VID-04", "CF-IMG-01"}
-        missing = required - ids
+        missing = CANONICAL_REGISTRY_ARCHETYPE_IDS - ids
         if missing:
             raise ValueError(f"Missing required local archetypes: {sorted(missing)}")
         if len(ids) != len(archetypes):

@@ -1,6 +1,6 @@
 # CineForge ComfyUI Implementation Plan
 
-**Date:** 2026-07-13  
+**Date:** 2026-07-15<br>
 **Status:** Documentation-only checkpoint for a personal/local-only MVP target; this document records offline/mock/local-gated implementation status without claiming public production readiness, live FFmpeg/ComfyUI/GPU enablement, or benchmark completion<br>
 **Primary specification:** `C:\Users\razer\Documents\CineForge_ComfyUI_Workflow_Architecture_Consolidated_Corrected.md`  
 **Repository:** `C:\AI\Git\CIneForge` at `85af098638fd` (`master`)  
@@ -21,11 +21,13 @@ Build the requested architecture on top of CineForge's existing deterministic ba
 7. Expand archetypes and enable the 64 presets only after their backing graph/model/profile passes admission, benchmark, recovery, and human QA gates.
 8. Keep deterministic editing, captions, timing, normalization, and packaging in FFmpeg, outside ComfyUI.
 
-### Personal/local-only MVP checkpoint (2026-07-15)
+### Personal/local-only MVP checkpoint (2026-07-16)
 
-The immediate target is a personal, operator-run MVP on the local workstation, not a hosted, multi-user, internet-facing, or public production service. This narrows the immediate hardening bar: public exposure work, broad public API controls, M6 archetype expansion, and M7 preset/UI/Storyboard enablement are not prerequisites for a private local trial of an already admitted and gated path. They remain prerequisites before broader release, public enablement, or expanded preset capability.
+The immediate target is a personal, operator-run MVP on the local workstation, not a hosted, multi-user, internet-facing, or public production service. This narrows the immediate hardening bar: public exposure work and public API controls are not prerequisites for a private local trial of an already admitted and gated path. Safe/non-live M6 catalog expansion and M7 readiness/handoff surfaces now exist as planning evidence only; actual expanded preset capability still requires graph admission, benchmark/recovery evidence, and human QA before broader release or public enablement.
 
 Public and autonomous generation remain out of scope and disabled: no public raw `/prompt` proxy, no internet-facing semantic generation endpoint, no job-initiated installs/downloads, and no automatic generation from Storyboard approval. Local operator-only FFmpeg, ComfyUI, and GPU-heavy actions may be considered only after explicit operator approval for the relevant mode/run and after the applicable gates are satisfied: safe managed paths, admitted graph/model/profile pins, local-only storage, default-off operator gates, exclusive GPU lease for Comfy/GPU work, queue-state checks, provenance/audit capture, recovery/stop rules, and human QA where required. This checkpoint does not approve or perform any live FFmpeg, ComfyUI, GPU, render, or benchmark action, and it does not claim runtime readiness.
+
+Current read-only local MVP surfaces now exist: `GET /local-runtime/local-mvp-readiness`, read-only M6/M7 readiness rollups, offline semantic request manifests, explicit Storyboard-to-offline-semantic handoffs, and Runtime page panels for local readiness plus stored operator review packets. These surfaces are inert and evidence-only: they do not create live jobs, approve runs, submit ComfyUI work, execute FFmpeg/ffprobe, acquire a GPU lease, render media, benchmark, or mark any profile/preset public-ready. `POST /local-operator/packets` creates pending review metadata only and always records no approval or execution. M4 live hardware probing/benchmarking and M5 live FFmpeg/ffprobe/assembly remain blocked until explicit operator approval for the exact next run; no live execution has been performed by these readiness checkpoints. Public release hardening and actual expanded preset enablement remain deferred.
 
 ## 2. External-reference reconciliation
 
@@ -74,15 +76,15 @@ Primary sources were cross-checked on 2026-07-13.
 ### Important gaps
 
 - No public-production-ready admitted `CF-*` workflow archetypes; `CF-VID-01` now has UI source evidence and an API-format T2V smoke candidate with prior operator-approved local smoke-evidence records, but remains benchmark/recovery/QA gated and not profile/preset ready.
-- M1 local JSON catalogs now include five required archetype IDs and exactly 64 disabled/gated presets.
+- M1/M6 local JSON catalogs now include all canonical registry archetypes (`CF-IMG-01`..`CF-IMG-05`, `CF-VID-01`..`CF-VID-05`, `CF-UTIL-01`, `CF-POST-01`) and exactly 64 disabled/gated presets; the expansion is planning-only and non-executing.
 - A DB-free local runtime catalog now records the canonical LTX-2.3 Distilled 1.1 FP8 model record and output policy.
 - No complete API-format workflow admission service for all profiles; current `CF-VID-01` support includes a bounded API T2V smoke template plus manifest, not full preset/profile readiness.
 - No enabled history/WebSocket/view output collection.
 - No live end-to-end generation worker.
-- No LTX-specific benchmark ladder or readiness evidence.
-- No complete deterministic post-production pipeline.
+- M4 has a serialized non-executing LTX ladder manifest and readiness/preflight surfaces, but no live benchmark ladder evidence.
+- M5 has deterministic post-production planning, allowlisted recipe builders, and offline manifests, but no live FFmpeg/ffprobe execution evidence.
 - Older repository documents remain Wan-first and conflict with the corrected specification.
-- `README.md` says no GPU worker exists, while worker primitives now exist; documentation must distinguish a skeleton from a production-enabled worker.
+- `README.md` and older docs may still describe earlier runtime/worker capabilities; they must distinguish mocked/offline worker primitives from production-enabled live execution before release.
 
 ### Worktree and test preflight
 
@@ -241,7 +243,7 @@ Likely files:
 
 **Exit gate:** exactly 64 validated preset definitions, the five canonical video profiles and their readiness inheritance validated, backward-compatible smoke manifest, local file-state round-trip tests, and independent schema QA.
 
-**Implementation status 2026-07-13:** M1 local contracts are now implemented for the ComfyUI lane without requiring a database: `storage/presets/catalog.json` validates exactly 64 disabled/gated presets; `storage/archetypes/catalog.json` contains `CF-VID-01` through `CF-VID-04` plus `CF-IMG-01`; `/local-runtime/*`, `/local-presets/*`, `/local-archetypes/*`, and `/local-jobs/*` expose DB-free state. Local job creation writes `storage/local_jobs/*.json` plus JSONL audit, uses `prepared_offline`/`blocked_offline` states, and prepares the ComfyUI project output folder/prefix, but never submits to ComfyUI. Configured local catalog/template files fail closed if missing.
+**Implementation status 2026-07-16:** M1 local contracts are implemented for the ComfyUI lane without requiring a database, and the local archetype catalog has been expanded for M6 planning only: `storage/presets/catalog.json` validates exactly 64 disabled/gated presets; `storage/archetypes/catalog.json` contains every canonical registry archetype (`CF-IMG-01`..`CF-IMG-05`, `CF-VID-01`..`CF-VID-05`, `CF-UTIL-01`, `CF-POST-01`) with public enablement still false and no readiness promotion. `/local-runtime/*`, `/local-presets/*`, `/local-archetypes/*`, and `/local-jobs/*` expose DB-free state. Local job creation writes `storage/local_jobs/*.json` plus JSONL audit, uses `prepared_offline`/`blocked_offline` states, and prepares the ComfyUI project output folder/prefix, but never submits to ComfyUI. Configured local catalog/template files fail closed if missing.
 
 ### M2 — Semantic compiler and workflow admission
 
@@ -347,7 +349,7 @@ Record cold/warm duration, queue wait, peak dedicated/shared memory, peak RAM, t
 
 **Stop rule:** if Stage 0 or 1 fails twice after approved recovery adjustments, block LTX video expansion and return the decision to the GPT-5.5 orchestrator.
 
-**Implementation status 2026-07-15:** M4 remains non-executing and blocked by default. `GET /local-runtime/m4-preflight` now reports a read-only hardware-operator preflight gate that requires public generation disabled, general queue-worker execution disabled, `CINEFORGE_HARDWARE_OPERATOR_ENABLED=true`, `CINEFORGE_M4_HARDWARE_PROBE_APPROVED=true`, CF-VID-01 smoke evidence, queue-empty smoke evidence, and a valid serialized ladder manifest. `storage/benchmark_ladders/m4_cf_vid01_ladder.json` and `GET /local-runtime/m4-ladder` define only stages 0, 1, 2, 3, and 7 for `CF-VID-01`, explicitly defer stages 4–6, keep every stage `live_action_approved=false`, and expose this state in the Runtime UI. These additions do not run ComfyUI, acquire a GPU lease, submit prompts, render media, benchmark, mutate runtime, or approve hardware execution.
+**Implementation status 2026-07-16:** M4 remains non-executing and blocked by default. `GET /local-runtime/m4-preflight` now reports a read-only hardware-operator preflight gate that requires public generation disabled, general queue-worker execution disabled, `CINEFORGE_HARDWARE_OPERATOR_ENABLED=true`, `CINEFORGE_M4_HARDWARE_PROBE_APPROVED=true`, CF-VID-01 smoke evidence, queue-empty smoke evidence, and a valid serialized ladder manifest. `storage/benchmark_ladders/m4_cf_vid01_ladder.json` and `GET /local-runtime/m4-ladder` define only stages 0, 1, 2, 3, and 7 for `CF-VID-01`, explicitly defer stages 4–6, keep every stage `live_action_approved=false`, and expose this state in the Runtime UI. `POST /local-operator/packets` can now persist a pending review packet for a future M4 hardware-ladder probe, but the packet always records `state=pending_explicit_operator_approval`, `approval_recorded=false`, `live_execution_started=false`, `generation_submitted=false`, and `ffmpeg_submitted=false`; it is not an approval route and has no execute/submit/run child route. These additions do not run ComfyUI, acquire a GPU lease, submit prompts, render media, benchmark, mutate runtime, or approve hardware execution.
 
 ### M5 — Deterministic `CF-POST-01`
 
@@ -367,7 +369,7 @@ Likely files:
 - `backend/tests/test_ffmpeg_service.py`
 - `FFmpeg/FFMPEG_STRATEGY_COMMAND_LIBRARY.md`
 
-**Implementation status 2026-07-15:** M5 deterministic post-production hardening remains safe and non-executing. `PostProductionService` resolves input/output media paths inside the configured storage root, requires a supplied input hash or existing file hash for each clip, validates supplied SHA256 strings, and refuses command-array construction unless one hash per clip is present. `FFmpegService.build_stream_copy_concat_manifest(...)` produces concat manifest text only after hashes, safe paths, and stored probe compatibility are proven. `PostProductionPlanStore` writes file-backed `planned_offline` manifests that persist command template IDs, structured command arrays, input paths/hashes, probe count, timeline fields, and embedded plans while keeping execution fields null. The M5 offline recipe-command manifest work extends that pattern to generic allowlisted recipe commands: manifests persist template IDs, structured argv provenance, normalized inputs and hashes, and explicit `execution_submitted=false`, and they can now record offline success/error outcomes such as output SHA256, final probe JSON, timestamps, or error text without submitting execution. `GET /local-runtime/ffmpeg-recipes` exposes the allowlisted command-template catalog as read-only metadata only, with `executes_from_catalog=false`, `user_authored_command_allowed=false`, and `structured_argument_array` command shape. The recipe command manifest API is GET-only via `GET /local-post-production/recipe-commands` and `GET /local-post-production/recipe-commands/{plan_id}` for already-persisted manifests; it adds no create, update, delete, execute, raw-command, or submission route. The Runtime/Post-Production UI displays recipes and stored recipe command manifests as inert read-only text, including argv provenance, without execution controls, copy/run/download actions, or raw command inputs. No FFmpeg, ComfyUI, GPU, render, or benchmark command has been run or approved by this M5 work.
+**Implementation status 2026-07-16:** M5 deterministic post-production hardening remains safe and non-executing. `PostProductionService` resolves input/output media paths inside the configured storage root, requires a supplied input hash or existing file hash for each clip, validates supplied SHA256 strings, and refuses command-array construction unless one hash per clip is present. `FFmpegService.build_stream_copy_concat_manifest(...)` produces concat manifest text only after hashes, safe paths, and stored probe compatibility are proven. `PostProductionPlanStore` writes file-backed `planned_offline` manifests that persist command template IDs, structured command arrays, input paths/hashes, probe count, timeline fields, and embedded plans while keeping execution fields null. The M5 offline recipe-command manifest work extends that pattern to generic allowlisted recipe commands: manifests persist template IDs, structured argv provenance, normalized inputs and hashes, and explicit `execution_submitted=false`, and they can now record offline success/error outcomes such as output SHA256, final probe JSON, timestamps, or error text without submitting execution. `GET /local-runtime/ffmpeg-recipes` exposes the allowlisted command-template catalog as read-only metadata only, with `executes_from_catalog=false`, `user_authored_command_allowed=false`, and `structured_argument_array` command shape. The recipe command manifest API is GET-only via `GET /local-post-production/recipe-commands` and `GET /local-post-production/recipe-commands/{plan_id}` for already-persisted manifests; it adds no create, update, delete, execute, raw-command, or submission route. `POST /local-operator/packets` can persist pending M5 FFmpeg/ffprobe probe or assembly validation review packets with read-only recipe-catalog summaries, but packets remain `pending_explicit_operator_approval` and record `approval_recorded=false`, `live_execution_started=false`, `generation_submitted=false`, and `ffmpeg_submitted=false`; there is no FFmpeg execution/approval endpoint. The Runtime/Post-Production UI displays recipes and stored recipe command manifests as inert read-only text, including argv provenance, without execution controls, copy/run/download actions, or raw command inputs. No FFmpeg, ComfyUI, GPU, render, or benchmark command has been run or approved by this M5 work.
 
 ### M6 — Archetype expansion
 
@@ -383,7 +385,11 @@ Repeat full admission and hardware gates in this order:
 8. `CF-UTIL-01` only for a demonstrated mask/alpha gap.
 9. Keep preset #41 (upscale/face-detail pass) blocked until a distinct admitted and benchmarked utility path is approved; do not mislabel `CF-UTIL-01` as that capability.
 
+**Implementation status 2026-07-16:** the local archetype catalog now contains planning-only records for the full canonical registry set, including the M6 expansion targets. Every added M6 record remains `enabled=false` and `readiness=blocked`; `CF-VID-01` remains disabled and `benchmark_required`. This catalog expansion is metadata-only and non-executing: it does not admit graphs, run benchmarks, submit ComfyUI prompts, acquire GPU leases, run FFmpeg/ffprobe, enable presets, or promote public generation.
+
 ### M7 — Preset enablement, API/UI, and Storyboard bridge
+
+**Local-only status 2026-07-16:** M7 is partially implemented as local-only, evidence/handoff surfaces rather than generation enablement. Backend readiness rollups now expose read-only archetype and preset readiness at `GET /local-archetypes/readiness`, `GET /local-archetypes/{archetype_id}/readiness`, `GET /local-presets/readiness`, and `GET /local-presets/{preset_id}/readiness`; the frontend Runtime page summarizes the same local MVP/readiness posture without probing live runtimes. Local generation endpoints persist offline semantic request manifests and provide an explicit `POST /local-generation/storyboard-handoffs` bridge from approved Storyboard snapshots, but they do not automatically generate from approval, submit ComfyUI prompts, start queue execution, acquire GPU leases, call runtime health, run FFmpeg/ffprobe, render, or benchmark. All 64 presets remain disabled/gated, public and autonomous generation remain disabled, no raw `/prompt` route is public, and full M7 preset enablement remains deferred.
 
 Work:
 

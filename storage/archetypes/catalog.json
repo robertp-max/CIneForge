@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2026-07-local-m1",
+  "catalog_version": "2026-07-local-m6-planning",
   "archetypes": [
     {
       "archetype_id": "CF-VID-01",
@@ -69,6 +69,100 @@
       "readiness": "blocked",
       "enabled": false,
       "notes": "Still-image placeholder. Requires explicit workflow source and graph admission."
+    },
+    {
+      "archetype_id": "CF-IMG-02",
+      "name": "FLUX Redux Identity Reference",
+      "modality": "image",
+      "source_kind": "planned_comfyui_workflow",
+      "source_path": null,
+      "default_model_key": null,
+      "quality_profiles": [
+        "draft"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only Redux identity/reference image archetype. Blocked until explicit workflow source, dependency/model evidence, admission, benchmark/recovery evidence, and human QA are complete; this record does not enable public generation or local execution."
+    },
+    {
+      "archetype_id": "CF-IMG-03",
+      "name": "PuLID Identity Candidate",
+      "modality": "image",
+      "source_kind": "planned_comfyui_workflow",
+      "source_path": null,
+      "default_model_key": null,
+      "quality_profiles": [
+        "draft"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only PuLID identity fallback candidate. Blocked unless Redux identity thresholds fail and explicit workflow source, dependency/model evidence, admission, benchmark/recovery evidence, and human QA are complete; this record does not enable public generation or local execution."
+    },
+    {
+      "archetype_id": "CF-IMG-04",
+      "name": "FLUX Fill/Kontext",
+      "modality": "image",
+      "source_kind": "planned_comfyui_workflow",
+      "source_path": null,
+      "default_model_key": null,
+      "quality_profiles": [
+        "draft"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only Fill/Kontext image archetype. Blocked until explicit workflow source, dependency/model evidence, admission, benchmark/recovery evidence, and human QA are complete; this record does not enable public generation or local execution."
+    },
+    {
+      "archetype_id": "CF-IMG-05",
+      "name": "FLUX Canny/Depth Control",
+      "modality": "image",
+      "source_kind": "planned_comfyui_workflow",
+      "source_path": null,
+      "default_model_key": null,
+      "quality_profiles": [
+        "draft"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only Canny/Depth control image archetype. Blocked until explicit workflow source, dependency/model evidence, admission, benchmark/recovery evidence, and human QA are complete; this record does not enable public generation or local execution."
+    },
+    {
+      "archetype_id": "CF-VID-05",
+      "name": "LTX Continuation / V2V",
+      "modality": "video",
+      "source_kind": "planned_comfyui_workflow",
+      "source_path": null,
+      "default_model_key": "ltx2_3_22b_distilled_1_1_fp8",
+      "quality_profiles": [
+        "review"
+      ],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only LTX continuation/V2V video archetype. Blocked until prior LTX expansion gates, explicit workflow source, dependency/model evidence, admission, benchmark/recovery evidence, and human QA are complete; this record does not enable public generation or local execution."
+    },
+    {
+      "archetype_id": "CF-UTIL-01",
+      "name": "Mask/Alpha Utility",
+      "modality": "utility",
+      "source_kind": "planned_utility_workflow",
+      "source_path": null,
+      "default_model_key": null,
+      "quality_profiles": [],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only mask/alpha utility archetype. Blocked until a demonstrated utility gap exists and explicit source, dependency evidence, admission, benchmark/recovery evidence, and human QA are complete; this record must not be treated as an upscale or face-detail capability and does not enable execution."
+    },
+    {
+      "archetype_id": "CF-POST-01",
+      "name": "Deterministic FFmpeg Post-Production",
+      "modality": "post",
+      "source_kind": "local_ffmpeg_postproduction_plan",
+      "source_path": "FFmpeg/FFMPEG_STRATEGY_COMMAND_LIBRARY.md",
+      "default_model_key": null,
+      "quality_profiles": [],
+      "readiness": "blocked",
+      "enabled": false,
+      "notes": "Planning-only deterministic post-production archetype. Blocked until post-production gates, recipe evidence, output provenance, and human QA are complete; catalog presence does not execute FFmpeg/ffprobe or enable public generation."
     }
   ]
 }
