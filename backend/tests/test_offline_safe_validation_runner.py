@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from scripts.checkpoint_watchdog import CheckpointWatchdogReport
 from scripts.run_offline_safe_validation import BACKEND_TESTS, run_validation
 
 
@@ -33,6 +35,35 @@ def test_offline_safe_validation_runner_invokes_static_backend_frontend_and_diff
     assert commands[5][1:] == ("-B", "scripts/checkpoint_watchdog.py")
     assert calls[2][1] == repo / "frontend"
     assert calls[3][1] == repo / "frontend"
+
+
+def test_offline_safe_validation_runner_can_write_watchdog_json(monkeypatch, tmp_path: Path):
+    repo = tmp_path
+    (repo / "frontend").mkdir()
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(command, *, cwd, env=None, check=False):
+        calls.append(tuple(command))
+
+    def fake_build_watchdog_report(_repo_root: Path) -> CheckpointWatchdogReport:
+        return CheckpointWatchdogReport(
+            last_commit="abc123 checkpoint: json-artifact",
+            tracked_worktree_clean=True,
+            reminder="WATCHDOG: checkpoint loop must restart now.",
+            invariants=("No FFmpeg/ffprobe execution without explicit scoped live approval.",),
+        )
+
+    monkeypatch.setattr("scripts.run_offline_safe_validation.subprocess.run", fake_run)
+    monkeypatch.setattr("scripts.run_offline_safe_validation.build_watchdog_report", fake_build_watchdog_report)
+
+    run_validation(repo, skip_frontend=True, watchdog_json=Path("artifacts/watchdog/report.json"))
+
+    payload = json.loads((repo / "artifacts" / "watchdog" / "report.json").read_text(encoding="utf-8"))
+    assert payload["last_commit"] == "abc123 checkpoint: json-artifact"
+    assert payload["tracked_worktree_clean"] is True
+    assert any("No FFmpeg/ffprobe" in item for item in payload["invariants"])
+    assert calls[-2] == ("git", "diff", "--check")
+    assert calls[-1][1:] == ("-B", "scripts/checkpoint_watchdog.py")
 
 
 def test_offline_safe_validation_runner_can_skip_frontend(monkeypatch, tmp_path: Path):

@@ -10,6 +10,12 @@ CineForge's local ComfyUI lane is intentionally fail-closed unless a separate ex
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
+Optional machine-readable watchdog artifact:
+
+```powershell
+.\.venv\Scripts\python scripts\run_offline_safe_validation.py --watchdog-json artifacts\watchdog\latest.json
+```
+
 The runner performs:
 
 1. Static safe/local boundary validation.
@@ -17,7 +23,7 @@ The runner performs:
 3. Frontend lint and build.
 4. `git diff --check`.
 
-Current checkpoint result: `146 passed, 71 warnings`, frontend lint/build passed, static boundary validation passed, endpoint-matrix path/method sync passed, offline docs boundary checks passed, and the checkpoint watchdog banner printed.
+Current checkpoint result: `147 passed, 71 warnings`, frontend lint/build passed, static boundary validation passed, endpoint-matrix path/method sync passed, offline docs boundary checks passed, and the checkpoint watchdog banner printed.
 
 ## Static boundary check only
 
