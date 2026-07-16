@@ -82,6 +82,12 @@ Run tests:
 .\.venv\Scripts\python -m pytest
 ```
 
+Run the static safe/local boundary check:
+
+```powershell
+.\.venv\Scripts\python scripts\validate_safe_local_boundary.py
+```
+
 ## Key Architecture Docs
 
 - `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md` — current corrected ComfyUI/LTX implementation authority.
