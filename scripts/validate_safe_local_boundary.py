@@ -21,6 +21,7 @@ RAW_PROMPT_ROUTE_RE = re.compile(
 FORBIDDEN_LOCAL_CHILD_RE = re.compile(
     r"local-(generation|operator)/.+(execute|submit|approve|prompt)|"
     r"local-(generation|operator)/(execute|submit|approve|prompt)|"
+    r"local-runtime/checkpoint-watchdog(?:/[^'\"\s)]*)?/(execute|submit|approve|prompt|run)|"
     r"/local-operator/run(?=$|[^A-Za-z0-9_-])"
 )
 SAFE_ENDPOINT_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")

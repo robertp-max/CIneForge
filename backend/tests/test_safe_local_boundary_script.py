@@ -53,7 +53,7 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         encoding="utf-8",
     )
     (repo / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
-        "api.runtimeStatus(); fetch('/local-operator/run')",
+        "api.runtimeStatus(); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute')",
         encoding="utf-8",
     )
     (repo / "backend" / "app" / "routes.py").write_text(
@@ -67,5 +67,10 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
     assert "archetype_enabled_or_ready" in codes
     assert "frontend_live_probe_callsite" in codes
     assert "frontend_forbidden_local_child_route" in codes
+    assert any(
+        finding.code == "frontend_forbidden_local_child_route"
+        and "checkpoint-watchdog/execute" in finding.detail
+        for finding in findings
+    )
     assert "raw_prompt_route" in codes
     assert all(isinstance(finding, BoundaryFinding) for finding in findings)
