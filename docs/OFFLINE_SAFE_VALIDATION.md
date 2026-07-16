@@ -10,7 +10,7 @@ CineForge's local ComfyUI lane is intentionally fail-closed unless a separate ex
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
-Optional machine-readable watchdog artifact:
+Optional machine-readable watchdog artifact; `artifacts/watchdog/*.json` is ignored for local checkpoint use:
 
 ```powershell
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py --watchdog-json artifacts\watchdog\latest.json
