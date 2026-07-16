@@ -69,6 +69,8 @@ Any future live run must stop and record error provenance if one of these occurs
 
 Current CineForge local surfaces are offline/read-only or manifest-only. They do not approve or run live work:
 
+- `GET /local-operator/approval-templates`
+- `GET /local-operator/approval-templates/{mode}`
 - `GET /local-operator/runbooks`
 - `POST /local-operator/packets`
 - `GET /local-runtime/m4-preflight`
