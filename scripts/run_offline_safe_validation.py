@@ -43,6 +43,7 @@ BACKEND_TESTS = [
     "backend/tests/test_local_runtime.py",
     "backend/tests/test_local_runtime_m4.py",
     "backend/tests/test_local_runtime_evidence.py",
+    "backend/tests/test_runtime_catalog.py",
     "backend/tests/test_benchmark_ladder.py",
     "backend/tests/test_cf_vid01_api_workflow_template.py",
     "backend/tests/test_ffmpeg_service.py",
