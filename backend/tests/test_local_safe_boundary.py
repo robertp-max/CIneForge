@@ -55,7 +55,7 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
         encoding="utf-8",
     )
     (tmp_path / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
-        "fetch('/health/gpu')",
+        "fetch(`/health/gpu`)",
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows" / "test.yml").write_text(

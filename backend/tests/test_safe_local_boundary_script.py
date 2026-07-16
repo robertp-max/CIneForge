@@ -80,7 +80,7 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         encoding="utf-8",
     )
     (repo / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
-        "api.runtimeStatus(); fetch('/health/gpu'); fetch('/api/prompt'); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute')",
+        "api.runtimeStatus(); fetch(`/health/gpu`); fetch(`/api/prompt`); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute')",
         encoding="utf-8",
     )
     (repo / "backend" / "app" / "routes.py").write_text(

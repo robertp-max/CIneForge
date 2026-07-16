@@ -16,7 +16,7 @@ from pathlib import Path
 
 LIVE_FRONTEND_CALL_RE = re.compile(r"api\.(runtimeStatus|comfyHealth|gpuHealth|ffmpegHealth)\(")
 LIVE_FRONTEND_FETCH_RE = re.compile(
-    r"fetch\(\s*['\"]/(runtime/status|health/comfy|health/gpu|health/ffmpeg)['\"]",
+    r"fetch\(\s*['\"`]/(runtime/status|health/comfy|health/gpu|health/ffmpeg)['\"`]",
     re.IGNORECASE,
 )
 LIVE_WORKFLOW_FRAGMENT_RE = re.compile(
@@ -26,11 +26,11 @@ LIVE_WORKFLOW_FRAGMENT_RE = re.compile(
 RAW_PROMPT_ROUTE_RE = re.compile(
     r"@(router|app)\.(post|get|put|patch|delete)\(\s*['\"]/(prompt|api/prompt)['\"]"
 )
-RAW_PROMPT_STRING_RE = re.compile(r"['\"]/(prompt|api/prompt)['\"]")
+RAW_PROMPT_STRING_RE = re.compile(r"['\"`]/(prompt|api/prompt)['\"`]")
 FORBIDDEN_LOCAL_CHILD_RE = re.compile(
     r"local-(generation|operator)/.+(execute|submit|approve|prompt)|"
     r"local-(generation|operator)/(execute|submit|approve|prompt)|"
-    r"local-runtime/checkpoint-watchdog(?:/[^'\"\s)]*)?/(execute|submit|approve|prompt|run)|"
+    r"local-runtime/checkpoint-watchdog(?:/[^'\"`\s)]*)?/(execute|submit|approve|prompt|run)|"
     r"/local-operator/run(?=$|[^A-Za-z0-9_-])"
 )
 SAFE_ENDPOINT_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")
