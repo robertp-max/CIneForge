@@ -41,6 +41,34 @@ def test_local_safe_boundary_service_returns_relative_findings(tmp_path: Path):
     assert report.findings[0].path == "storage/archetypes/catalog.json"
 
 
+def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findings(tmp_path: Path):
+    (tmp_path / "storage" / "archetypes").mkdir(parents=True)
+    (tmp_path / "storage" / "presets").mkdir(parents=True)
+    (tmp_path / "frontend" / "src" / "api").mkdir(parents=True)
+    (tmp_path / "backend" / "app").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / "storage" / "archetypes" / "catalog.json").write_text('{"archetypes":[]}', encoding="utf-8")
+    (tmp_path / "storage" / "presets" / "catalog.json").write_text('{"presets":[]}', encoding="utf-8")
+    (tmp_path / "frontend" / "src" / "api" / "client.ts").write_text(
+        "export const api = { rawPrompt: () => fetch('/api/prompt') }",
+        encoding="utf-8",
+    )
+    (tmp_path / ".github" / "workflows" / "test.yml").write_text(
+        "steps:\n  - run: curl http://127.0.0.1:8000/health/gpu\n",
+        encoding="utf-8",
+    )
+
+    report = LocalSafeBoundaryService(tmp_path).report()
+    codes = {finding.code for finding in report.findings}
+    paths = {finding.path for finding in report.findings}
+
+    assert report.passed is False
+    assert "frontend_raw_prompt_reference" in codes
+    assert "github_workflow_live_fragment" in codes
+    assert "frontend/src/api/client.ts" in paths
+    assert ".github/workflows/test.yml" in paths
+
+
 def test_local_safe_boundary_route_is_get_only_and_non_executing():
     client = TestClient(app)
 
