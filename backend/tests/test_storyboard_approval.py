@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -205,7 +205,7 @@ def test_readiness_requires_active_approved_same_project_starting_image(db_sessi
     assert any(reason["code"] == "starting_image_kind_invalid" for reason in status["reasons"])
 
     asset.kind = "starting_image"
-    asset.archived_at = datetime.utcnow()
+    asset.archived_at = datetime.now(UTC).replace(tzinfo=None)
     db_session.commit()
     status = storyboard_service.readiness(db_session, story.id)
     assert any(reason["code"] == "starting_image_archived" for reason in status["reasons"])
