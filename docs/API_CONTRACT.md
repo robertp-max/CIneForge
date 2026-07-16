@@ -21,7 +21,7 @@ Example `POST /projects`:
 Known local/offline boundary:
 
 - Use `scripts/run_offline_safe_validation.py` for the default no-live validation path; it prints the checkpoint watchdog restart banner.
-- `GET /local-runtime/checkpoint-watchdog` exposes the read-only checkpoint continuation reminder and does not approve or start work.
+- `GET /local-runtime/checkpoint-watchdog` exposes the read-only checkpoint continuation reminder, staged filenames, and source-scoped untracked-file visibility; it does not approve or start work.
 - `GET /local-runtime/*`, `/local-generation/*`, `/local-operator/*`, and `/local-post-production/*` include read-only or manifest-only local surfaces documented in `docs/SAFE_LOCAL_ENDPOINTS.md`.
 - No public raw `/prompt` route submits work to ComfyUI.
 - Local operator packet/runbook/template routes do not record approval or start live work.
