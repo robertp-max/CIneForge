@@ -94,6 +94,13 @@ Run the curated offline-safe validation suite. It runs static boundary checks, s
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
+Checkpoint watchdog helpers:
+
+```powershell
+.\.venv\Scripts\python scripts\checkpoint_watchdog.py --json
+.\.venv\Scripts\python scripts\checkpoint_watchdog.py --fail-on-dirty
+```
+
 ## Key Architecture Docs
 
 - `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md` — current corrected ComfyUI/LTX implementation authority.
