@@ -30,6 +30,8 @@ export function Jobs() {
   const [semanticOutputPrefix, setSemanticOutputPrefix] = useState('M7 Project/shot 001')
   const [semanticPrompt, setSemanticPrompt] = useState('Safe offline semantic generation request.')
   const [semanticNegativePrompt, setSemanticNegativePrompt] = useState('bad quality')
+  const [semanticNoExecutionAcknowledged, setSemanticNoExecutionAcknowledged] = useState(false)
+  const [localManifestNoExecutionAcknowledged, setLocalManifestNoExecutionAcknowledged] = useState(false)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +64,10 @@ export function Jobs() {
     event.preventDefault()
     setError(null)
     setMessage(null)
+    if (!localManifestNoExecutionAcknowledged) {
+      setError('Acknowledge that this only prepares an offline local manifest before continuing.')
+      return
+    }
     try {
       const manifest = await api.createLocalJob({
         project_key: projectKey.trim(),
@@ -69,6 +75,7 @@ export function Jobs() {
         prompt,
       })
       setMessage(`Prepared local manifest ${manifest.job_id}. No ComfyUI prompt was submitted.`)
+      setLocalManifestNoExecutionAcknowledged(false)
       setLocalJobs(await api.listLocalJobs())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to prepare local manifest.')
@@ -79,6 +86,10 @@ export function Jobs() {
     event.preventDefault()
     setError(null)
     setMessage(null)
+    if (!semanticNoExecutionAcknowledged) {
+      setError('Acknowledge that this only prepares an offline semantic manifest before continuing.')
+      return
+    }
     try {
       const manifest = await api.createSemanticGenerationRequestManifest({
         preset_id: SEMANTIC_REQUEST_DEFAULTS.presetId,
@@ -102,6 +113,7 @@ export function Jobs() {
       setMessage(
         `Prepared offline semantic request manifest ${manifest.request_id}. No execution, submission, render, queue job, or ComfyUI prompt occurred.`,
       )
+      setSemanticNoExecutionAcknowledged(false)
       setSemanticManifests(await api.listSemanticGenerationRequestManifests())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to prepare offline semantic request manifest.')
@@ -170,6 +182,15 @@ export function Jobs() {
               rows={2}
             />
           </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={semanticNoExecutionAcknowledged}
+              onChange={(event) => setSemanticNoExecutionAcknowledged(event.target.checked)}
+            />
+            I acknowledge this prepares an offline semantic manifest only and does not execute, submit, render, create a
+            queue job, acquire a GPU lease, call runtime health, or send a ComfyUI prompt.
+          </label>
           <button className="primary-button" type="submit">
             Prepare offline semantic manifest only
           </button>
@@ -192,6 +213,15 @@ export function Jobs() {
           <label>
             Prompt
             <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={4} />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={localManifestNoExecutionAcknowledged}
+              onChange={(event) => setLocalManifestNoExecutionAcknowledged(event.target.checked)}
+            />
+            I acknowledge this prepares a file-backed local manifest only and does not submit a ComfyUI prompt, create a
+            live queue job, acquire a GPU lease, render, or benchmark.
           </label>
           <button className="primary-button" type="submit">
             Prepare manifest only
