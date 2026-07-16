@@ -300,6 +300,17 @@ export type LocalMVPM5PostProductionReadinessSummary = {
   safe_metadata_source: string
 }
 
+export type LocalSafeBoundaryReport = {
+  checkpoint_id: 'local_safe_boundary'
+  passed: boolean
+  finding_count: number
+  findings: Array<{ code: string; path: string; detail: string }>
+  live_execution_performed_by_endpoint: boolean
+  live_execution_approved_by_endpoint: boolean
+  public_generation_enabled: boolean
+  safety_note: string
+}
+
 export type LocalPublicReadinessReport = {
   checkpoint_id: 'local_public_release_readiness'
   status: 'blocked'
@@ -2083,6 +2094,7 @@ export const api = {
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
   localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
   localPublicReadiness: () => request<LocalPublicReadinessReport>('/local-runtime/public-readiness'),
+  localSafeBoundary: () => request<LocalSafeBoundaryReport>('/local-runtime/safe-boundary'),
   listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
   listLocalOperatorApprovalTemplates: () => request<LocalOperatorApprovalTemplate[]>('/local-operator/approval-templates'),
   listLocalOperatorRunbooks: () => request<LocalOperatorRunbook[]>('/local-operator/runbooks'),

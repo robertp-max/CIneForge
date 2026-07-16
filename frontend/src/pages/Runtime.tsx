@@ -20,6 +20,7 @@ import {
   type LocalReadinessSummary,
   type LocalRuntimeCatalog,
   type LocalRuntimeEvidence,
+  type LocalSafeBoundaryReport,
 } from '../api/client'
 import { ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
@@ -196,6 +197,7 @@ export function Runtime() {
   const [m4Preflight, setM4Preflight] = useState<LocalM4PreflightReport | null>(null)
   const [localMvpReadiness, setLocalMvpReadiness] = useState<LocalMVPReadinessReport | null>(null)
   const [localPublicReadiness, setLocalPublicReadiness] = useState<LocalPublicReadinessReport | null>(null)
+  const [localSafeBoundary, setLocalSafeBoundary] = useState<LocalSafeBoundaryReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [operatorPackets, setOperatorPackets] = useState<LocalOperatorRunPacket[]>([])
   const [operatorApprovalTemplates, setOperatorApprovalTemplates] = useState<LocalOperatorApprovalTemplate[]>([])
@@ -226,6 +228,7 @@ export function Runtime() {
           preflight,
           readiness,
           publicReadiness,
+          safeBoundary,
           operatorPacketList,
           operatorApprovalTemplateList,
           operatorRunbookList,
@@ -241,6 +244,7 @@ export function Runtime() {
           api.localM4Preflight(),
           api.localMVPReadiness(),
           api.localPublicReadiness(),
+          api.localSafeBoundary(),
           api.listLocalOperatorPackets(),
           api.listLocalOperatorApprovalTemplates(),
           api.listLocalOperatorRunbooks(),
@@ -257,6 +261,7 @@ export function Runtime() {
           setM4Preflight(preflight)
           setLocalMvpReadiness(readiness)
           setLocalPublicReadiness(publicReadiness)
+          setLocalSafeBoundary(safeBoundary)
           setOperatorPackets(operatorPacketList)
           setOperatorApprovalTemplates(operatorApprovalTemplateList)
           setOperatorRunbooks(operatorRunbookList)
@@ -442,6 +447,47 @@ export function Runtime() {
           {hiddenLocalMvpBlockerCount ? <li>+{hiddenLocalMvpBlockerCount} more blockers</li> : null}
           {!localMvpReadiness ? <li>Loading checkpoint blockers...</li> : null}
         </ul>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Static Safe Boundary</h2>
+          <StatusBadge status={localSafeBoundary?.passed ? 'passed' : localSafeBoundary ? 'blocked' : 'loading'} />
+        </div>
+        <p>
+          {localSafeBoundary?.safety_note ??
+            'Loading static safe/local boundary report; this checks files only and does not probe live runtime.'}
+        </p>
+        <div className="disabled-action-grid">
+          <article className="disabled-action">
+            <div>
+              <strong>Boundary check</strong>
+              <p>
+                Passed: <span className="mono">{localSafeBoundary ? String(localSafeBoundary.passed) : 'loading'}</span>; findings:{' '}
+                <span className="mono">{localSafeBoundary ? localSafeBoundary.finding_count : 'loading'}</span>.
+              </p>
+            </div>
+            <StatusBadge status={localSafeBoundary?.passed ? 'passed' : localSafeBoundary ? 'blocked' : 'loading'} />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Live/public flags</strong>
+              <p>
+                Live executed: <span className="mono">{localSafeBoundary ? String(localSafeBoundary.live_execution_performed_by_endpoint) : 'loading'}</span>; live approved:{' '}
+                <span className="mono">{localSafeBoundary ? String(localSafeBoundary.live_execution_approved_by_endpoint) : 'loading'}</span>; public generation:{' '}
+                <span className="mono">{localSafeBoundary ? String(localSafeBoundary.public_generation_enabled) : 'loading'}</span>.
+              </p>
+            </div>
+            <StatusBadge status="read_only" />
+          </article>
+        </div>
+        {localSafeBoundary?.findings.length ? (
+          <ul className="feature-list">
+            {localSafeBoundary.findings.slice(0, 4).map((finding) => (
+              <li key={`${finding.code}-${finding.path}`}>{finding.code}: {finding.path}</li>
+            ))}
+          </ul>
+        ) : null}
       </section>
 
       <section className="panel">
