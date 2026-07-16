@@ -18,6 +18,8 @@ APPROVAL_REQUIRED_PHRASES = {
     ],
 }
 
+CURRENT_VALIDATION_RESULT = "143 passed, 71 warnings"
+
 FORBIDDEN_STALE_PHRASES = [
     "ComfyUI mock connection",
     "validated against this machine",
@@ -33,6 +35,18 @@ def test_offline_boundary_docs_mark_live_probes_as_approval_required():
         text = Path(path).read_text(encoding="utf-8")
         for phrase in phrases:
             assert phrase in text, f"{path} missing approval-required phrase: {phrase}"
+
+
+def test_offline_validation_count_is_consistent_across_current_docs():
+    docs = [
+        Path("CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md"),
+        Path("docs/OFFLINE_SAFE_VALIDATION.md"),
+        Path("docs/LOCAL_SMOKE_TEST_PLAN.md"),
+        Path("docs/UI_MVP_STATUS.md"),
+    ]
+
+    for path in docs:
+        assert CURRENT_VALIDATION_RESULT in path.read_text(encoding="utf-8"), f"{path} has stale validation count"
 
 
 def test_offline_boundary_docs_do_not_use_stale_live_probe_language():
