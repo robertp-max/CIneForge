@@ -8,9 +8,10 @@ checkpoint commit.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
@@ -69,9 +70,17 @@ def format_watchdog_report(report: CheckpointWatchdogReport) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = argv or sys.argv[1:]
+    argv = list(argv or sys.argv[1:])
+    as_json = False
+    if "--json" in argv:
+        argv.remove("--json")
+        as_json = True
     repo_root = Path(argv[0]) if argv else Path.cwd()
-    print(format_watchdog_report(build_watchdog_report(repo_root)))
+    report = build_watchdog_report(repo_root)
+    if as_json:
+        print(json.dumps(asdict(report), indent=2, sort_keys=True))
+    else:
+        print(format_watchdog_report(report))
     return 0
 
 

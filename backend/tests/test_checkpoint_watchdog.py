@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from scripts.checkpoint_watchdog import build_watchdog_report, format_watchdog_report
+from scripts.checkpoint_watchdog import build_watchdog_report, format_watchdog_report, main
 
 
 def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_path: Path):
@@ -26,6 +27,24 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
     assert "staged contents intentionally match" in rendered
     assert "No FFmpeg/ffprobe execution" in rendered
     assert "No ComfyUI/GPU/render/benchmark" in rendered
+
+
+def test_checkpoint_watchdog_json_mode(monkeypatch, tmp_path: Path, capsys):
+    def fake_run_git(_repo_root: Path, args: list[str]) -> str:
+        if args == ["log", "--oneline", "-1"]:
+            return "abc123 checkpoint: json"
+        if args == ["status", "--short", "--untracked-files=no"]:
+            return ""
+        return "unexpected"
+
+    monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
+
+    assert main([str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["last_commit"] == "abc123 checkpoint: json"
+    assert payload["tracked_worktree_clean"] is True
+    assert any("No FFmpeg/ffprobe" in item for item in payload["invariants"])
 
 
 def test_checkpoint_watchdog_reports_dirty_tracked_worktree(monkeypatch, tmp_path: Path):
