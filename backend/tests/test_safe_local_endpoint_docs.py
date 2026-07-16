@@ -51,6 +51,10 @@ FORBIDDEN_ALLOWED_TABLE_ROWS = (
     "| `/local-generation/execute` |",
     "| `/local-generation/submit` |",
     "| `/local-generation/approve` |",
+    "| `/local-post-production/execute` |",
+    "| `/local-post-production/plans/{plan_id}/execute` |",
+    "| `/local-runtime/ffmpeg-recipes/execute` |",
+    "| `/local-runtime/checkpoint-watchdog/execute` |",
     "| `/prompt` |",
     "| `/api/prompt` |",
 )
