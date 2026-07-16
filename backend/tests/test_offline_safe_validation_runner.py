@@ -30,6 +30,7 @@ def test_offline_safe_validation_runner_invokes_static_backend_frontend_and_diff
     assert commands[2] == ("npm-test", "run", "lint")
     assert commands[3] == ("npm-test", "run", "build")
     assert commands[4] == ("git", "diff", "--check")
+    assert commands[5][1:] == ("-B", "scripts/checkpoint_watchdog.py")
     assert calls[2][1] == repo / "frontend"
     assert calls[3][1] == repo / "frontend"
 
@@ -47,4 +48,5 @@ def test_offline_safe_validation_runner_can_skip_frontend(monkeypatch, tmp_path:
     run_validation(repo, skip_frontend=True)
 
     assert all(command[0] != "npm" for command in calls)
-    assert calls[-1] == ("git", "diff", "--check")
+    assert calls[-2] == ("git", "diff", "--check")
+    assert calls[-1][1:] == ("-B", "scripts/checkpoint_watchdog.py")

@@ -18,6 +18,7 @@ from pathlib import Path
 
 BACKEND_TESTS = [
     "backend/tests/test_safe_local_boundary_script.py",
+    "backend/tests/test_checkpoint_watchdog.py",
     "backend/tests/test_offline_safe_validation_runner.py",
     "backend/tests/test_local_safe_boundary.py",
     "backend/tests/test_safe_local_endpoint_docs.py",
@@ -78,6 +79,7 @@ def run_validation(repo_root: Path, *, skip_frontend: bool = False) -> None:
         _run([npm, "run", "build"], cwd=repo_root / "frontend", env=env)
 
     _run(["git", "diff", "--check"], cwd=repo_root, env=env)
+    _run([python, "-B", "scripts/checkpoint_watchdog.py"], cwd=repo_root, env=env)
     print("\nOffline-safe validation passed.", flush=True)
 
 
