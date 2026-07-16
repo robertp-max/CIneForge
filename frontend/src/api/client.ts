@@ -458,6 +458,14 @@ export type LocalOperatorRunMode =
   | 'm5_ffmpeg_probe_validation'
   | 'm5_ffmpeg_assembly_validation'
 
+export type LocalOperatorRunPacketCreatePayload = {
+  mode: LocalOperatorRunMode
+  requested_by: string
+  target_ref?: string | null
+  notes?: string | null
+  acknowledge_no_execution: boolean
+}
+
 export type LocalOperatorRunPacket = {
   packet_id: string
   state: 'pending_explicit_operator_approval'
@@ -2008,6 +2016,11 @@ export const api = {
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
   localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
   listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
+  createLocalOperatorPacket: (payload: LocalOperatorRunPacketCreatePayload) =>
+    request<LocalOperatorRunPacket>('/local-operator/packets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   localM4Ladder: () => request<BenchmarkLadderManifest>('/local-runtime/m4-ladder'),
   listFFmpegRecipes: () => request<FFmpegCommandTemplateRecord[]>('/local-runtime/ffmpeg-recipes'),
   listLocalPresets: () => request<LocalPreset[]>('/local-presets'),

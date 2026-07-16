@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import {
   api,
   type BenchmarkLadderManifest,
@@ -8,6 +8,7 @@ import {
   type LocalArchetypeReadinessReport,
   type LocalM4PreflightReport,
   type LocalMVPReadinessReport,
+  type LocalOperatorRunMode,
   type LocalOperatorRunPacket,
   type LocalPreset,
   type LocalPresetReadinessRecord,
@@ -31,6 +32,12 @@ const disabledActions = [
 
 const READINESS_REASON_LIMIT = 3
 const READINESS_RECORD_LIMIT = 4
+
+const operatorPacketModes: Array<{ value: LocalOperatorRunMode; label: string }> = [
+  { value: 'm4_hardware_ladder_probe', label: 'M4 hardware ladder probe review packet' },
+  { value: 'm5_ffmpeg_probe_validation', label: 'M5 FFmpeg/ffprobe probe validation review packet' },
+  { value: 'm5_ffmpeg_assembly_validation', label: 'M5 FFmpeg assembly validation review packet' },
+]
 
 type ReadinessRecord = LocalArchetypeReadinessRecord | LocalPresetReadinessRecord
 type ReadinessReport = LocalArchetypeReadinessReport | LocalPresetReadinessReport
@@ -187,6 +194,13 @@ export function Runtime() {
   const [localMvpReadiness, setLocalMvpReadiness] = useState<LocalMVPReadinessReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [operatorPackets, setOperatorPackets] = useState<LocalOperatorRunPacket[]>([])
+  const [operatorPacketMode, setOperatorPacketMode] = useState<LocalOperatorRunMode>('m4_hardware_ladder_probe')
+  const [operatorPacketRequestedBy, setOperatorPacketRequestedBy] = useState('local-operator')
+  const [operatorPacketTargetRef, setOperatorPacketTargetRef] = useState('CF-VID-01')
+  const [operatorPacketNotes, setOperatorPacketNotes] = useState('')
+  const [operatorPacketAcknowledged, setOperatorPacketAcknowledged] = useState(false)
+  const [operatorPacketSubmitting, setOperatorPacketSubmitting] = useState(false)
+  const [operatorPacketMessage, setOperatorPacketMessage] = useState<string | null>(null)
   const [ffmpegRecipes, setFFmpegRecipes] = useState<FFmpegCommandTemplateRecord[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -252,6 +266,37 @@ export function Runtime() {
   const visibleLocalMvpBlockers = localMvpBlockers.slice(0, 4)
   const hiddenLocalMvpBlockerCount = Math.max(0, localMvpBlockers.length - visibleLocalMvpBlockers.length)
   const visibleOperatorPackets = operatorPackets.slice(0, 3)
+
+  async function handleCreateOperatorPacket(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setOperatorPacketMessage(null)
+    if (!operatorPacketAcknowledged) {
+      setOperatorPacketMessage('Check the no-execution acknowledgement before preparing a packet.')
+      return
+    }
+    if (!operatorPacketRequestedBy.trim()) {
+      setOperatorPacketMessage('Requested-by is required for the packet audit record.')
+      return
+    }
+    setOperatorPacketSubmitting(true)
+    try {
+      const packet = await api.createLocalOperatorPacket({
+        mode: operatorPacketMode,
+        requested_by: operatorPacketRequestedBy.trim(),
+        target_ref: operatorPacketTargetRef.trim() || null,
+        notes: operatorPacketNotes.trim() || null,
+        acknowledge_no_execution: true,
+      })
+      setOperatorPackets((current) => [packet, ...current.filter((item) => item.packet_id !== packet.packet_id)])
+      setOperatorPacketMessage(`Prepared offline packet ${packet.packet_id}; no approval or live execution was started.`)
+      setOperatorPacketAcknowledged(false)
+      setOperatorPacketNotes('')
+    } catch (err) {
+      setOperatorPacketMessage(err instanceof Error ? err.message : 'Unable to prepare local operator packet.')
+    } finally {
+      setOperatorPacketSubmitting(false)
+    }
+  }
 
   return (
     <div className="page">
@@ -383,9 +428,64 @@ export function Runtime() {
           <span>{operatorPackets.length ? `${operatorPackets.length} packet` : 'none'}</span>
         </div>
         <p>
-          These are pending review manifests only. The UI lists stored packets with no approval, execute, submit, run, probe,
-          render, benchmark, FFmpeg, ComfyUI, or GPU control.
+          These are pending review manifests only. The UI can prepare or list stored packets with no approval, execute, submit,
+          run, probe, render, benchmark, FFmpeg, ComfyUI, or GPU control.
         </p>
+        <form className="form-stack compact" onSubmit={(event) => void handleCreateOperatorPacket(event)}>
+          <div className="form-grid">
+            <label>
+              Packet mode
+              <select
+                value={operatorPacketMode}
+                onChange={(event) => setOperatorPacketMode(event.target.value as LocalOperatorRunMode)}
+              >
+                {operatorPacketModes.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Requested by
+              <input
+                value={operatorPacketRequestedBy}
+                onChange={(event) => setOperatorPacketRequestedBy(event.target.value)}
+                placeholder="local-operator"
+              />
+            </label>
+            <label>
+              Target reference
+              <input
+                value={operatorPacketTargetRef}
+                onChange={(event) => setOperatorPacketTargetRef(event.target.value)}
+                placeholder="CF-VID-01 or plan id"
+              />
+            </label>
+          </div>
+          <label>
+            Notes
+            <textarea
+              value={operatorPacketNotes}
+              onChange={(event) => setOperatorPacketNotes(event.target.value)}
+              placeholder="Optional offline review context. No command strings or live-run instructions are required."
+              rows={3}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={operatorPacketAcknowledged}
+              onChange={(event) => setOperatorPacketAcknowledged(event.target.checked)}
+            />
+            I acknowledge this prepares review metadata only and does not approve or start FFmpeg, ffprobe, ComfyUI, GPU,
+            render, benchmark, queue, or prompt-submission work.
+          </label>
+          <div className="button-row">
+            <button type="submit" disabled={operatorPacketSubmitting}>
+              {operatorPacketSubmitting ? 'Preparing packet...' : 'Prepare offline review packet'}
+            </button>
+          </div>
+          {operatorPacketMessage ? <p className="form-hint">{operatorPacketMessage}</p> : null}
+        </form>
         <div className="disabled-action-grid">
           {visibleOperatorPackets.map((packet) => (
             <article key={packet.packet_id} className="disabled-action">
