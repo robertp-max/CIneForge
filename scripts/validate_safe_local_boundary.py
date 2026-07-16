@@ -23,6 +23,14 @@ FORBIDDEN_LOCAL_CHILD_RE = re.compile(
     r"local-(generation|operator)/(execute|submit|approve|prompt)|"
     r"/local-operator/run(?=$|[^A-Za-z0-9_-])"
 )
+SAFE_ENDPOINT_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")
+ALLOWED_MUTATING_SAFE_ENDPOINTS = {
+    "/local-jobs",
+    "/local-generation/semantic-requests",
+    "/local-generation/storyboard-handoffs",
+    "/local-operator/packets",
+    "/local-post-production/plans",
+}
 
 
 @dataclass(frozen=True)
@@ -34,6 +42,18 @@ class BoundaryFinding:
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _safe_endpoint_methods(repo_root: Path) -> dict[str, set[str]]:
+    matrix_path = repo_root / "docs" / "SAFE_LOCAL_ENDPOINTS.md"
+    if not matrix_path.is_file():
+        return {}
+    methods: dict[str, set[str]] = {}
+    for line in matrix_path.read_text(encoding="utf-8").splitlines():
+        match = SAFE_ENDPOINT_ROW_RE.match(line)
+        if match:
+            methods[match.group("path")] = set(match.group("methods").split("/"))
+    return methods
 
 
 def _scan_text_files(root: Path, pattern: str, *, skip: set[Path] | None = None) -> list[Path]:
@@ -49,6 +69,17 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
 
     archetype_path = repo_root / "storage" / "archetypes" / "catalog.json"
     preset_path = repo_root / "storage" / "presets" / "catalog.json"
+
+    for endpoint, methods in _safe_endpoint_methods(repo_root).items():
+        mutating_methods = methods - {"GET"}
+        if mutating_methods and endpoint not in ALLOWED_MUTATING_SAFE_ENDPOINTS:
+            findings.append(
+                BoundaryFinding(
+                    "unexpected_mutating_safe_endpoint_method",
+                    "docs/SAFE_LOCAL_ENDPOINTS.md",
+                    f"{endpoint} documents mutating method(s): {', '.join(sorted(mutating_methods))}",
+                )
+            )
 
     try:
         archetypes = _load_json(archetype_path).get("archetypes", [])

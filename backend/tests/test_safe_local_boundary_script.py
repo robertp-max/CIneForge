@@ -11,6 +11,27 @@ def test_safe_local_boundary_validator_passes_current_repository():
     assert findings == []
 
 
+def test_safe_local_boundary_validator_detects_unexpected_mutating_safe_endpoint_method(tmp_path: Path):
+    repo = tmp_path
+    (repo / "docs").mkdir(parents=True)
+    (repo / "storage" / "archetypes").mkdir(parents=True)
+    (repo / "storage" / "presets").mkdir(parents=True)
+    (repo / "frontend" / "src" / "api").mkdir(parents=True)
+    (repo / "backend" / "app").mkdir(parents=True)
+    (repo / "storage" / "archetypes" / "catalog.json").write_text('{"archetypes":[]}', encoding="utf-8")
+    (repo / "storage" / "presets" / "catalog.json").write_text('{"presets":[]}', encoding="utf-8")
+    (repo / "docs" / "SAFE_LOCAL_ENDPOINTS.md").write_text(
+        "| Endpoint | Method(s) | Purpose | Executes live tools? | Records approval? | Starts generation/media work? |\n"
+        "|---|---:|---|---:|---:|---:|\n"
+        "| `/local-runtime/catalog` | GET/POST | bad | No | No | No |\n",
+        encoding="utf-8",
+    )
+
+    findings = validate_boundary(repo)
+
+    assert any(finding.code == "unexpected_mutating_safe_endpoint_method" for finding in findings)
+
+
 def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp_path: Path):
     repo = tmp_path
     (repo / "storage" / "archetypes").mkdir(parents=True)
