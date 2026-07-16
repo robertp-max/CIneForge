@@ -77,15 +77,21 @@ def format_watchdog_report(report: CheckpointWatchdogReport) -> str:
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv or sys.argv[1:])
     as_json = False
+    fail_on_dirty = False
     if "--json" in argv:
         argv.remove("--json")
         as_json = True
+    if "--fail-on-dirty" in argv:
+        argv.remove("--fail-on-dirty")
+        fail_on_dirty = True
     repo_root = Path(argv[0]) if argv else Path.cwd()
     report = build_watchdog_report(repo_root)
     if as_json:
         print(json.dumps(asdict(report), indent=2, sort_keys=True))
     else:
         print(format_watchdog_report(report))
+    if fail_on_dirty and not report.tracked_worktree_clean:
+        return 2
     return 0
 
 
