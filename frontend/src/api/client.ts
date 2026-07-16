@@ -316,6 +316,7 @@ export type LocalCheckpointWatchdogReport = {
   last_commit: string
   tracked_worktree_clean: boolean
   staged_files: string[]
+  untracked_source_files: string[]
   reminder: string
   invariants: string[]
   live_execution_performed_by_endpoint: boolean

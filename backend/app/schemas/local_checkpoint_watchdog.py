@@ -12,6 +12,7 @@ class LocalCheckpointWatchdogReport(BaseModel):
     last_commit: str
     tracked_worktree_clean: bool
     staged_files: list[str] = Field(default_factory=list)
+    untracked_source_files: list[str] = Field(default_factory=list)
     reminder: str
     invariants: list[str] = Field(default_factory=list)
     live_execution_performed_by_endpoint: bool = False

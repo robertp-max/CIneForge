@@ -18,6 +18,7 @@ class LocalCheckpointWatchdogService:
             last_commit=report.last_commit,
             tracked_worktree_clean=report.tracked_worktree_clean,
             staged_files=list(report.staged_files),
+            untracked_source_files=list(report.untracked_source_files),
             reminder=report.reminder,
             invariants=list(report.invariants),
         )

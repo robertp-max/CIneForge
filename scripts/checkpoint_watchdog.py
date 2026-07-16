@@ -15,6 +15,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
+SOURCE_SCOPED_UNTRACKED_SUFFIXES = {".md", ".py", ".ts", ".tsx", ".yml", ".yaml", ".json", ".toml"}
+IGNORED_UNTRACKED_PREFIXES = ("artifacts/watchdog/",)
+
+
 @dataclass(frozen=True)
 class CheckpointWatchdogReport:
     last_commit: str
@@ -22,6 +26,7 @@ class CheckpointWatchdogReport:
     staged_files: tuple[str, ...]
     reminder: str
     invariants: tuple[str, ...]
+    untracked_source_files: tuple[str, ...] = ()
 
 
 def _run_git(repo_root: Path, args: list[str]) -> str:
@@ -31,6 +36,20 @@ def _run_git(repo_root: Path, args: list[str]) -> str:
         return "unavailable"
 
 
+def _source_scoped_untracked_files(repo_root: Path) -> tuple[str, ...]:
+    status = _run_git(repo_root, ["status", "--short", "--untracked-files=all"])
+    files: list[str] = []
+    for line in status.splitlines():
+        if not line.startswith("?? "):
+            continue
+        rel_path = line[3:].replace("\\", "/")
+        if rel_path.startswith(IGNORED_UNTRACKED_PREFIXES):
+            continue
+        if Path(rel_path).suffix.lower() in SOURCE_SCOPED_UNTRACKED_SUFFIXES:
+            files.append(rel_path)
+    return tuple(sorted(files))
+
+
 def build_watchdog_report(repo_root: Path) -> CheckpointWatchdogReport:
     repo_root = repo_root.resolve()
     last_commit = _run_git(repo_root, ["log", "--oneline", "-1"])
@@ -38,6 +57,7 @@ def build_watchdog_report(repo_root: Path) -> CheckpointWatchdogReport:
     staged = _run_git(repo_root, ["diff", "--cached", "--name-only"])
     tracked_clean = status == ""
     staged_files = tuple(line for line in staged.splitlines() if line)
+    untracked_source_files = _source_scoped_untracked_files(repo_root)
     return CheckpointWatchdogReport(
         last_commit=last_commit,
         tracked_worktree_clean=tracked_clean,
@@ -57,6 +77,7 @@ def build_watchdog_report(repo_root: Path) -> CheckpointWatchdogReport:
             "After each commit, immediately continue with the next offline-safe gap unless blocked by the live boundary.",
             "A watchdog/status answer is not a stopping point; continue the next offline-safe gap immediately after reporting it.",
         ),
+        untracked_source_files=untracked_source_files,
     )
 
 
@@ -68,11 +89,15 @@ def format_watchdog_report(report: CheckpointWatchdogReport) -> str:
         f"Last commit: {report.last_commit}",
         f"Tracked worktree clean: {report.tracked_worktree_clean}",
         f"Staged files: {len(report.staged_files)}",
+        f"Source-scoped untracked files: {len(report.untracked_source_files)}",
         "Invariants:",
     ]
     if report.staged_files:
         lines.append("Staged file list:")
         lines.extend(f"- {path}" for path in report.staged_files)
+    if report.untracked_source_files:
+        lines.append("Source-scoped untracked file list:")
+        lines.extend(f"- {path}" for path in report.untracked_source_files)
     lines.extend(f"- {item}" for item in report.invariants)
     lines.append("================================================================")
     return "\n".join(lines)
@@ -94,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(asdict(report), indent=2, sort_keys=True))
     else:
         print(format_watchdog_report(report))
-    if fail_on_dirty and not report.tracked_worktree_clean:
+    if fail_on_dirty and (not report.tracked_worktree_clean or report.untracked_source_files):
         return 2
     return 0
 

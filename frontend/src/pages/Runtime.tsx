@@ -375,7 +375,15 @@ export function Runtime() {
       <section className="panel">
         <div className="panel-title">
           <h2>Checkpoint Watchdog</h2>
-          <StatusBadge status={localCheckpointWatchdog?.tracked_worktree_clean ? 'ready' : localCheckpointWatchdog ? 'attention' : 'loading'} />
+          <StatusBadge
+            status={
+              localCheckpointWatchdog?.tracked_worktree_clean && !localCheckpointWatchdog.untracked_source_files.length
+                ? 'ready'
+                : localCheckpointWatchdog
+                  ? 'attention'
+                  : 'loading'
+            }
+          />
         </div>
         <p>{localCheckpointWatchdog?.safety_note ?? 'Loading read-only checkpoint continuation watchdog...'}</p>
         <div className="disabled-action-grid">
@@ -393,10 +401,21 @@ export function Runtime() {
                 Last commit: <span className="mono">{localCheckpointWatchdog?.last_commit ?? 'loading'}</span>; tracked worktree clean:{' '}
                 <span className="mono">
                   {localCheckpointWatchdog ? String(localCheckpointWatchdog.tracked_worktree_clean) : 'loading'}
+                </span>; source-scoped untracked files:{' '}
+                <span className="mono">
+                  {localCheckpointWatchdog ? localCheckpointWatchdog.untracked_source_files.length : 'loading'}
                 </span>.
               </p>
             </div>
-            <StatusBadge status={localCheckpointWatchdog?.tracked_worktree_clean ? 'clean' : localCheckpointWatchdog ? 'dirty' : 'loading'} />
+            <StatusBadge
+              status={
+                localCheckpointWatchdog?.tracked_worktree_clean && !localCheckpointWatchdog.untracked_source_files.length
+                  ? 'clean'
+                  : localCheckpointWatchdog
+                    ? 'dirty'
+                    : 'loading'
+              }
+            />
           </article>
           <article className="disabled-action">
             <div>
@@ -428,6 +447,21 @@ export function Runtime() {
               </p>
             </div>
             <StatusBadge status={localCheckpointWatchdog?.staged_files.length ? 'attention' : localCheckpointWatchdog ? 'clean' : 'loading'} />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Source-scoped untracked files</strong>
+              <p>
+                {localCheckpointWatchdog
+                  ? localCheckpointWatchdog.untracked_source_files.length
+                    ? localCheckpointWatchdog.untracked_source_files.slice(0, 3).join(', ')
+                    : 'No source/docs/test untracked files reported.'
+                  : 'Loading untracked-file report...'}
+              </p>
+            </div>
+            <StatusBadge
+              status={localCheckpointWatchdog?.untracked_source_files.length ? 'attention' : localCheckpointWatchdog ? 'clean' : 'loading'}
+            />
           </article>
         </div>
         <ul className="feature-list">
