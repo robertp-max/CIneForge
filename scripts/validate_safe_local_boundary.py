@@ -197,6 +197,26 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
         for match in LIVE_WORKFLOW_FRAGMENT_RE.finditer(text):
             findings.append(BoundaryFinding("github_workflow_live_fragment", str(path), match.group(0)))
 
+    for path in (repo_root / "package.json", repo_root / "frontend" / "package.json", repo_root / "backend" / "package.json"):
+        if not path.is_file():
+            continue
+        try:
+            scripts = _load_json(path).get("scripts", {})
+        except Exception as exc:  # pragma: no cover - defensive CLI guard
+            findings.append(BoundaryFinding("package_json_unreadable", str(path), str(exc)))
+            continue
+        for script_name, command in scripts.items():
+            if not isinstance(command, str):
+                continue
+            for match in LIVE_WORKFLOW_FRAGMENT_RE.finditer(command):
+                findings.append(
+                    BoundaryFinding(
+                        "package_script_live_fragment",
+                        str(path),
+                        f"{script_name}: {match.group(0)}",
+                    )
+                )
+
     return findings
 
 

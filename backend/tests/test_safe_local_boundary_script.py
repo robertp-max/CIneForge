@@ -40,6 +40,10 @@ def test_safe_local_boundary_validator_detects_unexpected_mutating_safe_endpoint
     (repo / "frontend" / "src" / "api").mkdir(parents=True)
     (repo / "backend" / "app").mkdir(parents=True)
     (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / "frontend" / "package.json").write_text(
+        '{"scripts":{"bad":"ffmpeg -version"}}',
+        encoding="utf-8",
+    )
     (repo / "storage" / "archetypes" / "catalog.json").write_text('{"archetypes":[]}', encoding="utf-8")
     (repo / "storage" / "presets" / "catalog.json").write_text('{"presets":[]}', encoding="utf-8")
     (repo / "docs" / "SAFE_LOCAL_ENDPOINTS.md").write_text(
@@ -57,6 +61,7 @@ def test_safe_local_boundary_validator_detects_unexpected_mutating_safe_endpoint
 
     assert any(finding.code == "unexpected_mutating_safe_endpoint_method" for finding in findings)
     assert any(finding.code == "github_workflow_live_fragment" and "/health/gpu" in finding.detail for finding in findings)
+    assert any(finding.code == "package_script_live_fragment" and "ffmpeg" in finding.detail for finding in findings)
 
 
 def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp_path: Path):
