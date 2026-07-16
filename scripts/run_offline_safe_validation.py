@@ -73,7 +73,13 @@ def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) ->
     subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
-def run_validation(repo_root: Path, *, skip_frontend: bool = False, watchdog_json: Path | None = None) -> None:
+def run_validation(
+    repo_root: Path,
+    *,
+    skip_frontend: bool = False,
+    watchdog_json: Path | None = None,
+    fail_on_dirty: bool = False,
+) -> None:
     repo_root = repo_root.resolve()
     python = _python_executable(repo_root)
     env = os.environ.copy()
@@ -88,7 +94,10 @@ def run_validation(repo_root: Path, *, skip_frontend: bool = False, watchdog_jso
         _run([npm, "run", "build"], cwd=repo_root / "frontend", env=env)
 
     _run(["git", "diff", "--check"], cwd=repo_root, env=env)
-    _run([python, "-B", "scripts/checkpoint_watchdog.py"], cwd=repo_root, env=env)
+    watchdog_command = [python, "-B", "scripts/checkpoint_watchdog.py"]
+    if fail_on_dirty:
+        watchdog_command.append("--fail-on-dirty")
+    _run(watchdog_command, cwd=repo_root, env=env)
     if watchdog_json is not None:
         watchdog_json_path = watchdog_json if watchdog_json.is_absolute() else repo_root / watchdog_json
         watchdog_json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,8 +114,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--skip-frontend", action="store_true", help="Skip npm lint/build.")
     parser.add_argument("--watchdog-json", type=Path, default=None, help="Optional path for machine-readable watchdog output.")
+    parser.add_argument("--fail-on-dirty", action="store_true", help="Exit nonzero if tracked files are dirty after validation.")
     args = parser.parse_args(argv)
-    run_validation(args.repo_root, skip_frontend=args.skip_frontend, watchdog_json=args.watchdog_json)
+    run_validation(
+        args.repo_root,
+        skip_frontend=args.skip_frontend,
+        watchdog_json=args.watchdog_json,
+        fail_on_dirty=args.fail_on_dirty,
+    )
     return 0
 
 

@@ -18,6 +18,12 @@ Optional machine-readable watchdog artifact; `artifacts/watchdog/*.json` is igno
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py --watchdog-json artifacts\watchdog\latest.json
 ```
 
+Optional clean tracked tree enforcement after validation:
+
+```powershell
+.\.venv\Scripts\python scripts\run_offline_safe_validation.py --fail-on-dirty
+```
+
 The runner performs:
 
 1. Static safe/local boundary validation.
@@ -25,7 +31,7 @@ The runner performs:
 3. Frontend lint and build.
 4. `git diff --check`.
 
-Current checkpoint result: `154 passed, 71 warnings`, frontend lint/build passed, static boundary validation passed, endpoint-matrix path/method sync passed, offline docs boundary checks passed, and the checkpoint watchdog banner printed.
+Current checkpoint result: `155 passed, 71 warnings`, frontend lint/build passed, static boundary validation passed, endpoint-matrix path/method sync passed, offline docs boundary checks passed, and the checkpoint watchdog banner printed.
 
 ## Static boundary check only
 

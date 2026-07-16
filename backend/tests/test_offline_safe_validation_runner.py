@@ -63,6 +63,22 @@ def test_offline_safe_validation_runner_invokes_static_backend_frontend_and_diff
     assert calls[3][1] == repo / "frontend"
 
 
+def test_offline_safe_validation_runner_can_forward_fail_on_dirty(monkeypatch, tmp_path: Path):
+    repo = tmp_path
+    (repo / "frontend").mkdir()
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(command, *, cwd, env=None, check=False):
+        calls.append(tuple(command))
+
+    monkeypatch.setattr("scripts.run_offline_safe_validation.subprocess.run", fake_run)
+
+    run_validation(repo, skip_frontend=True, fail_on_dirty=True)
+
+    assert calls[-2] == ("git", "diff", "--check")
+    assert calls[-1][1:] == ("-B", "scripts/checkpoint_watchdog.py", "--fail-on-dirty")
+
+
 def test_offline_safe_validation_runner_can_write_watchdog_json(monkeypatch, tmp_path: Path):
     repo = tmp_path
     (repo / "frontend").mkdir()
