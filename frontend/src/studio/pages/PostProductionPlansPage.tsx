@@ -54,45 +54,75 @@ function summarizeKeys(record: JsonRecord | null | undefined): string {
   return keys.length > 8 ? `${visibleKeys}, +${keys.length - 8} more` : visibleKeys
 }
 
+function probeJsonRecordSummary(probeJson: JsonRecord, index: number): string {
+  const streams = Array.isArray(probeJson.streams) ? probeJson.streams.filter(isJsonRecord) : []
+  const codecTypes = Array.from(new Set(streams.map((stream) => safeProbeToken(stream.codec_type)).filter(Boolean)))
+  const codecNames = Array.from(new Set(streams.map((stream) => safeProbeToken(stream.codec_name)).filter(Boolean)))
+  const format = isJsonRecord(probeJson.format) ? probeJson.format : null
+
+  return [
+    `${String(index).padStart(2, '0')}: top-level keys=${summarizeKeys(probeJson)}`,
+    `streams=${formatNumber(streams.length)}`,
+    `codec types=${codecTypes.length ? codecTypes.slice(0, 4).join(', ') : 'none'}`,
+    `codec names=${codecNames.length ? codecNames.slice(0, 4).join(', ') : 'none'}`,
+    `format keys=${summarizeKeys(format)}`,
+  ].join('; ')
+}
+
+function probeJsonSummary(options: {
+  records: JsonRecord[]
+  emptyMessage: string
+  countLabel: string
+  declaredCount?: number
+  declaredCountLabel?: string
+  maxRecords?: number
+}): string {
+  const { records, emptyMessage, countLabel, declaredCount, declaredCountLabel, maxRecords = 5 } = options
+
+  if ((declaredCount ?? 0) === 0 && records.length === 0) {
+    return emptyMessage
+  }
+
+  const lines = declaredCountLabel ? [`${declaredCountLabel}: ${formatNumber(declaredCount)}`] : []
+  lines.push(`${countLabel}: ${formatNumber(records.length)}`)
+
+  if (typeof declaredCount === 'number' && declaredCount !== records.length) {
+    lines.push('Note: persisted count differs from summarized JSON record count.')
+  }
+
+  records.slice(0, maxRecords).forEach((probeJson, index) => {
+    lines.push(probeJsonRecordSummary(probeJson, index))
+  })
+
+  if (records.length > maxRecords) {
+    lines.push(`+${formatNumber(records.length - maxRecords)} additional probe JSON record(s) not expanded.`)
+  }
+
+  return lines.join('\n')
+}
+
 function inputProbeSummary(manifest: PostProductionRecipeCommandManifest): string {
   const declaredCount = typeof manifest.input_probe_count === 'number' ? manifest.input_probe_count : 0
   const probeJsons = Array.isArray(manifest.input_probe_jsons) ? manifest.input_probe_jsons.filter(isJsonRecord) : []
 
-  if (declaredCount === 0 && probeJsons.length === 0) {
-    return 'No input probe JSON provenance persisted for this recipe command.'
-  }
-
-  const lines = [
-    `Persisted input_probe_count: ${formatNumber(declaredCount)}`,
-    `Persisted input_probe_json records summarized: ${formatNumber(probeJsons.length)}`,
-  ]
-
-  if (declaredCount !== probeJsons.length) {
-    lines.push('Note: persisted count differs from summarized JSON record count.')
-  }
-
-  probeJsons.slice(0, 5).forEach((probeJson, index) => {
-    const streams = Array.isArray(probeJson.streams) ? probeJson.streams.filter(isJsonRecord) : []
-    const codecTypes = Array.from(new Set(streams.map((stream) => safeProbeToken(stream.codec_type)).filter(Boolean)))
-    const codecNames = Array.from(new Set(streams.map((stream) => safeProbeToken(stream.codec_name)).filter(Boolean)))
-    const format = isJsonRecord(probeJson.format) ? probeJson.format : null
-
-    lines.push(
-      [
-        `${String(index).padStart(2, '0')}: top-level keys=${summarizeKeys(probeJson)}`,
-        `streams=${formatNumber(streams.length)}`,
-        `codec types=${codecTypes.length ? codecTypes.slice(0, 4).join(', ') : 'none'}`,
-        `codec names=${codecNames.length ? codecNames.slice(0, 4).join(', ') : 'none'}`,
-        `format keys=${summarizeKeys(format)}`,
-      ].join('; '),
-    )
+  return probeJsonSummary({
+    records: probeJsons,
+    emptyMessage: 'No input probe JSON provenance persisted for this recipe command.',
+    countLabel: 'Persisted input_probe_json records summarized',
+    declaredCount,
+    declaredCountLabel: 'Persisted input_probe_count',
   })
+}
 
-  if (probeJsons.length > 5) {
-    lines.push(`+${formatNumber(probeJsons.length - 5)} additional probe JSON record(s) not expanded.`)
-  }
+function finalProbeSummary(finalProbeJson: Record<string, unknown> | null): string {
+  const probeJsons = isJsonRecord(finalProbeJson) ? [finalProbeJson] : []
 
-  return lines.join('\n')
+  return probeJsonSummary({
+    records: probeJsons,
+    emptyMessage: 'No final_probe_json persisted for this manifest.',
+    countLabel: 'Persisted final_probe_json records summarized',
+    maxRecords: 1,
+  })
 }
 
 function SummaryCard({ label, value, note }: { label: string; value: string | number; note: string }) {
@@ -147,6 +177,15 @@ function ManifestCard({ manifest }: { manifest: PostProductionPlanManifest }) {
         <EvidenceRow label="Error message" value={manifest.error_message || '—'} />
       </div>
 
+      {manifest.final_probe_json ? (
+        <div className="debug-panel" aria-label="Read-only final probe summary">
+          <span className="eyebrow">FINAL PROBE JSON · SAFE SUMMARY ONLY</span>
+          <pre>
+            <code>{finalProbeSummary(manifest.final_probe_json)}</code>
+          </pre>
+        </div>
+      ) : null}
+
       <div className="debug-panel" aria-label="Read-only command preview">
         <span className="eyebrow">COMMAND PREVIEW · INERT ARGV TEXT</span>
         <pre>
@@ -194,6 +233,15 @@ function RecipeCommandCard({ manifest }: { manifest: PostProductionRecipeCommand
           <code>{inputProbeSummary(manifest)}</code>
         </pre>
       </div>
+
+      {manifest.final_probe_json ? (
+        <div className="debug-panel" aria-label="Read-only recipe command final probe summary">
+          <span className="eyebrow">FINAL PROBE JSON · SAFE SUMMARY ONLY</span>
+          <pre>
+            <code>{finalProbeSummary(manifest.final_probe_json)}</code>
+          </pre>
+        </div>
+      ) : null}
 
       <div className="debug-panel" aria-label="Read-only recipe command argv display">
         <span className="eyebrow">RECIPE COMMAND ARGV · INERT TEXT ONLY</span>
