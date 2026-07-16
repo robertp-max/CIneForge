@@ -21,8 +21,11 @@ from backend.app.schemas.local_operator import (
     LocalOperatorLocalMVPSummary,
     LocalOperatorM4PreflightSummary,
     LocalOperatorM5RecipeSummary,
+    LocalOperatorEvidenceField,
     LocalOperatorRunMode,
     LocalOperatorRunPacket,
+    LocalOperatorRunbook,
+    LocalOperatorRunbookStep,
     LocalOperatorRunPacketCreate,
 )
 from backend.app.services.ffmpeg.service import ffmpeg_command_template_catalog
@@ -57,6 +60,126 @@ _M5_CHECKLIST = [
     "Do not accept raw FFmpeg command strings; use structured allowlisted recipes only.",
     "Capture output hashes/final probe/error records after any separately approved live media-tool run.",
 ]
+
+_FORBIDDEN_RUNBOOK_ACTIONS = [
+    "No public raw /prompt route or direct ComfyUI prompt submission.",
+    "No ComfyUI, GPU, render, benchmark, FFmpeg, or ffprobe action without separate explicit operator approval.",
+    "No raw FFmpeg command strings; use allowlisted structured recipe builders only.",
+    "No model/node installs, downloads, ComfyUI updates, or workflow-provided URL execution.",
+    "No public/autonomous generation enablement from a runbook or packet endpoint.",
+]
+
+
+def _evidence(field: str, description: str, source: str, *, required: bool = True) -> LocalOperatorEvidenceField:
+    return LocalOperatorEvidenceField(field=field, description=description, source=source, required=required)
+
+
+def _step(step_id: str, title: str, description: str) -> LocalOperatorRunbookStep:
+    return LocalOperatorRunbookStep(step_id=step_id, title=title, description=description)
+
+
+def _m4_runbook() -> LocalOperatorRunbook:
+    return LocalOperatorRunbook(
+        mode=LocalOperatorRunMode.m4_hardware_ladder_probe,
+        title="M4 hardware ladder probe reference",
+        purpose="Prepare the operator to run only approved CF-VID-01 ladder stages after explicit approval; this endpoint never runs them.",
+        prerequisites=[
+            "A pending operator packet exists for mode m4_hardware_ladder_probe.",
+            "Operator has explicitly approved the exact stage range and run window outside this runbook.",
+            "CINEFORGE_HARDWARE_OPERATOR_ENABLED and CINEFORGE_M4_HARDWARE_PROBE_APPROVED are enabled only for the approved run window.",
+            "Public/autonomous generation remains disabled and general queue-worker execution remains disabled.",
+            "CF-VID-01 workflow/model pins, smoke evidence, serialized M4 ladder manifest, and queue-empty evidence are available.",
+            "A controlled worker path, active GPU lease, managed output path, and recovery/stop rules are in force before Comfy/GPU work.",
+        ],
+        steps=[
+            _step("m4-review-preflight", "Review read-only preflight", "Inspect /local-runtime/m4-preflight and /local-runtime/m4-ladder before any separate live action."),
+            _step("m4-confirm-scope", "Confirm approved ladder scope", "Confirm only stages 0, 1, 2, 3, and 7 are in M4 scope; stages 4-6 remain deferred."),
+            _step("m4-run-one-stage", "Run one approved stage at a time", "A future approved runner must serialize stages and stop after each stage for evidence capture."),
+            _step("m4-capture-evidence", "Capture evidence", "Record duration, queue state, lease state, memory/thermal telemetry when available, output hashes/probes, and recovery outcome."),
+            _step("m4-restore-gates", "Restore default-off gates", "Return operator-only flags to default-off posture after the approved run or any stop condition."),
+        ],
+        stop_rules=[
+            "Stop immediately on unapproved graph/model/profile/stage deviation.",
+            "Stop if Stage 0 or Stage 1 fails twice after approved recovery adjustments.",
+            "Stop on OOM, process crash, stale GPU lease, non-empty queue after cleanup, missing output hash, or unmanaged output path.",
+            "Stop if public/autonomous generation or general queue-worker execution is observed enabled outside the approved run window.",
+        ],
+        expected_evidence_fields=[
+            _evidence("approval_id", "Identifier or note for the separate explicit operator approval.", "operator_audit"),
+            _evidence("stage_number", "One of the serialized M4 ladder stages approved for the run.", "storage/benchmark_ladders/m4_cf_vid01_ladder.json"),
+            _evidence("workflow_api_sha256", "Pinned workflow API hash used for the stage.", "workflow_manifest"),
+            _evidence("model_artifact_sha256", "Pinned selected FP8 model artifact hash.", "local_runtime_catalog"),
+            _evidence("gpu_lease_id", "Exclusive GPU lease bound to the worker-owned run.", "runtime_gpu_leases"),
+            _evidence("queue_empty_before_after", "Queue-empty evidence before and after the stage.", "comfy_queue_control"),
+            _evidence("output_sha256", "Hash of each managed output collected by CineForge.", "output_collector", required=False),
+            _evidence("final_probe_json", "Bounded media probe summary for collected output when media exists.", "output_collector", required=False),
+            _evidence("recovery_outcome", "Recovery/restart/next-job-health result for failures or Stage 7.", "runtime_recovery", required=False),
+        ],
+        forbidden_actions=list(_FORBIDDEN_RUNBOOK_ACTIONS),
+        safe_metadata_sources=[*_SAFE_METADATA_SOURCES, "backend.app.services.benchmarks.ladder.BenchmarkLadderService.get_m4_ladder"],
+    )
+
+
+def _m5_runbook(mode: LocalOperatorRunMode) -> LocalOperatorRunbook:
+    if mode == LocalOperatorRunMode.m5_ffmpeg_probe_validation:
+        title = "M5 FFmpeg/ffprobe probe validation reference"
+        purpose = "Prepare evidence expectations for a separately approved media probe validation run; this endpoint never runs ffprobe or FFmpeg."
+        recipe_scope = "decode_validate_v1 and probe-dependent recipe validation records"
+    else:
+        title = "M5 FFmpeg assembly validation reference"
+        purpose = "Prepare evidence expectations for a separately approved deterministic assembly validation run; this endpoint never runs FFmpeg."
+        recipe_scope = "allowlisted concat, normalize, mux, captions, timing, transition, and delivery recipe IDs"
+    return LocalOperatorRunbook(
+        mode=mode,
+        title=title,
+        purpose=purpose,
+        prerequisites=[
+            "A pending operator packet exists for the exact M5 mode.",
+            "Operator has explicitly approved the exact local media-tool run outside this runbook.",
+            "All inputs are inside managed storage or otherwise admitted by path-safety policy.",
+            "Every input has a validated SHA256 and, where required, existing probe provenance.",
+            f"The recipe scope is limited to {recipe_scope}; raw command strings are not accepted.",
+            "Output paths are resolved inside managed storage before any future approved media-tool execution.",
+        ],
+        steps=[
+            _step("m5-review-recipe", "Review allowlisted recipe identity", "Inspect read-only FFmpeg recipe metadata and persisted command manifests before any separate live action."),
+            _step("m5-confirm-inputs", "Confirm inputs and hashes", "Verify one hash per input plus probe compatibility where the selected recipe requires it."),
+            _step("m5-run-approved-recipe", "Run only the approved structured recipe", "A future approved runner must build argv from the allowlisted recipe builder, never from user-authored command strings."),
+            _step("m5-capture-outcome", "Capture outcome evidence", "Record output hash, final probe, timestamps, structured error text, and provenance after the approved run."),
+            _step("m5-restore-boundary", "Restore default-off boundary", "Leave recipe-command APIs read-only and avoid adding generic execute endpoints."),
+        ],
+        stop_rules=[
+            "Stop on unsafe path, missing/invalid hash, probe incompatibility, unsupported template ID, or user-authored command text.",
+            "Stop if an output would overwrite untracked or unmanaged files.",
+            "Stop on FFmpeg/ffprobe error and record structured error provenance without retry loops.",
+            "Stop if any endpoint attempts to expose raw command submission or public execution.",
+        ],
+        expected_evidence_fields=[
+            _evidence("approval_id", "Identifier or note for the separate explicit operator approval.", "operator_audit"),
+            _evidence("command_template_id", "Allowlisted recipe template ID.", "ffmpeg_recipe_catalog"),
+            _evidence("structured_argument_array", "Structured argv generated by CineForge builder, not user-authored command text.", "ffmpeg_service"),
+            _evidence("input_paths", "Managed input paths accepted by path-safety policy.", "post_production_manifest"),
+            _evidence("input_hashes", "Validated SHA256 for each input.", "post_production_manifest"),
+            _evidence("input_probe_jsons", "Stored probe provenance used for compatibility decisions.", "recipe_command_manifest", required=False),
+            _evidence("output_sha256", "Hash of produced output after the separately approved run.", "recipe_command_manifest", required=False),
+            _evidence("final_probe_json", "Bounded final probe summary after the separately approved run.", "recipe_command_manifest", required=False),
+            _evidence("error", "Structured error record for failed approved runs.", "recipe_command_manifest", required=False),
+        ],
+        forbidden_actions=list(_FORBIDDEN_RUNBOOK_ACTIONS),
+        safe_metadata_sources=[*_SAFE_METADATA_SOURCES, "backend.app.services.ffmpeg.service.ffmpeg_command_template_catalog"],
+    )
+
+
+def local_operator_runbooks() -> list[LocalOperatorRunbook]:
+    return [
+        _m4_runbook(),
+        _m5_runbook(LocalOperatorRunMode.m5_ffmpeg_probe_validation),
+        _m5_runbook(LocalOperatorRunMode.m5_ffmpeg_assembly_validation),
+    ]
+
+
+def get_local_operator_runbook(mode: LocalOperatorRunMode) -> LocalOperatorRunbook | None:
+    return next((runbook for runbook in local_operator_runbooks() if runbook.mode == mode), None)
 
 
 class LocalOperatorRunPacketStore:

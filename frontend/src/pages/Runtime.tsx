@@ -10,6 +10,7 @@ import {
   type LocalMVPReadinessReport,
   type LocalOperatorRunMode,
   type LocalOperatorRunPacket,
+  type LocalOperatorRunbook,
   type LocalPreset,
   type LocalPresetReadinessRecord,
   type LocalPublicReadinessReport,
@@ -196,6 +197,7 @@ export function Runtime() {
   const [localPublicReadiness, setLocalPublicReadiness] = useState<LocalPublicReadinessReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [operatorPackets, setOperatorPackets] = useState<LocalOperatorRunPacket[]>([])
+  const [operatorRunbooks, setOperatorRunbooks] = useState<LocalOperatorRunbook[]>([])
   const [operatorPacketMode, setOperatorPacketMode] = useState<LocalOperatorRunMode>('m4_hardware_ladder_probe')
   const [operatorPacketRequestedBy, setOperatorPacketRequestedBy] = useState('local-operator')
   const [operatorPacketTargetRef, setOperatorPacketTargetRef] = useState('CF-VID-01')
@@ -223,6 +225,7 @@ export function Runtime() {
           readiness,
           publicReadiness,
           operatorPacketList,
+          operatorRunbookList,
           ladder,
           recipes,
         ] = await Promise.all([
@@ -236,6 +239,7 @@ export function Runtime() {
           api.localMVPReadiness(),
           api.localPublicReadiness(),
           api.listLocalOperatorPackets(),
+          api.listLocalOperatorRunbooks(),
           api.localM4Ladder(),
           api.listFFmpegRecipes(),
         ])
@@ -250,6 +254,7 @@ export function Runtime() {
           setLocalMvpReadiness(readiness)
           setLocalPublicReadiness(publicReadiness)
           setOperatorPackets(operatorPacketList)
+          setOperatorRunbooks(operatorRunbookList)
           setM4Ladder(ladder)
           setFFmpegRecipes(recipes)
         }
@@ -271,6 +276,7 @@ export function Runtime() {
   const visibleLocalMvpBlockers = localMvpBlockers.slice(0, 4)
   const hiddenLocalMvpBlockerCount = Math.max(0, localMvpBlockers.length - visibleLocalMvpBlockers.length)
   const visibleOperatorPackets = operatorPackets.slice(0, 3)
+  const visibleOperatorRunbooks = operatorRunbooks.slice(0, 3)
   const visiblePublicReleaseBlockers = localPublicReadiness?.remaining_public_release_blockers.slice(0, 4) ?? []
   const hiddenPublicReleaseBlockerCount = Math.max(
     0,
@@ -506,6 +512,46 @@ export function Runtime() {
           {hiddenPublicReleaseBlockerCount ? <li>+{hiddenPublicReleaseBlockerCount} more blockers</li> : null}
           {!localPublicReadiness ? <li>Loading public-release blockers...</li> : null}
         </ul>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Local Operator Runbooks</h2>
+          <span>{operatorRunbooks.length ? `${operatorRunbooks.length} runbook` : 'loading'}</span>
+        </div>
+        <p>
+          Runbooks are read-only reference metadata for future explicitly approved M4/M5 actions. They expose prerequisites,
+          stop rules, and evidence expectations only; no command strings, approvals, execution, probes, renders, benchmarks,
+          FFmpeg, ComfyUI, GPU, queue, or prompt-submission controls are present.
+        </p>
+        <div className="disabled-action-grid">
+          {visibleOperatorRunbooks.map((runbook) => (
+            <article key={runbook.mode} className="disabled-action">
+              <div>
+                <strong>{runbook.title}</strong>
+                <p>{runbook.purpose}</p>
+                <p className="mono">
+                  state={runbook.state}; approves={String(runbook.endpoint_approves_execution)}; starts_live=
+                  {String(runbook.endpoint_starts_live_execution)}; raw_commands={String(runbook.raw_command_strings_allowed)}
+                </p>
+                <p>
+                  {runbook.steps.length} steps · {runbook.expected_evidence_fields.length} evidence fields ·{' '}
+                  {runbook.stop_rules.length} stop rules.
+                </p>
+              </div>
+              <StatusBadge status={runbook.state} />
+            </article>
+          ))}
+          {!visibleOperatorRunbooks.length ? (
+            <article className="disabled-action">
+              <div>
+                <strong>Loading runbooks</strong>
+                <p>Read-only operator runbook references will appear when the backend metadata loads.</p>
+              </div>
+              <StatusBadge status="loading" />
+            </article>
+          ) : null}
+        </div>
       </section>
 
       <section className="panel">

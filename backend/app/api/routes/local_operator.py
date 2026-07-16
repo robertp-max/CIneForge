@@ -12,8 +12,17 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from backend.app.core.config import get_settings
 from backend.app.core.errors import ValidationError
-from backend.app.schemas.local_operator import LocalOperatorRunPacket, LocalOperatorRunPacketCreate
-from backend.app.services.local_operator import LocalOperatorRunPacketStore
+from backend.app.schemas.local_operator import (
+    LocalOperatorRunMode,
+    LocalOperatorRunPacket,
+    LocalOperatorRunPacketCreate,
+    LocalOperatorRunbook,
+)
+from backend.app.services.local_operator import (
+    LocalOperatorRunPacketStore,
+    get_local_operator_runbook,
+    local_operator_runbooks,
+)
 
 
 router = APIRouter(prefix="/local-operator", tags=["local-operator"])
@@ -44,3 +53,16 @@ def list_local_operator_run_packets(limit: int = Query(default=25, ge=1, le=100)
 @router.get("/packets/{packet_id}", response_model=LocalOperatorRunPacket)
 def get_local_operator_run_packet(packet_id: UUID) -> LocalOperatorRunPacket:
     return _store().get(packet_id)
+
+
+@router.get("/runbooks", response_model=list[LocalOperatorRunbook])
+def list_local_operator_runbooks() -> list[LocalOperatorRunbook]:
+    return local_operator_runbooks()
+
+
+@router.get("/runbooks/{mode}", response_model=LocalOperatorRunbook)
+def get_local_operator_runbook_route(mode: LocalOperatorRunMode) -> LocalOperatorRunbook:
+    runbook = get_local_operator_runbook(mode)
+    if runbook is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local operator runbook not found.")
+    return runbook

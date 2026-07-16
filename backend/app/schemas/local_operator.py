@@ -62,6 +62,42 @@ class LocalOperatorM5RecipeSummary(BaseModel):
     user_authored_ffmpeg_commands_allowed: bool = False
 
 
+class LocalOperatorEvidenceField(BaseModel):
+    field: str
+    required: bool = True
+    description: str
+    source: str
+
+
+class LocalOperatorRunbookStep(BaseModel):
+    step_id: str
+    title: str
+    description: str
+    requires_explicit_operator_approval: bool = True
+    endpoint_executes_step: bool = False
+
+
+class LocalOperatorRunbook(BaseModel):
+    mode: LocalOperatorRunMode
+    title: str
+    purpose: str
+    state: Literal["read_only_reference"] = "read_only_reference"
+    public_generation_enabled: bool = False
+    endpoint_approves_execution: bool = False
+    endpoint_starts_live_execution: bool = False
+    raw_command_strings_allowed: bool = False
+    prerequisites: list[str]
+    steps: list[LocalOperatorRunbookStep]
+    stop_rules: list[str]
+    expected_evidence_fields: list[LocalOperatorEvidenceField]
+    forbidden_actions: list[str]
+    safe_metadata_sources: list[str]
+    safety_note: str = (
+        "This runbook is reference metadata only. It does not approve, run, submit, probe, render, benchmark, "
+        "acquire GPU leases, or execute FFmpeg/ffprobe/ComfyUI work."
+    )
+
+
 class LocalOperatorRunPacket(BaseModel):
     packet_id: UUID
     state: Literal["pending_explicit_operator_approval"] = "pending_explicit_operator_approval"

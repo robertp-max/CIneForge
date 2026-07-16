@@ -11,7 +11,7 @@ import pytest
 from backend.app.core.config import Settings
 from backend.app.main import app
 from backend.app.schemas.local_operator import LocalOperatorRunMode, LocalOperatorRunPacketCreate
-from backend.app.services.local_operator import LocalOperatorRunPacketStore
+from backend.app.services.local_operator import LocalOperatorRunPacketStore, get_local_operator_runbook, local_operator_runbooks
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -26,6 +26,56 @@ def _payload(mode: str = "m4_hardware_ladder_probe") -> dict:
         "notes": "prepare offline packet only",
         "acknowledge_no_execution": True,
     }
+
+
+def test_local_operator_runbooks_are_reference_only_without_raw_commands(monkeypatch):
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("operator runbooks must not execute subprocesses")
+
+    monkeypatch.setattr(subprocess, "run", forbidden_run)
+
+    runbooks = local_operator_runbooks()
+
+    assert {runbook.mode for runbook in runbooks} == set(LocalOperatorRunMode)
+    for runbook in runbooks:
+        assert runbook.state == "read_only_reference"
+        assert runbook.endpoint_approves_execution is False
+        assert runbook.endpoint_starts_live_execution is False
+        assert runbook.public_generation_enabled is False
+        assert runbook.raw_command_strings_allowed is False
+        assert runbook.prerequisites
+        assert runbook.steps
+        assert runbook.stop_rules
+        assert runbook.expected_evidence_fields
+        assert any("No public raw /prompt" in action for action in runbook.forbidden_actions)
+        assert all(step.endpoint_executes_step is False for step in runbook.steps)
+        assert all(step.requires_explicit_operator_approval is True for step in runbook.steps)
+
+    m4 = get_local_operator_runbook(LocalOperatorRunMode.m4_hardware_ladder_probe)
+    assert m4 is not None
+    assert any(field.field == "gpu_lease_id" for field in m4.expected_evidence_fields)
+
+    m5 = get_local_operator_runbook(LocalOperatorRunMode.m5_ffmpeg_assembly_validation)
+    assert m5 is not None
+    assert any(field.field == "structured_argument_array" for field in m5.expected_evidence_fields)
+
+
+def test_local_operator_runbook_routes_are_get_only_and_non_executing():
+    client = TestClient(app)
+
+    list_response = client.get("/local-operator/runbooks")
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert len(payload) == len(LocalOperatorRunMode)
+    assert all(item["state"] == "read_only_reference" for item in payload)
+    assert all(item["endpoint_approves_execution"] is False for item in payload)
+    assert all(item["endpoint_starts_live_execution"] is False for item in payload)
+    assert all(item["raw_command_strings_allowed"] is False for item in payload)
+
+    get_response = client.get("/local-operator/runbooks/m4_hardware_ladder_probe")
+    assert get_response.status_code == 200
+    assert get_response.json()["mode"] == "m4_hardware_ladder_probe"
+    assert get_response.json()["public_generation_enabled"] is False
 
 
 def test_local_operator_run_packet_store_creates_m4_packet_without_live_work(monkeypatch, tmp_path: Path):
@@ -138,8 +188,15 @@ def test_local_operator_route_contract_has_no_live_child_routes_or_prompt():
 
     assert {method for method, path in method_paths if path == "/local-operator/packets"} == {"GET", "POST"}
     assert {method for method, path in method_paths if path == "/local-operator/packets/{packet_id}"} == {"GET"}
+    assert {method for method, path in method_paths if path == "/local-operator/runbooks"} == {"GET"}
+    assert {method for method, path in method_paths if path == "/local-operator/runbooks/{mode}"} == {"GET"}
     assert "/prompt" not in {path for _method, path in method_paths}
+    forbidden_children = ("/execute", "/submit", "/approve", "/prompt")
     assert not any(
-        path.startswith("/local-operator") and any(child in path for child in ("/execute", "/submit", "/run", "/approve", "/prompt"))
+        path.startswith("/local-operator") and any(child in path for child in forbidden_children)
+        for _method, path in method_paths
+    )
+    assert not any(
+        path == "/local-operator/run" or path.startswith("/local-operator/run/")
         for _method, path in method_paths
     )

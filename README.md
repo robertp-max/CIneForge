@@ -43,7 +43,7 @@ What does not work yet:
 - Source identity: official LTX-2.3 22B Distilled **1.1**; the BF16 source checkpoint is not itself an FP8 artifact.
 - Runtime precision: proven FP8 only via a recorded method (`loader_level`, `converted_derivative`, or `official_artifact`); never silently substitute a non-1.1 FP8 file.
 - M0 records a local full-checkpoint FP8 artifact as `converted_derivative`; CF-VID-01 has passed a minimal local T2V smoke, but admission remains `benchmark_required` until conversion provenance, full benchmark evidence, recovery behavior, and human QA are recorded.
-- `/local-runtime/catalog`, `/local-runtime/local-mvp-readiness`, and fail-closed `/local-runtime/public-readiness` expose the DB-free local model/output/readiness contract; `/local-presets`, `/local-archetypes`, `/local-jobs`, `/local-generation/*`, and `/local-operator/packets` expose the local file-backed ComfyUI lane without submitting generation.
+- `/local-runtime/catalog`, `/local-runtime/local-mvp-readiness`, and fail-closed `/local-runtime/public-readiness` expose the DB-free local model/output/readiness contract; `/local-presets`, `/local-archetypes`, `/local-jobs`, `/local-generation/*`, `/local-operator/runbooks`, and `/local-operator/packets` expose the local file-backed ComfyUI lane without submitting generation.
 - Outputs are saved under the local ComfyUI output root (`C:\AI\ComfyUI_windows_portable\ComfyUI\output` by default), with one sanitized folder per CineForge project and safe `filename_prefix=<project-folder>/<run-stem>`.
 - Wan and older LTXV lanes are historical or optional secondary evidence, disabled by default.
 - Storyboard approval does not automatically start generation.

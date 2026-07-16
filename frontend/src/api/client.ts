@@ -493,6 +493,35 @@ export type LocalOperatorRunPacketCreatePayload = {
   acknowledge_no_execution: boolean
 }
 
+export type LocalOperatorRunbook = {
+  mode: LocalOperatorRunMode
+  title: string
+  purpose: string
+  state: 'read_only_reference'
+  public_generation_enabled: boolean
+  endpoint_approves_execution: boolean
+  endpoint_starts_live_execution: boolean
+  raw_command_strings_allowed: boolean
+  prerequisites: string[]
+  steps: Array<{
+    step_id: string
+    title: string
+    description: string
+    requires_explicit_operator_approval: boolean
+    endpoint_executes_step: boolean
+  }>
+  stop_rules: string[]
+  expected_evidence_fields: Array<{
+    field: string
+    required: boolean
+    description: string
+    source: string
+  }>
+  forbidden_actions: string[]
+  safe_metadata_sources: string[]
+  safety_note: string
+}
+
 export type LocalOperatorRunPacket = {
   packet_id: string
   state: 'pending_explicit_operator_approval'
@@ -2044,6 +2073,7 @@ export const api = {
   localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
   localPublicReadiness: () => request<LocalPublicReadinessReport>('/local-runtime/public-readiness'),
   listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
+  listLocalOperatorRunbooks: () => request<LocalOperatorRunbook[]>('/local-operator/runbooks'),
   createLocalOperatorPacket: (payload: LocalOperatorRunPacketCreatePayload) =>
     request<LocalOperatorRunPacket>('/local-operator/packets', {
       method: 'POST',
