@@ -116,6 +116,15 @@ def test_m4_preflight_can_report_operator_probe_ready_without_running_live_work(
 def test_m4_preflight_route_is_read_only_and_blocked_by_default():
     client = TestClient(app)
     assert client.post("/local-runtime/m4-preflight", json={}).status_code == 405
+    assert client.post("/local-runtime/m4-ladder", json={}).status_code == 405
+
+    ladder_response = client.get("/local-runtime/m4-ladder")
+    assert ladder_response.status_code == 200
+    ladder = ladder_response.json()
+    assert ladder["phase"] == "M4"
+    assert ladder["requires_hardware_operator_mode"] is True
+    assert ladder["public_generation_enabled"] is False
+    assert all(stage["live_action_approved"] is False for stage in ladder["stages"])
 
     response = client.get("/local-runtime/m4-preflight")
 
