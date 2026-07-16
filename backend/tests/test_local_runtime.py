@@ -45,6 +45,7 @@ def test_local_runtime_routes_are_read_only():
 
     assert client.post("/local-runtime/catalog", json={}).status_code == 405
     assert client.post("/local-runtime/output-policy", json={}).status_code == 405
+    assert client.post("/local-runtime/ffmpeg-recipes", json={}).status_code == 405
 
     catalog_response = client.get("/local-runtime/catalog")
     assert catalog_response.status_code == 200
@@ -60,3 +61,10 @@ def test_local_runtime_routes_are_read_only():
     assert policy["one_folder_per_project"] is True
     assert policy["filename_prefix_shape"] == "<project-folder>/<run-stem>"
     assert policy["user_supplied_output_paths_allowed"] is False
+
+    recipes_response = client.get("/local-runtime/ffmpeg-recipes")
+    assert recipes_response.status_code == 200
+    recipes = recipes_response.json()
+    assert recipes
+    assert all(recipe["executes_from_catalog"] is False for recipe in recipes)
+    assert all(recipe["user_authored_command_allowed"] is False for recipe in recipes)
