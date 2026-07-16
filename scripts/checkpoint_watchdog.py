@@ -55,6 +55,7 @@ def build_watchdog_report(repo_root: Path) -> CheckpointWatchdogReport:
             "Record validation truthfully in each checkpoint; if the full offline-safe suite was not run, say so.",
             "Before each checkpoint commit, verify staged contents intentionally match the checkpoint and no unrelated files are included.",
             "After each commit, immediately continue with the next offline-safe gap unless blocked by the live boundary.",
+            "A watchdog/status answer is not a stopping point; continue the next offline-safe gap immediately after reporting it.",
         ),
     )
 

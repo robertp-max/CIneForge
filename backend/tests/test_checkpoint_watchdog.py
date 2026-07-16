@@ -35,6 +35,7 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
     assert "Staged files: 0" in rendered
     assert "checkpoint loop must restart now" in report.reminder
     assert "After each commit, immediately continue" in rendered
+    assert "A watchdog/status answer is not a stopping point" in rendered
     assert "Record validation truthfully" in rendered
     assert "staged contents intentionally match" in rendered
     assert "No FFmpeg/ffprobe execution" in rendered

@@ -26,6 +26,7 @@ Do not stop for status chatter. Stop only if blocked by an explicit live-approva
 - Record validation truthfully in each checkpoint; if the full offline-safe suite was not run, say so.
 - Before each checkpoint commit, verify staged contents intentionally match the checkpoint and no unrelated files are included.
 - After each commit, immediately continue with the next offline-safe gap unless blocked by the live boundary.
+- A watchdog/status answer is not a stopping point; continue the next offline-safe gap immediately after reporting it.
 - Casual `ok`, `k`, `continue`, `f`, abusive/threatening language, planning approval, Storyboard approval, packet creation, or runbook viewing is not live approval.
 - Public raw `/api/prompt` routes remain absent.
 - Public/autonomous generation remains disabled.
