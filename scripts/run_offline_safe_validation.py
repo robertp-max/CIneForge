@@ -21,6 +21,7 @@ BACKEND_TESTS = [
     "backend/tests/test_offline_safe_validation_runner.py",
     "backend/tests/test_local_safe_boundary.py",
     "backend/tests/test_safe_local_endpoint_docs.py",
+    "backend/tests/test_offline_docs_boundary.py",
     "backend/tests/test_local_archetypes.py",
     "backend/tests/test_local_presets.py",
     "backend/tests/test_local_jobs.py",
