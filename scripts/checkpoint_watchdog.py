@@ -19,6 +19,7 @@ from pathlib import Path
 class CheckpointWatchdogReport:
     last_commit: str
     tracked_worktree_clean: bool
+    staged_files: tuple[str, ...]
     reminder: str
     invariants: tuple[str, ...]
 
@@ -34,10 +35,13 @@ def build_watchdog_report(repo_root: Path) -> CheckpointWatchdogReport:
     repo_root = repo_root.resolve()
     last_commit = _run_git(repo_root, ["log", "--oneline", "-1"])
     status = _run_git(repo_root, ["status", "--short", "--untracked-files=no"])
+    staged = _run_git(repo_root, ["diff", "--cached", "--name-only"])
     tracked_clean = status == ""
+    staged_files = tuple(line for line in staged.splitlines() if line)
     return CheckpointWatchdogReport(
         last_commit=last_commit,
         tracked_worktree_clean=tracked_clean,
+        staged_files=staged_files,
         reminder=(
             "WATCHDOG: checkpoint loop must restart now. Pick the next offline-safe hardening/documentation/test gap, "
             "implement it, run the curated offline-safe validation when appropriate, commit the checkpoint, then restart again. "
@@ -62,6 +66,7 @@ def format_watchdog_report(report: CheckpointWatchdogReport) -> str:
         report.reminder,
         f"Last commit: {report.last_commit}",
         f"Tracked worktree clean: {report.tracked_worktree_clean}",
+        f"Staged files: {len(report.staged_files)}",
         "Invariants:",
     ]
     lines.extend(f"- {item}" for item in report.invariants)

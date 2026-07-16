@@ -17,6 +17,7 @@ class LocalCheckpointWatchdogService:
         return LocalCheckpointWatchdogReport(
             last_commit=report.last_commit,
             tracked_worktree_clean=report.tracked_worktree_clean,
+            staged_files=list(report.staged_files),
             reminder=report.reminder,
             invariants=list(report.invariants),
         )

@@ -20,6 +20,8 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
             return "abc123 checkpoint: example"
         if args == ["status", "--short", "--untracked-files=no"]:
             return ""
+        if args == ["diff", "--cached", "--name-only"]:
+            return ""
         return "unexpected"
 
     monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
@@ -29,6 +31,8 @@ def test_checkpoint_watchdog_report_contains_restart_reminder(monkeypatch, tmp_p
 
     assert report.last_commit == "abc123 checkpoint: example"
     assert report.tracked_worktree_clean is True
+    assert report.staged_files == ()
+    assert "Staged files: 0" in rendered
     assert "checkpoint loop must restart now" in report.reminder
     assert "After each commit, immediately continue" in rendered
     assert "Record validation truthfully" in rendered
@@ -43,6 +47,8 @@ def test_checkpoint_watchdog_json_mode(monkeypatch, tmp_path: Path, capsys):
             return "abc123 checkpoint: json"
         if args == ["status", "--short", "--untracked-files=no"]:
             return ""
+        if args == ["diff", "--cached", "--name-only"]:
+            return "backend/tests/test_checkpoint_watchdog.py\n"
         return "unexpected"
 
     monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
@@ -52,6 +58,7 @@ def test_checkpoint_watchdog_json_mode(monkeypatch, tmp_path: Path, capsys):
 
     assert payload["last_commit"] == "abc123 checkpoint: json"
     assert payload["tracked_worktree_clean"] is True
+    assert payload["staged_files"] == ["backend/tests/test_checkpoint_watchdog.py"]
     assert any("No FFmpeg/ffprobe" in item for item in payload["invariants"])
 
 
@@ -61,6 +68,8 @@ def test_checkpoint_watchdog_reports_dirty_tracked_worktree(monkeypatch, tmp_pat
             return "abc123 checkpoint: example"
         if args == ["status", "--short", "--untracked-files=no"]:
             return " M README.md"
+        if args == ["diff", "--cached", "--name-only"]:
+            return "README.md\n"
         return "unexpected"
 
     monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
@@ -68,3 +77,4 @@ def test_checkpoint_watchdog_reports_dirty_tracked_worktree(monkeypatch, tmp_pat
     report = build_watchdog_report(tmp_path)
 
     assert report.tracked_worktree_clean is False
+    assert report.staged_files == ("README.md",)

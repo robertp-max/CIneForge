@@ -15,6 +15,7 @@ def test_local_checkpoint_watchdog_service_is_read_only(monkeypatch, tmp_path: P
         return CheckpointWatchdogReport(
             last_commit="abc123 checkpoint: example",
             tracked_worktree_clean=True,
+            staged_files=("backend/app/services/local_checkpoint_watchdog.py",),
             reminder="WATCHDOG: checkpoint loop must restart now.",
             invariants=("No FFmpeg/ffprobe execution without explicit scoped live approval.",),
         )
@@ -26,6 +27,7 @@ def test_local_checkpoint_watchdog_service_is_read_only(monkeypatch, tmp_path: P
     assert report.checkpoint_id == "local_checkpoint_watchdog"
     assert report.last_commit == "abc123 checkpoint: example"
     assert report.tracked_worktree_clean is True
+    assert report.staged_files == ["backend/app/services/local_checkpoint_watchdog.py"]
     assert "restart now" in report.reminder
     assert report.live_execution_performed_by_endpoint is False
     assert report.live_execution_approved_by_endpoint is False
@@ -44,6 +46,7 @@ def test_local_checkpoint_watchdog_route_is_get_only_and_non_executing():
     payload = response.json()
     assert payload["checkpoint_id"] == "local_checkpoint_watchdog"
     assert "checkpoint loop must restart now" in payload["reminder"]
+    assert isinstance(payload["staged_files"], list)
     assert payload["live_execution_performed_by_endpoint"] is False
     assert payload["live_execution_approved_by_endpoint"] is False
     assert payload["public_generation_enabled"] is False

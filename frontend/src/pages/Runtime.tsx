@@ -416,6 +416,19 @@ export function Runtime() {
             </div>
             <StatusBadge status="read_only" />
           </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Staged files</strong>
+              <p>
+                {localCheckpointWatchdog
+                  ? localCheckpointWatchdog.staged_files.length
+                    ? localCheckpointWatchdog.staged_files.slice(0, 3).join(', ')
+                    : 'No staged files reported.'
+                  : 'Loading staged-file report...'}
+              </p>
+            </div>
+            <StatusBadge status={localCheckpointWatchdog?.staged_files.length ? 'attention' : localCheckpointWatchdog ? 'clean' : 'loading'} />
+          </article>
         </div>
         <ul className="feature-list">
           {(localCheckpointWatchdog?.invariants ?? []).slice(0, 5).map((invariant) => (

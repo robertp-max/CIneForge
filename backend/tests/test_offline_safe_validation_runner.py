@@ -55,6 +55,7 @@ def test_offline_safe_validation_runner_can_write_watchdog_json(monkeypatch, tmp
         return CheckpointWatchdogReport(
             last_commit="abc123 checkpoint: json-artifact",
             tracked_worktree_clean=True,
+            staged_files=("scripts/run_offline_safe_validation.py",),
             reminder="WATCHDOG: checkpoint loop must restart now.",
             invariants=("No FFmpeg/ffprobe execution without explicit scoped live approval.",),
         )
@@ -67,6 +68,7 @@ def test_offline_safe_validation_runner_can_write_watchdog_json(monkeypatch, tmp
     payload = json.loads((repo / "artifacts" / "watchdog" / "report.json").read_text(encoding="utf-8"))
     assert payload["last_commit"] == "abc123 checkpoint: json-artifact"
     assert payload["tracked_worktree_clean"] is True
+    assert payload["staged_files"] == ["scripts/run_offline_safe_validation.py"]
     assert any("No FFmpeg/ffprobe" in item for item in payload["invariants"])
     assert calls[-2] == ("git", "diff", "--check")
     assert calls[-1][1:] == ("-B", "scripts/checkpoint_watchdog.py")

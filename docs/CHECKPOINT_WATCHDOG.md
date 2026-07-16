@@ -33,8 +33,8 @@ Do not stop for status chatter. Stop only if blocked by an explicit live-approva
 
 ## Tooling
 
-- `scripts/checkpoint_watchdog.py` prints the restart reminder and invariants; pass `--json` for machine-readable CI/tool output.
-- `GET /local-runtime/checkpoint-watchdog` exposes the read-only watchdog report for API/UI visibility without approving or starting work.
+- `scripts/checkpoint_watchdog.py` prints the restart reminder, tracked worktree cleanliness, staged-file count, and invariants; pass `--json` for machine-readable CI/tool output.
+- `GET /local-runtime/checkpoint-watchdog` exposes the read-only watchdog report, including staged-file names, for API/UI visibility without approving or starting work.
 - `scripts/run_offline_safe_validation.py` runs the curated offline-safe validation suite, prints the watchdog banner, and can write the watchdog JSON via `--watchdog-json <path>`.
 - `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md` defines valid live approval shape.
 - `docs/OFFLINE_SAFE_VALIDATION.md` defines the no-live validation path.
