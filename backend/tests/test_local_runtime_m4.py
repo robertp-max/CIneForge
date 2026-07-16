@@ -114,7 +114,10 @@ def test_m4_preflight_can_report_operator_probe_ready_without_running_live_work(
 
 
 def test_m4_preflight_route_is_read_only_and_blocked_by_default():
-    response = TestClient(app).get("/local-runtime/m4-preflight")
+    client = TestClient(app)
+    assert client.post("/local-runtime/m4-preflight", json={}).status_code == 405
+
+    response = client.get("/local-runtime/m4-preflight")
 
     assert response.status_code == 200
     payload = response.json()

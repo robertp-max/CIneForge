@@ -49,6 +49,8 @@ def test_local_public_readiness_reports_queue_blocker_when_worker_enabled():
 def test_local_public_readiness_route_contract_is_get_only():
     client = TestClient(app)
 
+    assert client.post("/local-runtime/public-readiness", json={}).status_code == 405
+
     response = client.get("/local-runtime/public-readiness")
 
     assert response.status_code == 200

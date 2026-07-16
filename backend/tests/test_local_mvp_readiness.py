@@ -52,6 +52,8 @@ def test_local_mvp_readiness_reports_autonomous_queue_blocker_when_worker_enable
 def test_local_mvp_readiness_route_contract_is_get_only():
     client = TestClient(app)
 
+    assert client.post("/local-runtime/local-mvp-readiness", json={}).status_code == 405
+
     response = client.get("/local-runtime/local-mvp-readiness")
 
     assert response.status_code == 200
