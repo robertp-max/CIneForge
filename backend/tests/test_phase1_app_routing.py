@@ -127,6 +127,8 @@ REQUIRED_METHOD_PATHS = {
     ("GET", "/local-runtime/catalog"),
     ("GET", "/local-runtime/output-policy"),
     ("GET", "/local-runtime/evidence"),
+    ("GET", "/local-runtime/m4-preflight"),
+    ("GET", "/local-runtime/m4-ladder"),
     ("GET", "/local-runtime/ffmpeg-recipes"),
     ("GET", "/local-runtime/local-mvp-readiness"),
     ("GET", "/local-runtime/public-readiness"),
