@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 APPROVAL_REQUIRED_PHRASES = {
@@ -19,6 +20,7 @@ APPROVAL_REQUIRED_PHRASES = {
 }
 
 CURRENT_VALIDATION_RESULT = "157 passed"
+STALE_VALIDATION_WARNING_RESULT_RE = r"157 passed, \d+ warnings"
 
 NON_APPROVAL_PHRASES = ["`k`", "`ok`", "`continue`", "`f`", "abusive", "threat"]
 
@@ -48,7 +50,9 @@ def test_offline_validation_count_is_consistent_across_current_docs():
     ]
 
     for path in docs:
-        assert CURRENT_VALIDATION_RESULT in path.read_text(encoding="utf-8"), f"{path} has stale validation count"
+        text = path.read_text(encoding="utf-8")
+        assert CURRENT_VALIDATION_RESULT in text, f"{path} has stale validation count"
+        assert not re.search(STALE_VALIDATION_WARNING_RESULT_RE, text), f"{path} has stale warning-bearing validation count"
 
 
 def test_live_boundary_docs_include_current_non_approval_phrases():
