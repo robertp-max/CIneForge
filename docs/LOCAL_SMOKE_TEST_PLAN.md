@@ -14,7 +14,7 @@ Run:
 
 This runs static safe-boundary validation, curated backend tests, frontend lint/build, and `git diff --check` without contacting ComfyUI, probing GPU/runtime health, running FFmpeg/ffprobe, submitting prompts, creating live jobs, rendering media, or benchmarking.
 
-Current checkpoint result: `193 passed`, frontend lint/build passed, static boundary validation passed, and the checkpoint watchdog banner printed.
+Current checkpoint result: `195 passed`, frontend lint/build passed, static boundary validation passed, and the checkpoint watchdog banner printed.
 
 ## Live probes are not part of the default smoke path
 
