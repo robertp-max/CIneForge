@@ -102,6 +102,13 @@ def test_local_job_route_can_be_bound_to_temp_store(monkeypatch, tmp_path: Path)
     assert get_response.status_code == 200
     assert get_response.json()["filename_prefix"] == "Route_Project/run_01"
 
+    assert client.put("/local-jobs", json={}).status_code == 405
+    assert client.patch("/local-jobs", json={}).status_code == 405
+    assert client.delete("/local-jobs").status_code == 405
+    assert client.post(f"/local-jobs/{payload['job_id']}", json={}).status_code == 405
+    assert client.put(f"/local-jobs/{payload['job_id']}", json={}).status_code == 405
+    assert client.delete(f"/local-jobs/{payload['job_id']}").status_code == 405
+
 
 def test_local_job_store_fails_closed_when_configured_workflow_template_missing(tmp_path: Path):
     settings = _temp_settings(tmp_path, include_workflow=False)
