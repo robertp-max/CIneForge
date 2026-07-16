@@ -7,6 +7,10 @@ from scripts.checkpoint_watchdog import CheckpointWatchdogReport
 from scripts.run_offline_safe_validation import BACKEND_TESTS, run_validation
 
 
+def test_offline_safe_validation_runner_includes_cf_vid01_contract_tests():
+    assert "backend/tests/test_cf_vid01_api_workflow_template.py" in BACKEND_TESTS
+
+
 def test_github_actions_uses_watchdog_json_output():
     workflow = Path(".github/workflows/test.yml").read_text(encoding="utf-8")
 
