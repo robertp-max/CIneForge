@@ -16,8 +16,16 @@ This matrix documents local/offline CineForge surfaces that are allowed before e
 | `/local-runtime/public-readiness` | GET | Fail-closed public readiness checkpoint | No | No | No |
 | `/local-runtime/safe-boundary` | GET | Static safe-boundary check report | No | No | No |
 | `/local-runtime/ffmpeg-recipes` | GET | Read-only FFmpeg recipe catalog | No | No | No |
-| `/local-archetypes/*` | GET | Catalog/readiness records | No | No | No |
-| `/local-presets/*` | GET | Catalog/readiness records | No | No | No |
+| `/local-archetypes/catalog` | GET | Archetype catalog envelope | No | No | No |
+| `/local-archetypes` | GET | Archetype records | No | No | No |
+| `/local-archetypes/{archetype_id}` | GET | Single archetype record | No | No | No |
+| `/local-archetypes/readiness` | GET | Archetype readiness rollup | No | No | No |
+| `/local-archetypes/{archetype_id}/readiness` | GET | Single archetype readiness record | No | No | No |
+| `/local-presets/catalog` | GET | Preset catalog envelope | No | No | No |
+| `/local-presets` | GET | Preset records | No | No | No |
+| `/local-presets/{preset_id}` | GET | Single preset record | No | No | No |
+| `/local-presets/readiness` | GET | Preset readiness rollup | No | No | No |
+| `/local-presets/{preset_id}/readiness` | GET | Single preset readiness record | No | No | No |
 | `/local-jobs` | GET/POST | File-backed offline job manifests | No | No | No |
 | `/local-jobs/{job_id}` | GET | Offline job manifest lookup | No | No | No |
 | `/local-generation/semantic-requests` | GET/POST | Offline semantic request manifests | No | No | No |
