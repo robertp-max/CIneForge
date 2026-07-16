@@ -48,7 +48,7 @@ What does not work yet:
 - Wan and older LTXV lanes are historical or optional secondary evidence, disabled by default.
 - Storyboard approval does not automatically start generation.
 
-See `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md`, `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md`, `Models/MODEL_FEASIBILITY_MATRIX.md`, `Benchmarks/BENCHMARK_PROTOCOL.md`, `docs/RUNTIME_INVENTORY.md`, and `docs/CFVID01_RUNTIME_SMOKE.md`.
+See `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md`, `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md`, `docs/OFFLINE_SAFE_VALIDATION.md`, `Models/MODEL_FEASIBILITY_MATRIX.md`, `Benchmarks/BENCHMARK_PROTOCOL.md`, `docs/RUNTIME_INVENTORY.md`, and `docs/CFVID01_RUNTIME_SMOKE.md`.
 
 ## Local Setup
 
