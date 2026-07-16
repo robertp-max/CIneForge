@@ -60,6 +60,9 @@ def test_local_operator_approval_templates_are_reference_only_without_recording_
 def test_local_operator_approval_template_routes_are_get_only_and_non_executing():
     client = TestClient(app)
 
+    assert client.post("/local-operator/approval-templates", json={}).status_code == 405
+    assert client.post("/local-operator/approval-templates/m4_hardware_ladder_probe", json={}).status_code == 405
+
     list_response = client.get("/local-operator/approval-templates")
     assert list_response.status_code == 200
     payload = list_response.json()
@@ -108,6 +111,9 @@ def test_local_operator_runbooks_are_reference_only_without_raw_commands(monkeyp
 
 def test_local_operator_runbook_routes_are_get_only_and_non_executing():
     client = TestClient(app)
+
+    assert client.post("/local-operator/runbooks", json={}).status_code == 405
+    assert client.post("/local-operator/runbooks/m4_hardware_ladder_probe", json={}).status_code == 405
 
     list_response = client.get("/local-operator/runbooks")
     assert list_response.status_code == 200

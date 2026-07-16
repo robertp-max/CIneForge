@@ -44,6 +44,8 @@ def test_local_safe_boundary_service_returns_relative_findings(tmp_path: Path):
 def test_local_safe_boundary_route_is_get_only_and_non_executing():
     client = TestClient(app)
 
+    assert client.post("/local-runtime/safe-boundary", json={}).status_code == 405
+
     response = client.get("/local-runtime/safe-boundary")
 
     assert response.status_code == 200
