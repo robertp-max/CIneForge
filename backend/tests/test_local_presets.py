@@ -56,6 +56,10 @@ def test_local_preset_service_filter_and_get():
 def test_local_preset_routes():
     client = TestClient(app)
 
+    assert client.post("/local-presets/catalog", json={}).status_code == 405
+    assert client.post("/local-presets", json={}).status_code == 405
+    assert client.post("/local-presets/CF-PRESET-001", json={}).status_code == 405
+
     catalog_response = client.get("/local-presets/catalog")
     assert catalog_response.status_code == 200
     assert len(catalog_response.json()["presets"]) == 64
@@ -68,6 +72,8 @@ def test_local_preset_routes():
     get_response = client.get("/local-presets/CF-PRESET-001")
     assert get_response.status_code == 200
     assert get_response.json()["preset_id"] == "CF-PRESET-001"
+    assert get_response.json()["enabled"] is False
+    assert get_response.json()["readiness"] != "ready"
 
     missing_response = client.get("/local-presets/CF-PRESET-999")
     assert missing_response.status_code == 404
