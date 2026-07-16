@@ -431,7 +431,7 @@ export function Runtime() {
           </article>
         </div>
         <ul className="feature-list">
-          {(localCheckpointWatchdog?.invariants ?? []).slice(0, 5).map((invariant) => (
+          {(localCheckpointWatchdog?.invariants ?? []).map((invariant) => (
             <li key={invariant}>{invariant}</li>
           ))}
           {!localCheckpointWatchdog ? <li>Loading watchdog invariants...</li> : null}

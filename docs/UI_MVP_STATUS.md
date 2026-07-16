@@ -34,7 +34,7 @@ Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characte
 - Campaigns: create campaigns for existing projects, list campaigns, read campaign by ID.
 - Jobs: list persisted jobs, prepare offline local/semantic manifests with no-execution acknowledgements, and read job status by ID without live submission.
 - Queue: read-only queue metadata surface; runtime worker status is not auto-probed.
-- Runtime: file-backed local readiness, checkpoint watchdog, safe-boundary, public-readiness, operator packet/runbook/template, M4 ladder/preflight, evidence, and FFmpeg recipe metadata without live probes.
+- Runtime: file-backed local readiness, checkpoint watchdog with full no-live/non-stopping invariant list, safe-boundary, public-readiness, operator packet/runbook/template, M4 ladder/preflight, evidence, and FFmpeg recipe metadata without live probes.
 - System Health: backend health card only; ComfyUI/GPU/FFmpeg live probes are not auto-called by the UI.
 - Roadmap / Disabled Features: phase status and intentional capability gates.
 
