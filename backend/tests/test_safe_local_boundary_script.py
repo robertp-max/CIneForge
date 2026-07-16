@@ -14,6 +14,7 @@ def test_safe_local_boundary_validator_passes_current_repository():
 def test_safe_local_boundary_validator_detects_assistant_analysis_leak(tmp_path: Path):
     repo = tmp_path
     (repo / "docs").mkdir(parents=True)
+    (repo / "artifacts").mkdir(parents=True)
     (repo / "storage" / "archetypes").mkdir(parents=True)
     (repo / "storage" / "presets").mkdir(parents=True)
     (repo / "frontend" / "src" / "api").mkdir(parents=True)
@@ -22,11 +23,13 @@ def test_safe_local_boundary_validator_detects_assistant_analysis_leak(tmp_path:
     (repo / "storage" / "presets" / "catalog.json").write_text('{"presets":[]}', encoding="utf-8")
     leak_phrase = "Wait " + "JSON malformed"
     (repo / "docs" / "LEAK.md").write_text(f"{leak_phrase} should never be committed.", encoding="utf-8")
+    (repo / "artifacts" / "LEAK.md").write_text(f"{leak_phrase} should never be committed as an artifact.", encoding="utf-8")
     (repo / "frontend" / "src" / "api" / "client.ts").write_text("", encoding="utf-8")
 
     findings = validate_boundary(repo)
 
     assert any(finding.code == "assistant_analysis_leak" and leak_phrase in finding.detail for finding in findings)
+    assert any(finding.code == "assistant_analysis_leak" and "artifacts" in finding.path for finding in findings)
 
 
 def test_safe_local_boundary_validator_detects_unexpected_mutating_safe_endpoint_method(tmp_path: Path):
