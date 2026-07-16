@@ -119,11 +119,10 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
 
     api_client = (repo_root / "frontend" / "src" / "api" / "client.ts").resolve()
     for path in _scan_text_files(repo_root / "frontend" / "src", "*.ts*"):
-        if path.resolve() == api_client:
-            continue
         text = path.read_text(encoding="utf-8", errors="ignore")
-        for match in LIVE_FRONTEND_CALL_RE.finditer(text):
-            findings.append(BoundaryFinding("frontend_live_probe_callsite", str(path), match.group(0)))
+        if path.resolve() != api_client:
+            for match in LIVE_FRONTEND_CALL_RE.finditer(text):
+                findings.append(BoundaryFinding("frontend_live_probe_callsite", str(path), match.group(0)))
         for match in RAW_PROMPT_STRING_RE.finditer(text):
             findings.append(BoundaryFinding("frontend_raw_prompt_reference", str(path), match.group(0)))
         for match in FORBIDDEN_LOCAL_CHILD_RE.finditer(text):

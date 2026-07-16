@@ -55,7 +55,7 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         encoding="utf-8",
     )
     (repo / "frontend" / "src" / "api" / "client.ts").write_text(
-        "export const api = { runtimeStatus: () => null }",
+        "export const api = { runtimeStatus: () => null, rawPrompt: () => fetch('/prompt') }",
         encoding="utf-8",
     )
     (repo / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
@@ -80,5 +80,11 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         for finding in findings
     )
     assert any(finding.code == "frontend_raw_prompt_reference" and "/api/prompt" in finding.detail for finding in findings)
+    assert any(
+        finding.code == "frontend_raw_prompt_reference"
+        and "client.ts" in finding.path
+        and "/prompt" in finding.detail
+        for finding in findings
+    )
     assert "raw_prompt_route" in codes
     assert all(isinstance(finding, BoundaryFinding) for finding in findings)
