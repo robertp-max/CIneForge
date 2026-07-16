@@ -34,7 +34,7 @@ Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characte
 - Campaigns: create campaigns for existing projects, list campaigns, read campaign by ID.
 - Jobs: list persisted jobs, prepare offline local/semantic manifests with no-execution acknowledgements, and read job status by ID without live submission.
 - Queue: read-only queue metadata surface; runtime worker status is not auto-probed.
-- Runtime: file-backed local readiness, safe-boundary, public-readiness, operator packet/runbook/template, M4 ladder/preflight, evidence, and FFmpeg recipe metadata without live probes.
+- Runtime: file-backed local readiness, checkpoint watchdog, safe-boundary, public-readiness, operator packet/runbook/template, M4 ladder/preflight, evidence, and FFmpeg recipe metadata without live probes.
 - System Health: backend health card only; ComfyUI/GPU/FFmpeg live probes are not auto-called by the UI.
 - Roadmap / Disabled Features: phase status and intentional capability gates.
 
@@ -47,6 +47,7 @@ Storyboard Phase A now provides Overview, Storyboard, Story & Chapters, Characte
 - `GET /local-runtime/local-mvp-readiness`
 - `GET /local-runtime/public-readiness`
 - `GET /local-runtime/safe-boundary`
+- `GET /local-runtime/checkpoint-watchdog`
 - `GET /local-archetypes/readiness`
 - `GET /local-presets/readiness`
 - `GET /local-operator/approval-templates`
@@ -88,4 +89,4 @@ Use:
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
-The current checkpoint reports `143 passed, 71 warnings`, frontend lint/build passed, static safe-boundary validation passed, and the checkpoint watchdog banner printed. The suite does not run live runtime/media actions.
+The current checkpoint reports `145 passed, 71 warnings`, frontend lint/build passed, static safe-boundary validation passed, and the checkpoint watchdog banner printed. The suite does not run live runtime/media actions.

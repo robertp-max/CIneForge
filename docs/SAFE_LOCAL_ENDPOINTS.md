@@ -15,6 +15,7 @@ This matrix documents local/offline CineForge surfaces that are allowed before e
 | `/local-runtime/local-mvp-readiness` | GET | Local MVP readiness checkpoint | No | No | No |
 | `/local-runtime/public-readiness` | GET | Fail-closed public readiness checkpoint | No | No | No |
 | `/local-runtime/safe-boundary` | GET | Static safe-boundary check report | No | No | No |
+| `/local-runtime/checkpoint-watchdog` | GET | Read-only checkpoint continuation watchdog report | No | No | No |
 | `/local-runtime/ffmpeg-recipes` | GET | Read-only FFmpeg recipe catalog | No | No | No |
 | `/local-archetypes/catalog` | GET | Archetype catalog envelope | No | No | No |
 | `/local-archetypes` | GET | Archetype records | No | No | No |

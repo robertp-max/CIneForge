@@ -6,6 +6,7 @@ import {
   type LocalArchetype,
   type LocalArchetypeReadinessRecord,
   type LocalArchetypeReadinessReport,
+  type LocalCheckpointWatchdogReport,
   type LocalM4PreflightReport,
   type LocalMVPReadinessReport,
   type LocalOperatorApprovalTemplate,
@@ -198,6 +199,7 @@ export function Runtime() {
   const [localMvpReadiness, setLocalMvpReadiness] = useState<LocalMVPReadinessReport | null>(null)
   const [localPublicReadiness, setLocalPublicReadiness] = useState<LocalPublicReadinessReport | null>(null)
   const [localSafeBoundary, setLocalSafeBoundary] = useState<LocalSafeBoundaryReport | null>(null)
+  const [localCheckpointWatchdog, setLocalCheckpointWatchdog] = useState<LocalCheckpointWatchdogReport | null>(null)
   const [m4Ladder, setM4Ladder] = useState<BenchmarkLadderManifest | null>(null)
   const [operatorPackets, setOperatorPackets] = useState<LocalOperatorRunPacket[]>([])
   const [operatorApprovalTemplates, setOperatorApprovalTemplates] = useState<LocalOperatorApprovalTemplate[]>([])
@@ -229,6 +231,7 @@ export function Runtime() {
           readiness,
           publicReadiness,
           safeBoundary,
+          checkpointWatchdog,
           operatorPacketList,
           operatorApprovalTemplateList,
           operatorRunbookList,
@@ -245,6 +248,7 @@ export function Runtime() {
           api.localMVPReadiness(),
           api.localPublicReadiness(),
           api.localSafeBoundary(),
+          api.localCheckpointWatchdog(),
           api.listLocalOperatorPackets(),
           api.listLocalOperatorApprovalTemplates(),
           api.listLocalOperatorRunbooks(),
@@ -262,6 +266,7 @@ export function Runtime() {
           setLocalMvpReadiness(readiness)
           setLocalPublicReadiness(publicReadiness)
           setLocalSafeBoundary(safeBoundary)
+          setLocalCheckpointWatchdog(checkpointWatchdog)
           setOperatorPackets(operatorPacketList)
           setOperatorApprovalTemplates(operatorApprovalTemplateList)
           setOperatorRunbooks(operatorRunbookList)
@@ -365,6 +370,59 @@ export function Runtime() {
           Current runtime phase, queue capability, GPU telemetry, and ComfyUI availability are not requested automatically.
           Live probes require explicit operator approval outside this read-only local readiness page.
         </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Checkpoint Watchdog</h2>
+          <StatusBadge status={localCheckpointWatchdog?.tracked_worktree_clean ? 'ready' : localCheckpointWatchdog ? 'attention' : 'loading'} />
+        </div>
+        <p>{localCheckpointWatchdog?.safety_note ?? 'Loading read-only checkpoint continuation watchdog...'}</p>
+        <div className="disabled-action-grid">
+          <article className="disabled-action">
+            <div>
+              <strong>Restart directive</strong>
+              <p>{localCheckpointWatchdog?.reminder ?? 'Loading checkpoint restart reminder...'}</p>
+            </div>
+            <StatusBadge status="read_only" />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>Repository checkpoint state</strong>
+              <p>
+                Last commit: <span className="mono">{localCheckpointWatchdog?.last_commit ?? 'loading'}</span>; tracked worktree clean:{' '}
+                <span className="mono">
+                  {localCheckpointWatchdog ? String(localCheckpointWatchdog.tracked_worktree_clean) : 'loading'}
+                </span>.
+              </p>
+            </div>
+            <StatusBadge status={localCheckpointWatchdog?.tracked_worktree_clean ? 'clean' : localCheckpointWatchdog ? 'dirty' : 'loading'} />
+          </article>
+          <article className="disabled-action">
+            <div>
+              <strong>No-live flags</strong>
+              <p>
+                Live executed:{' '}
+                <span className="mono">
+                  {localCheckpointWatchdog ? String(localCheckpointWatchdog.live_execution_performed_by_endpoint) : 'loading'}
+                </span>; live approved:{' '}
+                <span className="mono">
+                  {localCheckpointWatchdog ? String(localCheckpointWatchdog.live_execution_approved_by_endpoint) : 'loading'}
+                </span>; public generation:{' '}
+                <span className="mono">
+                  {localCheckpointWatchdog ? String(localCheckpointWatchdog.public_generation_enabled) : 'loading'}
+                </span>.
+              </p>
+            </div>
+            <StatusBadge status="read_only" />
+          </article>
+        </div>
+        <ul className="feature-list">
+          {(localCheckpointWatchdog?.invariants ?? []).slice(0, 5).map((invariant) => (
+            <li key={invariant}>{invariant}</li>
+          ))}
+          {!localCheckpointWatchdog ? <li>Loading watchdog invariants...</li> : null}
+        </ul>
       </section>
 
       <section className="panel">

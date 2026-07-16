@@ -8,6 +8,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import ValidationError
 from backend.app.schemas.benchmark_ladder import BenchmarkLadderManifest
 from backend.app.schemas.ffmpeg_recipes import FFmpegCommandTemplateRecord
+from backend.app.schemas.local_checkpoint_watchdog import LocalCheckpointWatchdogReport
 from backend.app.schemas.local_mvp_readiness import LocalMVPReadinessReport
 from backend.app.schemas.local_public_readiness import LocalPublicReadinessReport
 from backend.app.schemas.local_runtime import LocalRuntimeCatalog, OutputPolicy
@@ -15,6 +16,7 @@ from backend.app.schemas.local_safe_boundary import LocalSafeBoundaryReport
 from backend.app.schemas.local_runtime_evidence import LocalRuntimeEvidence
 from backend.app.schemas.local_runtime_m4 import M4HardwarePreflightReport
 from backend.app.services.ffmpeg.service import ffmpeg_command_template_catalog
+from backend.app.services.local_checkpoint_watchdog import LocalCheckpointWatchdogService
 from backend.app.services.local_mvp_readiness import LocalMVPReadinessService
 from backend.app.services.local_public_readiness import LocalPublicReadinessService
 from backend.app.services.local_runtime import local_runtime_catalog, output_policy
@@ -60,6 +62,11 @@ def get_local_public_readiness() -> LocalPublicReadinessReport:
 @router.get("/safe-boundary", response_model=LocalSafeBoundaryReport)
 def get_local_safe_boundary() -> LocalSafeBoundaryReport:
     return LocalSafeBoundaryService().report()
+
+
+@router.get("/checkpoint-watchdog", response_model=LocalCheckpointWatchdogReport)
+def get_local_checkpoint_watchdog() -> LocalCheckpointWatchdogReport:
+    return LocalCheckpointWatchdogService().report()
 
 
 @router.get("/ffmpeg-recipes", response_model=list[FFmpegCommandTemplateRecord])

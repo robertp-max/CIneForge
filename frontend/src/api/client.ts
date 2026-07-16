@@ -311,6 +311,18 @@ export type LocalSafeBoundaryReport = {
   safety_note: string
 }
 
+export type LocalCheckpointWatchdogReport = {
+  checkpoint_id: 'local_checkpoint_watchdog'
+  last_commit: string
+  tracked_worktree_clean: boolean
+  reminder: string
+  invariants: string[]
+  live_execution_performed_by_endpoint: boolean
+  live_execution_approved_by_endpoint: boolean
+  public_generation_enabled: boolean
+  safety_note: string
+}
+
 export type LocalPublicReadinessReport = {
   checkpoint_id: 'local_public_release_readiness'
   status: 'blocked'
@@ -2095,6 +2107,7 @@ export const api = {
   localMVPReadiness: () => request<LocalMVPReadinessReport>('/local-runtime/local-mvp-readiness'),
   localPublicReadiness: () => request<LocalPublicReadinessReport>('/local-runtime/public-readiness'),
   localSafeBoundary: () => request<LocalSafeBoundaryReport>('/local-runtime/safe-boundary'),
+  localCheckpointWatchdog: () => request<LocalCheckpointWatchdogReport>('/local-runtime/checkpoint-watchdog'),
   listLocalOperatorPackets: (limit = 10) => request<LocalOperatorRunPacket[]>(`/local-operator/packets?limit=${limit}`),
   listLocalOperatorApprovalTemplates: () => request<LocalOperatorApprovalTemplate[]>('/local-operator/approval-templates'),
   listLocalOperatorRunbooks: () => request<LocalOperatorRunbook[]>('/local-operator/runbooks'),
