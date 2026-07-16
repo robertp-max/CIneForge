@@ -15,7 +15,21 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
-SOURCE_SCOPED_UNTRACKED_SUFFIXES = {".md", ".py", ".ts", ".tsx", ".yml", ".yaml", ".json", ".toml"}
+SOURCE_SCOPED_UNTRACKED_SUFFIXES = {
+    ".cfg",
+    ".ini",
+    ".json",
+    ".jsonl",
+    ".lock",
+    ".md",
+    ".py",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
 IGNORED_UNTRACKED_PREFIXES = ("artifacts/watchdog/",)
 
 

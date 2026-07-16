@@ -88,7 +88,7 @@ def test_checkpoint_watchdog_reports_source_scoped_untracked_files(monkeypatch, 
         if args == ["diff", "--cached", "--name-only"]:
             return ""
         if args == ["status", "--short", "--untracked-files=all"]:
-            return "?? docs/new.md\n?? artifacts/watchdog/latest.json\n?? scratch.tmp\n"
+            return "?? docs/new.md\n?? requirements.txt\n?? config/local.ini\n?? artifacts/watchdog/latest.json\n?? scratch.tmp\n"
         return "unexpected"
 
     monkeypatch.setattr("scripts.checkpoint_watchdog._run_git", fake_run_git)
@@ -97,10 +97,12 @@ def test_checkpoint_watchdog_reports_source_scoped_untracked_files(monkeypatch, 
     rendered = format_watchdog_report(report)
 
     assert report.tracked_worktree_clean is True
-    assert report.untracked_source_files == ("docs/new.md",)
-    assert "Source-scoped untracked files: 1" in rendered
+    assert report.untracked_source_files == ("config/local.ini", "docs/new.md", "requirements.txt")
+    assert "Source-scoped untracked files: 3" in rendered
     assert "Source-scoped untracked file list:" in rendered
+    assert "- config/local.ini" in rendered
     assert "- docs/new.md" in rendered
+    assert "- requirements.txt" in rendered
     assert "artifacts/watchdog/latest.json" not in rendered
     assert "scratch.tmp" not in rendered
 
