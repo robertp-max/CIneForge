@@ -35,7 +35,7 @@ def create_post_production_plan_manifest(
     try:
         return _store().create_from_request(request)
     except ValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
 
 @router.get("/plans", response_model=list[PostProductionPlanManifest])

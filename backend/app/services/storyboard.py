@@ -75,7 +75,7 @@ def _story_or_error(db: Session, story_id: UUID) -> Story:
 def mark_story_draft(db: Session, story_id: UUID) -> Story:
     story = _story_or_error(db, story_id)
     story.approval_state = "draft"
-    story.updated_at = datetime.utcnow()
+    story.updated_at = _utcnow()
     return story
 
 
@@ -89,6 +89,10 @@ def _lock_story_for_mutation(db: Session, story_id: UUID) -> Story:
     if story is None:
         raise StoryboardDomainError("Story not found.")
     return story
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _as_naive_utc(value: datetime) -> datetime:
@@ -402,7 +406,7 @@ def archive_chapter(
     )
 
     original_order = int(chapter.order_index)
-    now = datetime.utcnow()
+    now = _utcnow()
     try:
         chapter.archived_at = now
         chapter.updated_at = now
@@ -458,7 +462,7 @@ def archive_scene(
     )
 
     original_order = int(scene.order_index)
-    now = datetime.utcnow()
+    now = _utcnow()
     try:
         scene.archived_at = now
         scene.updated_at = now
@@ -501,7 +505,7 @@ def archive_shot(
     )
 
     original_order = int(shot.order_index)
-    now = datetime.utcnow()
+    now = _utcnow()
     try:
         shot.archived_at = now
         shot.updated_at = now
@@ -587,7 +591,7 @@ def archive_character(
             f"Cannot archive character {character.id}; " + "; ".join(conflicts) + "."
         )
 
-    now = datetime.utcnow()
+    now = _utcnow()
     try:
         character.archived_at = now
         character.updated_at = now
@@ -1540,7 +1544,7 @@ def _approve_once(
         )
         or 0
     )
-    now = datetime.utcnow()
+    now = _utcnow()
     previous_approved = list(
         db.scalars(
             select(StoryboardVersion)
