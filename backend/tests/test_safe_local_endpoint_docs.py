@@ -102,6 +102,16 @@ def test_safe_local_endpoint_matrix_documents_current_safe_routes():
     assert missing_from_app == []
 
 
+def test_safe_local_endpoint_matrix_has_no_extra_documented_local_routes():
+    matrix = Path("docs/SAFE_LOCAL_ENDPOINTS.md").read_text(encoding="utf-8")
+    route_paths = set(_app_methods())
+    documented_paths = set(_matrix_methods(matrix))
+
+    extra_documented_paths = [path for path in sorted(documented_paths) if path not in route_paths]
+
+    assert extra_documented_paths == []
+
+
 def test_safe_local_endpoint_matrix_methods_match_app_routes():
     matrix = Path("docs/SAFE_LOCAL_ENDPOINTS.md").read_text(encoding="utf-8")
     documented_methods = _matrix_methods(matrix)
