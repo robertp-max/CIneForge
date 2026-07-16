@@ -184,5 +184,7 @@ def test_local_post_production_routes_do_not_expose_execution_endpoint():
         path.startswith("/local-post-production/recipe-commands") and "execute" in path
         for path in paths
     )
+    assert {method for method, path in method_paths if path == "/local-post-production/plans"} == {"GET", "POST"}
+    assert {method for method, path in method_paths if path == "/local-post-production/plans/{plan_id}"} == {"GET"}
     assert recipe_command_methods == {"GET"}
     assert ("POST", "/local-post-production/recipe-commands") not in method_paths
