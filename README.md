@@ -112,6 +112,7 @@ Run the curated offline-safe validation suite. It runs static boundary checks, s
 - `Orchestration/OPTIONAL_AI_ORCHESTRATION_LAYER.md`
 - `Orchestration/AUTONOMOUS_PRODUCTION_ARCHITECTURE.md`
 - `docs/SPRINT_1A_STATUS.md`
+- `docs/CHECKPOINT_WATCHDOG.md` — checkpoint restart protocol and no-live invariants.
 
 ## Safety Boundary
 
