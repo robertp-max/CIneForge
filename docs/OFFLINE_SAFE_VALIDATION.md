@@ -44,7 +44,9 @@ This file-only check verifies:
 - no enabled/ready local archetypes,
 - no enabled/ready local presets,
 - no frontend live-probe call sites outside API client definitions,
+- no frontend/API-client raw `/prompt` or `/api/prompt` references,
 - no exact public raw `/prompt` FastAPI route,
+- no GitHub Actions workflow live-probe/media fragments,
 - no `/local-generation` or `/local-operator` execute/submit/approve/prompt child routes,
 - no `/local-operator/run` route while allowing `/local-operator/runbooks` reference metadata.
 
@@ -64,4 +66,4 @@ The offline-safe suite must not:
 
 ## Live-boundary reference
 
-See `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md` for exact approval language requirements. Casual phrases such as `k`, `ok`, and `continue` are not live-run approvals.
+See `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md` for exact approval language requirements. Casual phrases such as `k`, `ok`, `continue`, `f`, or abusive/threatening language are not live-run approvals.
