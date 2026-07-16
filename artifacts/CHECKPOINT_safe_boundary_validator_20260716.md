@@ -5,8 +5,10 @@ Date: 2026-07-16
 ## Implemented
 
 - Added `scripts/validate_safe_local_boundary.py`.
+- Added `scripts/run_offline_safe_validation.py`.
 - Added `backend/tests/test_safe_local_boundary_script.py`.
-- Linked the validator from `README.md`.
+- Added `backend/tests/test_offline_safe_validation_runner.py`.
+- Linked the validator and curated offline-safe validation runner from `README.md`.
 
 ## Checks covered
 
@@ -23,8 +25,10 @@ The validator is static/file-only and checks:
 
 - `./.venv/Scripts/python.exe -B scripts/validate_safe_local_boundary.py`
   - Result: passed
-- `./.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider backend/tests/test_safe_local_boundary_script.py backend/tests/test_local_operator.py backend/tests/test_phase1_app_routing.py`
-  - Result: `17 passed`
+- `./.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider backend/tests/test_offline_safe_validation_runner.py backend/tests/test_safe_local_boundary_script.py`
+  - Result: `4 passed`
+- `./.venv/Scripts/python.exe -B scripts/run_offline_safe_validation.py`
+  - Result: passed; includes static boundary validation, curated backend tests (`129 passed, 71 warnings`), frontend lint/build, and `git diff --check`
 
 ## Not performed
 

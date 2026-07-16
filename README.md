@@ -88,6 +88,12 @@ Run the static safe/local boundary check:
 .\.venv\Scripts\python scripts\validate_safe_local_boundary.py
 ```
 
+Run the curated offline-safe validation suite:
+
+```powershell
+.\.venv\Scripts\python scripts\run_offline_safe_validation.py
+```
+
 ## Key Architecture Docs
 
 - `CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md` — current corrected ComfyUI/LTX implementation authority.
