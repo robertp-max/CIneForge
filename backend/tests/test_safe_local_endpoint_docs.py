@@ -43,6 +43,9 @@ REQUIRED_DOCUMENTED_ENDPOINTS = {
 MATRIX_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")
 
 
+FORBIDDEN_LOCAL_EXECUTION_SEGMENTS = {"execute", "submit", "approve", "prompt", "run"}
+
+
 FORBIDDEN_ALLOWED_TABLE_ROWS = (
     "| `/local-operator/run` |",
     "| `/local-operator/execute` |",
@@ -111,3 +114,15 @@ def test_safe_local_endpoint_matrix_does_not_document_live_execution_as_allowed(
     assert "Executes live tools? | Records approval? | Starts generation/media work?" in matrix
     for forbidden in FORBIDDEN_ALLOWED_TABLE_ROWS:
         assert forbidden not in matrix
+
+
+def test_app_has_no_local_execution_child_routes():
+    offenders = []
+    for path in _app_methods():
+        if not path.startswith("/local-"):
+            continue
+        segments = {segment for segment in path.split("/") if segment}
+        if segments & FORBIDDEN_LOCAL_EXECUTION_SEGMENTS:
+            offenders.append(path)
+
+    assert offenders == []

@@ -28,11 +28,7 @@ RAW_PROMPT_ROUTE_RE = re.compile(
 )
 RAW_PROMPT_STRING_RE = re.compile(r"['\"`]/(prompt|api/prompt)['\"`]")
 FORBIDDEN_LOCAL_CHILD_RE = re.compile(
-    r"local-(generation|operator)/.+(execute|submit|approve|prompt)|"
-    r"local-(generation|operator)/(execute|submit|approve|prompt)|"
-    r"local-post-production(?:/[^'\"`\s)]*)?/(execute|submit|approve|prompt|run)|"
-    r"local-runtime/ffmpeg-recipes(?:/[^'\"`\s)]*)?/(execute|submit|approve|prompt|run)|"
-    r"local-runtime/checkpoint-watchdog(?:/[^'\"`\s)]*)?/(execute|submit|approve|prompt|run)|"
+    r"/?local-[A-Za-z0-9_-]+(?:/[^'\"`\s)]*)?/(execute|submit|approve|prompt|run)(?=$|[/'\"`\s),}])|"
     r"/local-operator/run(?=$|[^A-Za-z0-9_-])"
 )
 SAFE_ENDPOINT_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")

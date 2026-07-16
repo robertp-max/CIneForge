@@ -85,11 +85,11 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         encoding="utf-8",
     )
     (repo / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
-        "api.runtimeStatus(); fetch(`/health/gpu`); fetch(`/api/prompt`); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute'); fetch('/local-post-production/plans/abc/execute'); fetch('/local-runtime/ffmpeg-recipes/execute')",
+        "api.runtimeStatus(); fetch(`/health/gpu`); fetch(`/api/prompt`); fetch('/local-operator/run'); fetch('/local-runtime/checkpoint-watchdog/execute'); fetch('/local-post-production/plans/abc/execute'); fetch('/local-runtime/ffmpeg-recipes/execute'); fetch('/local-presets/CF-PRESET-X/run')",
         encoding="utf-8",
     )
     (repo / "backend" / "app" / "routes.py").write_text(
-        '@router.post("/prompt")\ndef prompt(): pass\n@router.post("/local-post-production/plans/{plan_id}/execute")\ndef execute_plan(): pass',
+        '@router.post("/prompt")\ndef prompt(): pass\n@router.post("/local-post-production/plans/{plan_id}/execute")\ndef execute_plan(): pass\n@router.post("/local-archetypes/{archetype_id}/run")\ndef run_archetype(): pass',
         encoding="utf-8",
     )
 
@@ -116,6 +116,11 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
         and "local-runtime/ffmpeg-recipes/execute" in finding.detail
         for finding in findings
     )
+    assert any(
+        finding.code == "frontend_forbidden_local_child_route"
+        and "local-presets/CF-PRESET-X/run" in finding.detail
+        for finding in findings
+    )
     assert any(finding.code == "frontend_live_probe_fetch" and "/health/gpu" in finding.detail for finding in findings)
     assert any(finding.code == "frontend_raw_prompt_reference" and "/api/prompt" in finding.detail for finding in findings)
     assert any(
@@ -128,6 +133,11 @@ def test_safe_local_boundary_validator_detects_enabled_catalog_and_live_call(tmp
     assert any(
         finding.code == "backend_forbidden_local_child_route"
         and "local-post-production/plans/{plan_id}/execute" in finding.detail
+        for finding in findings
+    )
+    assert any(
+        finding.code == "backend_forbidden_local_child_route"
+        and "local-archetypes/{archetype_id}/run" in finding.detail
         for finding in findings
     )
     assert all(isinstance(finding, BoundaryFinding) for finding in findings)
