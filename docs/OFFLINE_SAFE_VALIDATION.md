@@ -48,6 +48,7 @@ This file-only check verifies:
 - no exact public raw `/prompt` FastAPI route,
 - no GitHub Actions workflow live-probe/media fragments,
 - no package-script live-probe/media fragments in repo/frontend/backend `package.json` scripts,
+- no safe endpoint matrix row that documents `/local-*` routes as executing live tools, recording approval, or starting generation/media work,
 - no accidental assistant-analysis/debug text leaks in tracked source/docs/workflows/artifacts,
 - no `/local-generation`, `/local-operator`, `/local-post-production`, `/local-runtime/ffmpeg-recipes`, or `/local-runtime/checkpoint-watchdog` execute/submit/approve/prompt/run child routes,
 - no `/local-operator/run` route while allowing `/local-operator/runbooks` reference metadata.

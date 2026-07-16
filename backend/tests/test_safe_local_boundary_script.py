@@ -49,7 +49,8 @@ def test_safe_local_boundary_validator_detects_unexpected_mutating_safe_endpoint
     (repo / "docs" / "SAFE_LOCAL_ENDPOINTS.md").write_text(
         "| Endpoint | Method(s) | Purpose | Executes live tools? | Records approval? | Starts generation/media work? |\n"
         "|---|---:|---|---:|---:|---:|\n"
-        "| `/local-runtime/catalog` | GET/POST | bad | No | No | No |\n",
+        "| `/local-runtime/catalog` | GET/POST | bad | No | No | No |\n"
+        "| `/local-runtime/safe-boundary` | GET | bad | Yes | No | No |\n",
         encoding="utf-8",
     )
     (repo / ".github" / "workflows" / "test.yml").write_text(
@@ -60,6 +61,7 @@ def test_safe_local_boundary_validator_detects_unexpected_mutating_safe_endpoint
     findings = validate_boundary(repo)
 
     assert any(finding.code == "unexpected_mutating_safe_endpoint_method" for finding in findings)
+    assert any(finding.code == "safe_endpoint_documents_live_or_approval_capability" for finding in findings)
     assert any(finding.code == "github_workflow_live_fragment" and "/health/gpu" in finding.detail for finding in findings)
     assert any(finding.code == "package_script_live_fragment" and "ffmpeg" in finding.detail for finding in findings)
 

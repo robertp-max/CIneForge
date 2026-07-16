@@ -32,6 +32,9 @@ FORBIDDEN_LOCAL_CHILD_RE = re.compile(
     r"/local-operator/run(?=$|[^A-Za-z0-9_-])"
 )
 SAFE_ENDPOINT_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")
+SAFE_ENDPOINT_CONTRACT_ROW_RE = re.compile(
+    r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \| (?P<purpose>[^|]+) \| (?P<executes>Yes|No) \| (?P<approves>Yes|No) \| (?P<starts>Yes|No) \|"
+)
 _ASSISTANT_ANALYSIS_LEAK_PHRASES = [
     "Wait " + "JSON malformed",
     "This is " + "analysis",
@@ -129,6 +132,8 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
         if match:
             findings.append(BoundaryFinding("assistant_analysis_leak", str(path), match.group(0)))
 
+    safe_endpoint_matrix_path = repo_root / "docs" / "SAFE_LOCAL_ENDPOINTS.md"
+    safe_endpoint_matrix = safe_endpoint_matrix_path.read_text(encoding="utf-8") if safe_endpoint_matrix_path.is_file() else ""
     for endpoint, methods in _safe_endpoint_methods(repo_root).items():
         mutating_methods = methods - {"GET"}
         if mutating_methods and endpoint not in ALLOWED_MUTATING_SAFE_ENDPOINTS:
@@ -137,6 +142,27 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
                     "unexpected_mutating_safe_endpoint_method",
                     "docs/SAFE_LOCAL_ENDPOINTS.md",
                     f"{endpoint} documents mutating method(s): {', '.join(sorted(mutating_methods))}",
+                )
+            )
+    for line in safe_endpoint_matrix.splitlines():
+        match = SAFE_ENDPOINT_CONTRACT_ROW_RE.match(line)
+        if not match:
+            continue
+        enabled_columns = [
+            label
+            for label, value in (
+                ("executes_live_tools", match.group("executes")),
+                ("records_approval", match.group("approves")),
+                ("starts_generation_media_work", match.group("starts")),
+            )
+            if value == "Yes"
+        ]
+        if enabled_columns:
+            findings.append(
+                BoundaryFinding(
+                    "safe_endpoint_documents_live_or_approval_capability",
+                    "docs/SAFE_LOCAL_ENDPOINTS.md",
+                    f"{match.group('path')} documents unsafe capability column(s): {', '.join(enabled_columns)}",
                 )
             )
 
