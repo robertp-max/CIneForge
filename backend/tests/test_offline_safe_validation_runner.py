@@ -7,6 +7,12 @@ from scripts.checkpoint_watchdog import CheckpointWatchdogReport
 from scripts.run_offline_safe_validation import BACKEND_TESTS, run_validation
 
 
+def test_github_actions_uses_watchdog_json_output():
+    workflow = Path(".github/workflows/test.yml").read_text(encoding="utf-8")
+
+    assert "python scripts/run_offline_safe_validation.py --watchdog-json artifacts/watchdog/ci.json" in workflow
+
+
 def test_offline_safe_validation_runner_invokes_static_backend_frontend_and_diff(monkeypatch, tmp_path: Path):
     repo = tmp_path
     (repo / ".venv" / "Scripts").mkdir(parents=True)
