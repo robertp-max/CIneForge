@@ -43,7 +43,7 @@ This file-only check verifies:
 
 - no enabled/ready local archetypes,
 - no enabled/ready local presets,
-- no frontend live-probe call sites outside API client definitions,
+- no frontend live-probe call sites or raw live-probe `fetch(...)` calls outside API client definitions,
 - no frontend/API-client raw `/prompt` or `/api/prompt` references,
 - no exact public raw `/prompt` FastAPI route,
 - no GitHub Actions workflow live-probe/media fragments,
