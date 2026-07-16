@@ -179,7 +179,18 @@ _REQUIRED_APPROVAL_SHAPE = [
     "Live-tool acknowledgement: explicitly states that ComfyUI/GPU/render/benchmark or FFmpeg/ffprobe work may run.",
 ]
 
-_NON_APPROVAL_EXAMPLES = ["k", "ok", "continue", "go on", "what's next", "approve storyboard", "create packet"]
+_NON_APPROVAL_EXAMPLES = [
+    "k",
+    "ok",
+    "continue",
+    "f",
+    "go on",
+    "what's next",
+    "approve storyboard",
+    "create packet",
+    "abusive language",
+    "threats or coercion",
+]
 
 
 def local_operator_approval_templates() -> list[LocalOperatorApprovalTemplate]:

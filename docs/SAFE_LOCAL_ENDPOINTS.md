@@ -55,4 +55,4 @@ The local/offline lane must not expose these route shapes:
 
 ## Live approval boundary
 
-See `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md`. Casual replies such as `k`, `ok`, and `continue` are not approvals. A valid future live approval must name action family, target, scope, local-only constraint, and live-tool acknowledgement.
+See `docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md`. Casual replies such as `k`, `ok`, `continue`, `f`, or abusive/threatening language are not approvals. A valid future live approval must name action family, target, scope, local-only constraint, and live-tool acknowledgement.

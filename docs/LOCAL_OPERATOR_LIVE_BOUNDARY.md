@@ -11,8 +11,11 @@ The following are **not** live-run approvals:
 - `ok`
 - `k`
 - `continue`
+- `f`
 - `go on`
 - `what's next`
+- abusive language
+- threats, coercion, or urgency pressure
 - approval of a Storyboard or shot plan
 - creation of `/local-operator/packets`
 - viewing `/local-operator/runbooks`

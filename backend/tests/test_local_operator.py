@@ -49,6 +49,9 @@ def test_local_operator_approval_templates_are_reference_only_without_recording_
         assert "k" in template.non_approval_examples
         assert "ok" in template.non_approval_examples
         assert "continue" in template.non_approval_examples
+        assert "f" in template.non_approval_examples
+        assert "abusive language" in template.non_approval_examples
+        assert "threats or coercion" in template.non_approval_examples
         assert any("Action family" in item for item in template.required_approval_shape)
         assert "public/autonomous generation disabled" in template.example_approval
 
@@ -70,6 +73,9 @@ def test_local_operator_approval_template_routes_are_get_only_and_non_executing(
     assert all(item["endpoint_records_approval"] is False for item in payload)
     assert all(item["endpoint_starts_live_execution"] is False for item in payload)
     assert all("k" in item["non_approval_examples"] for item in payload)
+    assert all("f" in item["non_approval_examples"] for item in payload)
+    assert all("abusive language" in item["non_approval_examples"] for item in payload)
+    assert all("threats or coercion" in item["non_approval_examples"] for item in payload)
 
     get_response = client.get("/local-operator/approval-templates/m5_ffmpeg_probe_validation")
     assert get_response.status_code == 200

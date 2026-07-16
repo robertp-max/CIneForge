@@ -18,7 +18,9 @@ APPROVAL_REQUIRED_PHRASES = {
     ],
 }
 
-CURRENT_VALIDATION_RESULT = "149 passed, 71 warnings"
+CURRENT_VALIDATION_RESULT = "150 passed, 71 warnings"
+
+NON_APPROVAL_PHRASES = ["`k`", "`ok`", "`continue`", "`f`", "abusive", "threat"]
 
 FORBIDDEN_STALE_PHRASES = [
     "ComfyUI mock connection",
@@ -47,6 +49,14 @@ def test_offline_validation_count_is_consistent_across_current_docs():
 
     for path in docs:
         assert CURRENT_VALIDATION_RESULT in path.read_text(encoding="utf-8"), f"{path} has stale validation count"
+
+
+def test_live_boundary_docs_include_current_non_approval_phrases():
+    docs = [Path("docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md"), Path("docs/CHECKPOINT_WATCHDOG.md"), Path("docs/SAFE_LOCAL_ENDPOINTS.md")]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in docs)
+
+    for phrase in NON_APPROVAL_PHRASES:
+        assert phrase in combined
 
 
 def test_offline_boundary_docs_do_not_use_stale_live_probe_language():

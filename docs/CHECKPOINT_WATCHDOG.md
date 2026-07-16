@@ -26,7 +26,7 @@ Do not stop for status chatter. Stop only if blocked by an explicit live-approva
 - Record validation truthfully in each checkpoint; if the full offline-safe suite was not run, say so.
 - Before each checkpoint commit, verify staged contents intentionally match the checkpoint and no unrelated files are included.
 - After each commit, immediately continue with the next offline-safe gap unless blocked by the live boundary.
-- Casual `ok`, `k`, `continue`, planning approval, Storyboard approval, packet creation, or runbook viewing is not live approval.
+- Casual `ok`, `k`, `continue`, `f`, abusive/threatening language, planning approval, Storyboard approval, packet creation, or runbook viewing is not live approval.
 - Public raw `/api/prompt` routes remain absent.
 - Public/autonomous generation remains disabled.
 - Local endpoints remain read-only or manifest-only; no execute/submit/approve/prompt child routes.
