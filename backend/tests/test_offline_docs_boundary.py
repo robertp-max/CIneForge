@@ -19,8 +19,8 @@ APPROVAL_REQUIRED_PHRASES = {
     ],
 }
 
-CURRENT_VALIDATION_RESULT = "164 passed"
-STALE_VALIDATION_WARNING_RESULT_RE = r"(?:15[0-9]|16[0-3]) passed(?:, \d+ warnings)?|164 passed, \d+ warnings"
+CURRENT_VALIDATION_RESULT = "165 passed"
+STALE_VALIDATION_WARNING_RESULT_RE = r"(?:15[0-9]|16[0-4]) passed(?:, \d+ warnings)?|165 passed, \d+ warnings"
 
 NON_APPROVAL_PHRASES = ["`k`", "`ok`", "`continue`", "`f`", "abusive", "threat"]
 
@@ -61,6 +61,16 @@ def test_live_boundary_docs_include_current_non_approval_phrases():
 
     for phrase in NON_APPROVAL_PHRASES:
         assert phrase in combined
+
+
+def test_live_boundary_current_status_mentions_safe_endpoint_matrix_paths():
+    matrix = Path("docs/SAFE_LOCAL_ENDPOINTS.md").read_text(encoding="utf-8")
+    live_boundary = Path("docs/LOCAL_OPERATOR_LIVE_BOUNDARY.md").read_text(encoding="utf-8")
+    matrix_paths = re.findall(r"^\| `(?P<path>/local-[^`]+)` \|", matrix, flags=re.MULTILINE)
+
+    missing = [path for path in matrix_paths if path not in live_boundary]
+
+    assert missing == []
 
 
 def test_offline_boundary_docs_do_not_use_stale_live_probe_language():

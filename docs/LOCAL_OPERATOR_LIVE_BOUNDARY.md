@@ -72,16 +72,41 @@ Any future live run must stop and record error provenance if one of these occurs
 
 Current CineForge local surfaces are offline/read-only or manifest-only. They do not approve or run live work:
 
-- `GET /local-operator/approval-templates`
-- `GET /local-operator/approval-templates/{mode}`
-- `GET /local-operator/runbooks`
-- `POST /local-operator/packets`
+- `GET /local-runtime/catalog`
+- `GET /local-runtime/output-policy`
+- `GET /local-runtime/evidence`
+- `GET /local-runtime/evidence/cf-vid-01-smoke`
 - `GET /local-runtime/m4-preflight`
 - `GET /local-runtime/m4-ladder`
 - `GET /local-runtime/local-mvp-readiness`
 - `GET /local-runtime/public-readiness`
+- `GET /local-runtime/safe-boundary`
+- `GET /local-runtime/checkpoint-watchdog`
 - `GET /local-runtime/ffmpeg-recipes`
-- `/local-generation/*` offline semantic manifests/handoffs
-- `/local-post-production/*` offline/read-only manifests
+- `GET /local-archetypes/catalog`
+- `GET /local-archetypes`
+- `GET /local-archetypes/{archetype_id}`
+- `GET /local-archetypes/readiness`
+- `GET /local-archetypes/{archetype_id}/readiness`
+- `GET /local-presets/catalog`
+- `GET /local-presets`
+- `GET /local-presets/{preset_id}`
+- `GET /local-presets/readiness`
+- `GET /local-presets/{preset_id}/readiness`
+- `GET/POST /local-jobs`
+- `GET /local-jobs/{job_id}`
+- `GET/POST /local-generation/semantic-requests`
+- `GET /local-generation/semantic-requests/{request_id}`
+- `POST /local-generation/storyboard-handoffs`
+- `GET /local-operator/approval-templates`
+- `GET /local-operator/approval-templates/{mode}`
+- `GET /local-operator/runbooks`
+- `GET /local-operator/runbooks/{mode}`
+- `GET/POST /local-operator/packets`
+- `GET /local-operator/packets/{packet_id}`
+- `GET/POST /local-post-production/plans`
+- `GET /local-post-production/plans/{plan_id}`
+- `GET /local-post-production/recipe-commands`
+- `GET /local-post-production/recipe-commands/{plan_id}`
 
 No live FFmpeg, ffprobe, ComfyUI, GPU workload, render, benchmark, runtime health probe, queue execution, prompt submission, or public generation action is authorized by this document.
