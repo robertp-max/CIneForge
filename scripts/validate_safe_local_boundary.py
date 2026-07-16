@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LIVE_FRONTEND_CALL_RE = re.compile(r"api\.(runtimeStatus|comfyHealth|gpuHealth|ffmpegHealth)\(")
+LIVE_FRONTEND_FETCH_RE = re.compile(
+    r"fetch\(\s*['\"]/(runtime/status|health/comfy|health/gpu|health/ffmpeg)['\"]",
+    re.IGNORECASE,
+)
 LIVE_WORKFLOW_FRAGMENT_RE = re.compile(
     r"(/runtime/status|/health/comfy|/health/gpu|/health/ffmpeg|\bffmpeg\b|\bffprobe\b|\bcomfyui\b|/prompt|\bbenchmark\b|\brender\b)",
     re.IGNORECASE,
@@ -174,6 +178,8 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
         if path.resolve() != api_client:
             for match in LIVE_FRONTEND_CALL_RE.finditer(text):
                 findings.append(BoundaryFinding("frontend_live_probe_callsite", str(path), match.group(0)))
+            for match in LIVE_FRONTEND_FETCH_RE.finditer(text):
+                findings.append(BoundaryFinding("frontend_live_probe_fetch", str(path), match.group(0)))
         for match in RAW_PROMPT_STRING_RE.finditer(text):
             findings.append(BoundaryFinding("frontend_raw_prompt_reference", str(path), match.group(0)))
         for match in FORBIDDEN_LOCAL_CHILD_RE.finditer(text):
