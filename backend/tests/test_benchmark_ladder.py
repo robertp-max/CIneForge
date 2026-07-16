@@ -71,7 +71,10 @@ def test_m4_ladder_rejects_deferred_or_out_of_scope_archetypes(tmp_path: Path):
 
 
 def test_m4_ladder_route_returns_read_only_manifest():
-    response = TestClient(app).get("/local-runtime/m4-ladder")
+    client = TestClient(app)
+    assert client.post("/local-runtime/m4-ladder", json={}).status_code == 405
+
+    response = client.get("/local-runtime/m4-ladder")
 
     assert response.status_code == 200
     payload = response.json()

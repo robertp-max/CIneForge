@@ -43,6 +43,9 @@ def test_prepare_project_output_creates_project_folder(tmp_path: Path):
 def test_local_runtime_routes_are_read_only():
     client = TestClient(app)
 
+    assert client.post("/local-runtime/catalog", json={}).status_code == 405
+    assert client.post("/local-runtime/output-policy", json={}).status_code == 405
+
     catalog_response = client.get("/local-runtime/catalog")
     assert catalog_response.status_code == 200
     catalog = catalog_response.json()

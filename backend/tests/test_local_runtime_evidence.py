@@ -31,6 +31,9 @@ def test_local_runtime_evidence_missing_returns_empty_list(tmp_path: Path):
 def test_local_runtime_evidence_routes():
     client = TestClient(app)
 
+    assert client.post("/local-runtime/evidence", json={}).status_code == 405
+    assert client.post("/local-runtime/evidence/cf-vid-01-smoke", json={}).status_code == 405
+
     list_response = client.get("/local-runtime/evidence")
     assert list_response.status_code == 200
     assert list_response.json()[0]["evidence_id"] == "cf_vid_01_t2v_smoke_20260713"

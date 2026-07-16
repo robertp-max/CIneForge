@@ -482,7 +482,10 @@ def test_ffmpeg_recipe_catalog_is_read_only_and_matches_allowlist():
 
 
 def test_ffmpeg_recipe_catalog_route_is_read_only():
-    response = TestClient(app).get("/local-runtime/ffmpeg-recipes")
+    client = TestClient(app)
+    assert client.post("/local-runtime/ffmpeg-recipes", json={}).status_code == 405
+
+    response = client.get("/local-runtime/ffmpeg-recipes")
 
     assert response.status_code == 200
     payload = response.json()
