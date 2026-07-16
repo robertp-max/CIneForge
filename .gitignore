@@ -25,3 +25,10 @@ storage/headless_orchestrator/
 !storage/**/.gitkeep
 !storage/workflow_templates/**
 !storage/workflow_templates/example_smoke/**
+
+# Local agent/session and workspace artifacts (do not commit)
+.pi-subagents/
+CIneForge.code-workspace
+CineForge-Storyboard-Studio-v2.zip
+CineForge-Storyboard-Studio-v2/
+artifacts/transfiguration_70s_FAILED_RUN_AUDIT_20260713_193925/
