@@ -198,6 +198,8 @@ export type PostProductionRecipeCommandManifest = {
   command: string[]
   input_paths: string[]
   input_hashes: string[]
+  input_probe_jsons: Record<string, unknown>[] | null
+  input_probe_count: number
   output_path: string | null
   execution_submitted: boolean
   output_sha256: string | null

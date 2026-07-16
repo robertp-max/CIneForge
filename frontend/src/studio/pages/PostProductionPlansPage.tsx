@@ -31,6 +31,70 @@ function commandPreview(command: string[]): string {
   return command.map((part, index) => `${String(index).padStart(2, '0')}: ${part}`).join('\n')
 }
 
+type JsonRecord = Record<string, unknown>
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function safeProbeToken(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if (value.length > 40) return null
+  if (!/^[a-z0-9][a-z0-9_.+-]*$/i.test(value)) return null
+  return value
+}
+
+function summarizeKeys(record: JsonRecord | null | undefined): string {
+  if (!record) return 'none'
+  const keys = Object.keys(record)
+    .filter((key) => !/(filename|filepath|path|url|uri|tag|metadata)/i.test(key))
+    .sort()
+  if (!keys.length) return 'none'
+  const visibleKeys = keys.slice(0, 8).join(', ')
+  return keys.length > 8 ? `${visibleKeys}, +${keys.length - 8} more` : visibleKeys
+}
+
+function inputProbeSummary(manifest: PostProductionRecipeCommandManifest): string {
+  const declaredCount = typeof manifest.input_probe_count === 'number' ? manifest.input_probe_count : 0
+  const probeJsons = Array.isArray(manifest.input_probe_jsons) ? manifest.input_probe_jsons.filter(isJsonRecord) : []
+
+  if (declaredCount === 0 && probeJsons.length === 0) {
+    return 'No input probe JSON provenance persisted for this recipe command.'
+  }
+
+  const lines = [
+    `Persisted input_probe_count: ${formatNumber(declaredCount)}`,
+    `Persisted input_probe_json records summarized: ${formatNumber(probeJsons.length)}`,
+  ]
+
+  if (declaredCount !== probeJsons.length) {
+    lines.push('Note: persisted count differs from summarized JSON record count.')
+  }
+
+  probeJsons.slice(0, 5).forEach((probeJson, index) => {
+    const streams = Array.isArray(probeJson.streams) ? probeJson.streams.filter(isJsonRecord) : []
+    const codecTypes = Array.from(new Set(streams.map((stream) => safeProbeToken(stream.codec_type)).filter(Boolean)))
+    const codecNames = Array.from(new Set(streams.map((stream) => safeProbeToken(stream.codec_name)).filter(Boolean)))
+    const format = isJsonRecord(probeJson.format) ? probeJson.format : null
+
+    lines.push(
+      [
+        `${String(index).padStart(2, '0')}: top-level keys=${summarizeKeys(probeJson)}`,
+        `streams=${formatNumber(streams.length)}`,
+        `codec types=${codecTypes.length ? codecTypes.slice(0, 4).join(', ') : 'none'}`,
+        `codec names=${codecNames.length ? codecNames.slice(0, 4).join(', ') : 'none'}`,
+        `format keys=${summarizeKeys(format)}`,
+      ].join('; '),
+    )
+  })
+
+  if (probeJsons.length > 5) {
+    lines.push(`+${formatNumber(probeJsons.length - 5)} additional probe JSON record(s) not expanded.`)
+  }
+
+  return lines.join('\n')
+}
+
 function SummaryCard({ label, value, note }: { label: string; value: string | number; note: string }) {
   return (
     <article className="card">
@@ -115,8 +179,20 @@ function RecipeCommandCard({ manifest }: { manifest: PostProductionRecipeCommand
         <EvidenceRow label="Output path" value={manifest.output_path || '—'} mono />
         <EvidenceRow label="Input paths" value={manifest.input_paths.length} />
         <EvidenceRow label="Input hashes" value={manifest.input_hashes.length} />
+        <EvidenceRow label="Input probe count" value={formatNumber(manifest.input_probe_count)} />
+        <EvidenceRow
+          label="Input probe JSON records"
+          value={Array.isArray(manifest.input_probe_jsons) ? manifest.input_probe_jsons.length : 0}
+        />
         <EvidenceRow label="Output SHA-256" value={manifest.output_sha256 || '—'} mono />
         <EvidenceRow label="Recorded error" value={manifest.error || '—'} />
+      </div>
+
+      <div className="debug-panel" aria-label="Read-only input probe provenance summary">
+        <span className="eyebrow">INPUT PROBE PROVENANCE · SAFE SUMMARY ONLY</span>
+        <pre>
+          <code>{inputProbeSummary(manifest)}</code>
+        </pre>
       </div>
 
       <div className="debug-panel" aria-label="Read-only recipe command argv display">
