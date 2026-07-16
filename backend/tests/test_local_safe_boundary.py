@@ -59,7 +59,7 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
         encoding="utf-8",
     )
     (tmp_path / "frontend" / "src" / "pages" / "Runtime.tsx").write_text(
-        "fetch(`/health/gpu`)",
+        "fetch(`/health/gpu`); fetch('/local-post-production/plans/abc/execute')",
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows" / "test.yml").write_text(
@@ -74,6 +74,7 @@ def test_local_safe_boundary_service_surfaces_workflow_and_frontend_prompt_findi
     assert report.passed is False
     assert "frontend_raw_prompt_reference" in codes
     assert "frontend_live_probe_fetch" in codes
+    assert "frontend_forbidden_local_child_route" in codes
     assert "github_workflow_live_fragment" in codes
     assert "package_script_live_fragment" in codes
     assert "frontend/src/api/client.ts" in paths
