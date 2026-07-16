@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LIVE_FRONTEND_CALL_RE = re.compile(r"api\.(runtimeStatus|comfyHealth|gpuHealth|ffmpegHealth)\(")
+LIVE_WORKFLOW_FRAGMENT_RE = re.compile(
+    r"(/runtime/status|/health/comfy|/health/gpu|/health/ffmpeg|\bffmpeg\b|\bffprobe\b|\bcomfyui\b|/prompt|\bbenchmark\b|\brender\b)",
+    re.IGNORECASE,
+)
 RAW_PROMPT_ROUTE_RE = re.compile(
     r"@(router|app)\.(post|get|put|patch|delete)\(\s*['\"]/(prompt|api/prompt)['\"]"
 )
@@ -128,6 +132,11 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
             findings.append(BoundaryFinding("raw_prompt_route", str(path), match.group(0)))
         for match in FORBIDDEN_LOCAL_CHILD_RE.finditer(text):
             findings.append(BoundaryFinding("backend_forbidden_local_child_route", str(path), match.group(0)))
+
+    for path in [*_scan_text_files(repo_root / ".github" / "workflows", "*.yml"), *_scan_text_files(repo_root / ".github" / "workflows", "*.yaml")]:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for match in LIVE_WORKFLOW_FRAGMENT_RE.finditer(text):
+            findings.append(BoundaryFinding("github_workflow_live_fragment", str(path), match.group(0)))
 
     return findings
 
