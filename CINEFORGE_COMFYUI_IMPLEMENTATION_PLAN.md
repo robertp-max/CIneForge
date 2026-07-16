@@ -1,7 +1,7 @@
 # CineForge ComfyUI Implementation Plan
 
 **Date:** 2026-07-13  
-**Status:** Planning only; no application implementation, model installation, runtime mutation, or hardware benchmark has been performed  
+**Status:** Documentation-only checkpoint for a personal/local-only MVP target; this document records offline/mock/local-gated implementation status without claiming public production readiness, live FFmpeg/ComfyUI/GPU enablement, or benchmark completion<br>
 **Primary specification:** `C:\Users\razer\Documents\CineForge_ComfyUI_Workflow_Architecture_Consolidated_Corrected.md`  
 **Repository:** `C:\AI\Git\CIneForge` at `85af098638fd` (`master`)  
 **Orchestrator:** `openai-codex/gpt-5.5`  
@@ -20,6 +20,12 @@ Build the requested architecture on top of CineForge's existing deterministic ba
 6. Prove all LTX-2.3 profiles serially on the 24 GB RTX 5090 Laptop through a graduated benchmark ladder. Keep every unproven profile at `benchmark_required`.
 7. Expand archetypes and enable the 64 presets only after their backing graph/model/profile passes admission, benchmark, recovery, and human QA gates.
 8. Keep deterministic editing, captions, timing, normalization, and packaging in FFmpeg, outside ComfyUI.
+
+### Personal/local-only MVP checkpoint (2026-07-15)
+
+The immediate target is a personal, operator-run MVP on the local workstation, not a hosted, multi-user, internet-facing, or public production service. This narrows the immediate hardening bar: public exposure work, broad public API controls, M6 archetype expansion, and M7 preset/UI/Storyboard enablement are not prerequisites for a private local trial of an already admitted and gated path. They remain prerequisites before broader release, public enablement, or expanded preset capability.
+
+Public and autonomous generation remain out of scope and disabled: no public raw `/prompt` proxy, no internet-facing semantic generation endpoint, no job-initiated installs/downloads, and no automatic generation from Storyboard approval. Local operator-only FFmpeg, ComfyUI, and GPU-heavy actions may be considered only after explicit operator approval for the relevant mode/run and after the applicable gates are satisfied: safe managed paths, admitted graph/model/profile pins, local-only storage, default-off operator gates, exclusive GPU lease for Comfy/GPU work, queue-state checks, provenance/audit capture, recovery/stop rules, and human QA where required. This checkpoint does not approve or perform any live FFmpeg, ComfyUI, GPU, render, or benchmark action, and it does not claim runtime readiness.
 
 ## 2. External-reference reconciliation
 
@@ -67,7 +73,7 @@ Primary sources were cross-checked on 2026-07-13.
 
 ### Important gaps
 
-- No production-ready admitted `CF-*` workflow archetypes; `CF-VID-01` now has UI source evidence and an API-format T2V smoke candidate that passed two local serialized smoke jobs, but remains benchmark/recovery/QA gated.
+- No public-production-ready admitted `CF-*` workflow archetypes; `CF-VID-01` now has UI source evidence and an API-format T2V smoke candidate with prior operator-approved local smoke-evidence records, but remains benchmark/recovery/QA gated and not profile/preset ready.
 - M1 local JSON catalogs now include five required archetype IDs and exactly 64 disabled/gated presets.
 - A DB-free local runtime catalog now records the canonical LTX-2.3 Distilled 1.1 FP8 model record and output policy.
 - No complete API-format workflow admission service for all profiles; current `CF-VID-01` support includes a bounded API T2V smoke template plus manifest, not full preset/profile readiness.
@@ -273,7 +279,7 @@ Likely files:
 
 **Exit gate:** arbitrary/raw graphs cannot enter the submission path; all negative fixtures fail closed; independent security QA passes.
 
-**Implementation status 2026-07-13:** `storage/workflow_templates/cf_vid_01_ltx23_single_stage/` contains the official LTX-2.3 single-stage UI export copied from the local portable runtime plus `workflow_ui_manifest.json`. `backend/app/services/workflows/ui_template_service.py` validates the UI graph hash, node class, widget index, output-prefix binding, selected FP8 checkpoint patch points, and immutable offline snapshots. After operator approval, ComfyUI was launched locally, RES4LYF was installed for the missing `ClownSampler_Beta` node, `/object_info` passed for required CF-VID-01 nodes, and `workflow_api.json`/`workflow_manifest.json` were added for `cf_vid_01_ltx23_single_stage_t2v_smoke`. Two serialized 512x288/17f/4-step T2V smoke jobs succeeded with output hashes recorded in `docs/CFVID01_RUNTIME_SMOKE.md`. This is still benchmark/recovery/human-QA gated and is not full profile/preset readiness.
+**Implementation status 2026-07-13:** `storage/workflow_templates/cf_vid_01_ltx23_single_stage/` contains the official LTX-2.3 single-stage UI export copied from the local portable runtime plus `workflow_ui_manifest.json`. `backend/app/services/workflows/ui_template_service.py` validates the UI graph hash, node class, widget index, output-prefix binding, selected FP8 checkpoint patch points, and immutable offline snapshots. Operator-approved local smoke evidence is recorded separately in `docs/CFVID01_RUNTIME_SMOKE.md`, and `workflow_api.json`/`workflow_manifest.json` were added for `cf_vid_01_ltx23_single_stage_t2v_smoke`. This planning checkpoint does not repeat, extend, or newly attest live ComfyUI/GPU execution; the path is still benchmark/recovery/human-QA gated and is not full profile/preset readiness.
 
 ### M3 — Complete the controlled runtime path with mocks
 
@@ -598,8 +604,8 @@ Assumptions used by this plan unless changed:
 - graph SHA + node class + unique semantic title + input are mandatory admission identity; the resolved API node ID is stored only as the immutable compiled execution mapping;
 - the existing queue states remain authoritative initially, implemented through local state for the ComfyUI lane;
 - Wan is not a co-default;
-- all public generation remains disabled through M0–M3;
-- no hardware claim has yet been proven.
+- all public generation remains disabled unless and until a separate public-exposure decision and gate set is approved; the immediate MVP is personal/local-only;
+- no new hardware claim is made by this checkpoint; local live runs require explicit operator approval and the applicable gates.
 
 ## 12. Implementation-ready meta-prompt
 
