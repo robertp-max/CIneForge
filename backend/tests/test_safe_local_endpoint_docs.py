@@ -18,6 +18,7 @@ REQUIRED_DOCUMENTED_ENDPOINTS = {
     "/local-runtime/local-mvp-readiness",
     "/local-runtime/public-readiness",
     "/local-runtime/safe-boundary",
+    "/local-runtime/checkpoint-watchdog",
     "/local-runtime/ffmpeg-recipes",
     "/local-archetypes/readiness",
     "/local-presets/readiness",
@@ -51,6 +52,7 @@ FORBIDDEN_ALLOWED_TABLE_ROWS = (
     "| `/local-generation/submit` |",
     "| `/local-generation/approve` |",
     "| `/prompt` |",
+    "| `/api/prompt` |",
 )
 
 
