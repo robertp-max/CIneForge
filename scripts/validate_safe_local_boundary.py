@@ -30,6 +30,17 @@ FORBIDDEN_LOCAL_CHILD_RE = re.compile(
     r"/local-operator/run(?=$|[^A-Za-z0-9_-])"
 )
 SAFE_ENDPOINT_ROW_RE = re.compile(r"^\| `(?P<path>/local-[^`]+)` \| (?P<methods>[A-Z/]+) \|")
+_ASSISTANT_ANALYSIS_LEAK_PHRASES = [
+    "Wait " + "JSON malformed",
+    "This is " + "analysis",
+    "No more stray " + "in tools",
+    "Need recover by " + "issuing proper",
+    "I accidentally " + "appended",
+]
+ASSISTANT_ANALYSIS_LEAK_RE = re.compile(
+    "(" + "|".join(re.escape(phrase) for phrase in _ASSISTANT_ANALYSIS_LEAK_PHRASES) + ")",
+    re.IGNORECASE,
+)
 ALLOWED_MUTATING_SAFE_ENDPOINTS = {
     "/local-jobs",
     "/local-generation/semantic-requests",
@@ -75,6 +86,19 @@ def validate_boundary(repo_root: Path) -> list[BoundaryFinding]:
 
     archetype_path = repo_root / "storage" / "archetypes" / "catalog.json"
     preset_path = repo_root / "storage" / "presets" / "catalog.json"
+
+    leak_scan_roots = [repo_root / name for name in ("backend", "frontend", "scripts", "docs", ".github")]
+    leak_scan_files = [repo_root / name for name in ("README.md", "CINEFORGE_COMFYUI_IMPLEMENTATION_PLAN.md")]
+    for root in leak_scan_roots:
+        for pattern in ("*.py", "*.md", "*.ts", "*.tsx", "*.yml", "*.yaml"):
+            leak_scan_files.extend(_scan_text_files(root, pattern))
+    for path in sorted(set(leak_scan_files)):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        match = ASSISTANT_ANALYSIS_LEAK_RE.search(text)
+        if match:
+            findings.append(BoundaryFinding("assistant_analysis_leak", str(path), match.group(0)))
 
     for endpoint, methods in _safe_endpoint_methods(repo_root).items():
         mutating_methods = methods - {"GET"}
