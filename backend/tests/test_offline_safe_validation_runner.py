@@ -12,6 +12,7 @@ def test_offline_safe_validation_runner_includes_path_output_runtime_catalog_and
     assert "backend/tests/test_output_collector.py" in BACKEND_TESTS
     assert "backend/tests/test_runtime_catalog.py" in BACKEND_TESTS
     assert "backend/tests/test_cf_vid01_api_workflow_template.py" in BACKEND_TESTS
+    assert "backend/tests/test_workflow_manifest_validation.py" in BACKEND_TESTS
 
 
 def test_github_actions_uses_watchdog_json_output():
