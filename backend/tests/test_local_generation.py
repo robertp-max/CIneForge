@@ -477,10 +477,9 @@ def test_local_generation_routes_do_not_expose_execute_submit_run_or_prompt_chil
         and any(path.endswith(child) or f"{child}/" in path for child in forbidden_local_generation_children)
         for path in paths
     )
-    assert ("POST", "/local-generation/storyboard-handoffs") in method_paths
-    assert ("POST", "/local-generation/semantic-requests") in method_paths
-    assert ("GET", "/local-generation/semantic-requests") in method_paths
-    assert ("GET", "/local-generation/semantic-requests/{request_id}") in method_paths
+    assert {method for method, path in method_paths if path == "/local-generation/storyboard-handoffs"} == {"POST"}
+    assert {method for method, path in method_paths if path == "/local-generation/semantic-requests"} == {"GET", "POST"}
+    assert {method for method, path in method_paths if path == "/local-generation/semantic-requests/{request_id}"} == {"GET"}
 
 
 def test_current_catalog_keeps_cf_preset_001_blocked_by_benchmark_required():
