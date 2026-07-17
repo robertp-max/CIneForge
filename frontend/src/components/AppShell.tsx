@@ -31,7 +31,6 @@ const navItems: {
   { id: 'routing', label: 'Model routing', short: 'Routing', icon: '◈' },
   { id: 'workflows', label: 'Workflows', short: 'Flows', icon: '◇' },
   { id: 'exports', label: 'Exports', short: 'Export', icon: '↓' },
-  { id: 'settings', label: 'Project settings', short: 'Settings', icon: '⚙' },
 ]
 
 type AppShellProps = {
@@ -39,6 +38,7 @@ type AppShellProps = {
   backendStatus: string
   projectId: string
   projectName: string
+  projectCount: number
   view: ShellView
   onNavigate: (page: PageId) => void
   onOpenProjects: () => void
@@ -52,6 +52,7 @@ export function AppShell({
   backendStatus,
   projectId,
   projectName,
+  projectCount,
   view,
   onNavigate,
   onOpenProjects,
@@ -70,8 +71,10 @@ export function AppShell({
     view === 'projects'
       ? 'Projects'
       : view === 'new-project'
-        ? 'Create New Project'
-        : navItems.find((item) => item.id === activePage)?.label ?? 'Studio'
+        ? 'Create project'
+        : activePage === 'settings'
+          ? 'Project settings'
+          : navItems.find((item) => item.id === activePage)?.label ?? 'Studio'
   const projectInitials = projectName
     .split(/\s+/)
     .filter(Boolean)
@@ -143,29 +146,7 @@ export function AppShell({
           </button>
         </div>
 
-        <span className="sidebar-section-label sidebar-workspace-label">Workspace</span>
-        <nav className="sidebar-workspace-nav" aria-label="Workspace navigation">
-          <button
-            type="button"
-            className={`nav-item touch-target ${view === 'projects' ? 'active' : ''}`}
-            aria-current={view === 'projects' ? 'page' : undefined}
-            onClick={() => handleWorkspaceNavigate(onOpenProjects)}
-          >
-            <span className="nav-icon" aria-hidden="true">▣</span>
-            <span className="nav-label-full">Projects</span>
-          </button>
-          <button
-            type="button"
-            className={`nav-item touch-target ${view === 'new-project' ? 'active' : ''}`}
-            aria-current={view === 'new-project' ? 'page' : undefined}
-            onClick={() => handleWorkspaceNavigate(onCreateProject)}
-          >
-            <span className="nav-icon" aria-hidden="true">＋</span>
-            <span className="nav-label-full">Create New Project</span>
-          </button>
-        </nav>
-
-        {isStudio ? <div className="project-switch-wrap">
+        <div className="project-switch-wrap">
           <button
             type="button"
             className="project-switcher touch-target"
@@ -185,31 +166,53 @@ export function AppShell({
           </button>
           {projectMenuOpen ? (
             <div className="sidebar-popover project-popover" role="menu" aria-label="Projects">
-              <button type="button" role="menuitem" className="active" onClick={() => setProjectMenuOpen(false)}>
-                <span className="project-avatar">{projectInitials}</span>
-                <span>
-                  <strong>{projectName}</strong>
-                  <small>Current project</small>
-                </span>
-                <span aria-hidden="true">✓</span>
-              </button>
               <button type="button" role="menuitem" onClick={() => handleWorkspaceNavigate(onOpenProjects)}>
                 <span className="nav-icon" aria-hidden="true">▣</span>
                 <span>
                   <strong>All projects</strong>
-                  <small>Return to the project workspace</small>
+                  <small>{projectCount} in this workspace</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </button>
+              <button type="button" role="menuitem" className="active" onClick={() => setProjectMenuOpen(false)}>
+                <span className="project-avatar">{projectInitials}</span>
+                <span>
+                  <strong>{projectName}</strong>
+                  <small>Current · Storyboard Phase A</small>
+                </span>
+                <span aria-hidden="true">✓</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => handleWorkspaceNavigate(onCreateProject)}>
+                <span className="nav-icon" aria-hidden="true">＋</span>
+                <span>
+                  <strong>New project</strong>
+                  <small>Guided three-step setup</small>
                 </span>
                 <span aria-hidden="true">›</span>
               </button>
             </div>
           ) : null}
-        </div> : null}
+        </div>
 
-        {isStudio ? <div className="sidebar-project-nav-section">
+        <span className="sidebar-section-label sidebar-workspace-label">Workspace</span>
+        <nav className="sidebar-workspace-nav" aria-label="Workspace navigation">
+          <button
+            type="button"
+            className={`nav-item touch-target ${view === 'projects' ? 'active' : ''}`}
+            aria-current={view === 'projects' ? 'page' : undefined}
+            onClick={() => handleWorkspaceNavigate(onOpenProjects)}
+          >
+            <span className="nav-icon" aria-hidden="true">▣</span>
+            <span className="nav-label-full">Projects</span>
+            <span className="nav-badge">{projectCount}</span>
+          </button>
+        </nav>
+
+        <div className="sidebar-project-nav-section">
           <span className="sidebar-section-label sidebar-project-label">Project</span>
           <nav id={navId} className="sidebar-project-nav" aria-label="Primary navigation">
             {navItems.map((item) => {
-              const isActive = item.id === activePage
+              const isActive = isStudio && item.id === activePage
               return (
                 <button
                   type="button"
@@ -228,13 +231,13 @@ export function AppShell({
               )
             })}
           </nav>
-        </div> : <div className="workspace-sidebar-spacer" />}
+        </div>
 
         <div className="sidebar-footer">
-          {isStudio ? <button type="button" className="settings-entry touch-target" onClick={() => handleNavigate('settings')}>
+          <button type="button" className="settings-entry touch-target" onClick={() => handleNavigate('settings')}>
             <span className="nav-icon" aria-hidden="true">⚙</span>
             <span>Project settings</span>
-          </button> : null}
+          </button>
           <div className="runtime-card">
             <span className="live-dot" aria-hidden="true" />
             <strong>ComfyUI ready</strong>
@@ -315,18 +318,17 @@ export function AppShell({
             </div>
           </div>
           <div className="topbar-status">
-            <button type="button" className="icon-button touch-target" aria-label="Search">
+            <button type="button" className="icon-button touch-target" aria-label="Search workspace">
               ⌕
             </button>
-            <button type="button" className="icon-button touch-target" aria-label="Notifications">
-              ◦
-            </button>
-            <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} />
-            {onRefreshStatus ? (
-              <button type="button" className="ghost-button touch-target status-refresh" onClick={onRefreshStatus}>
-                Refresh
+            {view === 'projects' ? (
+              <button type="button" className="primary-button topbar-new-project" onClick={onCreateProject}>
+                ＋ New project
               </button>
             ) : null}
+            {isStudio ? <button type="button" className="icon-button touch-target" aria-label="Notifications">◦</button> : null}
+            {isStudio ? <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} /> : null}
+            {isStudio && onRefreshStatus ? <button type="button" className="ghost-button touch-target status-refresh" onClick={onRefreshStatus}>Refresh</button> : null}
           </div>
         </header>
 

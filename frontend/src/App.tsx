@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from './api/client'
+import { api, type Project } from './api/client'
 import { AppShell, type PageId, type ShellView } from './components/AppShell'
 import { Projects } from './pages/Projects'
 import { StoryboardStudio } from './pages/StoryboardStudio'
@@ -96,6 +96,8 @@ function App() {
   const [routeState, setRouteState] = useState<AppRoute>(() => readAppRoute().route)
   const [backendStatus, setBackendStatus] = useState('checking')
   const [projectName, setProjectName] = useState('A New Journey')
+  const [selectedProjectId, setSelectedProjectId] = useState(DEFAULT_PROJECT_ID)
+  const [projectCount, setProjectCount] = useState(0)
 
   const navigateTo = useCallback((route: AppRoute, options?: { replace?: boolean }) => {
     const path = routePath(route)
@@ -108,19 +110,43 @@ function App() {
 
   const navigateStudio = useCallback(
     (page: PageId) => {
-      const projectId = routeState.kind === 'studio' ? routeState.projectId : DEFAULT_PROJECT_ID
+      const projectId = routeState.kind === 'studio' ? routeState.projectId : selectedProjectId
       navigateTo({ kind: 'studio', projectId, page })
     },
-    [navigateTo, routeState],
+    [navigateTo, routeState, selectedProjectId],
   )
 
   const openProject = useCallback(
     (projectId: string, name?: string) => {
+      setSelectedProjectId(projectId)
       if (name) setProjectName(name)
       navigateTo({ kind: 'studio', projectId, page: 'overview' })
     },
     [navigateTo],
   )
+
+  const handleProjectsLoaded = useCallback((projects: Project[]) => {
+    setProjectCount(projects.length)
+    setSelectedProjectId((currentId) => {
+      if (currentId !== DEFAULT_PROJECT_ID) return currentId
+      const preferred = projects.find((project) => project.name === 'A New Journey') ?? projects[0]
+      if (!preferred) return currentId
+      setProjectName(preferred.name)
+      return preferred.id
+    })
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void api.listProjects().then((projects) => {
+      if (active) handleProjectsLoaded(projects)
+    }).catch(() => {
+      if (active) setProjectCount(0)
+    })
+    return () => {
+      active = false
+    }
+  }, [handleProjectsLoaded])
 
   const refreshBackendStatus = useCallback(async () => {
     try {
@@ -149,7 +175,10 @@ function App() {
     void api
       .getProject(routeState.projectId)
       .then((project) => {
-        if (active) setProjectName(project.name)
+        if (active) {
+          setProjectName(project.name)
+          setSelectedProjectId(project.id)
+        }
       })
       .catch(() => {
         if (active) setProjectName('Selected project')
@@ -157,6 +186,10 @@ function App() {
     return () => {
       active = false
     }
+  }, [routeState])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 })
   }, [routeState])
 
   useEffect(() => {
@@ -173,7 +206,7 @@ function App() {
   const shellView: ShellView =
     routeState.kind === 'studio' ? 'studio' : routeState.kind === 'new-project' ? 'new-project' : 'projects'
   const activePage = routeState.kind === 'studio' ? routeState.page : 'overview'
-  const activeProjectId = routeState.kind === 'studio' ? routeState.projectId : ''
+  const activeProjectId = routeState.kind === 'studio' ? routeState.projectId : selectedProjectId
   const activeProjectName =
     routeState.kind === 'studio' && routeState.projectId === DEFAULT_PROJECT_ID
       ? 'A New Journey'
@@ -185,6 +218,7 @@ function App() {
       backendStatus={backendStatus}
       projectId={activeProjectId}
       projectName={activeProjectName}
+      projectCount={projectCount}
       view={shellView}
       onNavigate={navigateStudio}
       onOpenProjects={() => navigateTo({ kind: 'projects' })}
@@ -197,6 +231,7 @@ function App() {
           mode="list"
           onCreateNew={() => navigateTo({ kind: 'new-project' })}
           onOpenProject={openProject}
+          onProjectsLoaded={handleProjectsLoaded}
         />
       ) : null}
       {routeState.kind === 'new-project' ? (

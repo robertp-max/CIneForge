@@ -1,223 +1,457 @@
-import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
-import { api, type Project } from '../api/client'
-import { DebugPanel, EmptyState, ErrorNotice, SuccessNotice } from '../components/Cards'
+import { useEffect, useMemo, useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+import {
+  api,
+  type PhaseASnapshot,
+  type Project,
+  type Story,
+} from '../api/client'
+import { EmptyState, ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
-import { formatDate } from '../components/formatDate'
 
 type ProjectsProps = {
   mode?: 'list' | 'create'
   onCreateNew?: () => void
   onBackToProjects?: () => void
   onOpenProject?: (projectId: string, projectName?: string) => void
+  onProjectsLoaded?: (projects: Project[]) => void
 }
 
-export function Projects({
-  mode = 'list',
-  onCreateNew,
-  onBackToProjects,
-  onOpenProject,
-}: ProjectsProps) {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [lookupId, setLookupId] = useState('')
-  const [loading, setLoading] = useState(mode === 'list')
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+type ProjectSummary = {
+  project: Project
+  story: Story | null
+  snapshot: PhaseASnapshot | null
+  status: 'Setup' | 'In progress' | 'Review' | 'Ready' | 'Blocked'
+  readiness: number
+  openGates: number
+}
 
-  async function loadProjects() {
-    setLoading(true)
+type SourceMode = 'story' | 'blank' | 'import'
+
+type ProjectDraft = {
+  name: string
+  description: string
+  sourceMode: SourceMode
+  baseStory: string
+  targetRuntime: number
+  audience: string
+  genre: string
+  tone: string
+  pointOfView: string
+  visualStyle: string
+  aspectRatio: string
+  fps: number
+  orchestrationMode: string
+  privacy: string
+  qualityPreference: string
+  costSensitivity: string
+  productionNotes: string
+}
+
+const EMPTY_DRAFT: ProjectDraft = {
+  name: '',
+  description: '',
+  sourceMode: 'story',
+  baseStory: '',
+  targetRuntime: 300,
+  audience: 'General audience',
+  genre: 'Cinematic narrative',
+  tone: 'Grounded, cinematic, human',
+  pointOfView: 'Third person',
+  visualStyle: 'Photoreal cinematic realism',
+  aspectRatio: '16:9',
+  fps: 24,
+  orchestrationMode: 'Hybrid',
+  privacy: 'Prefer local for bulk work',
+  qualityPreference: 'Quality weighted',
+  costSensitivity: 'Balanced',
+  productionNotes: '',
+}
+
+const SOURCE_OPTIONS: { id: SourceMode; icon: string; title: string; detail: string }[] = [
+  { id: 'story', icon: '▱', title: 'Start from a story', detail: 'Paste a script, treatment, narration, or source story.' },
+  { id: 'blank', icon: '＋', title: 'Start blank', detail: 'Create the project shell and shape the story inside CineForge.' },
+  { id: 'import', icon: '⇧', title: 'Import a package', detail: 'Load a TXT, MD, or JSON source file for intake.' },
+]
+
+function projectInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'CF'
+}
+
+function formatRuntime(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function formatUpdated(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Recently'
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) {
+    return `Today · ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+  }
+  return date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+  })
+}
+
+function getProjectStatus(snapshot: PhaseASnapshot | null): ProjectSummary['status'] {
+  if (!snapshot) return 'Setup'
+  const shots = snapshot.chapters.flatMap((chapter) => chapter.scenes.flatMap((scene) => scene.shots))
+  if (shots.some((shot) => shot.production_status === 'blocked' || Boolean(shot.blocked_reason))) return 'Blocked'
+  if (snapshot.readiness.ready) return 'Ready'
+  if (snapshot.readiness.reasons.some((reason) => reason.blocking)) return 'Review'
+  return 'In progress'
+}
+
+async function enrichProject(project: Project): Promise<ProjectSummary> {
+  try {
+    const stories = await api.listStories(project.id)
+    const story = stories[0] ?? null
+    const snapshot = story ? await api.phaseA(story.id) : null
+    const openGates = snapshot
+      ? new Set(snapshot.readiness.reasons.filter((reason) => reason.blocking).map((reason) => reason.code)).size
+      : 0
+    const readiness = snapshot
+      ? snapshot.readiness.ready
+        ? 100
+        : Math.max(0, Math.min(99, Math.round(100 - Math.min(openGates, 10) * 10)))
+      : 0
+    return { project, story, snapshot, status: getProjectStatus(snapshot), readiness, openGates }
+  } catch {
+    return { project, story: null, snapshot: null, status: 'Setup', readiness: 0, openGates: 0 }
+  }
+}
+
+function ProjectStatus({ status }: { status: ProjectSummary['status'] }) {
+  return <span className="project-status" data-status={status.toLowerCase().replace(' ', '-')}>{status}</span>
+}
+
+function ProjectList({
+  onCreateNew,
+  onOpenProject,
+  onProjectsLoaded,
+}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onProjectsLoaded'>) {
+  const [summaries, setSummaries] = useState<ProjectSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('All')
+  const [sort, setSort] = useState('Recently updated')
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const projects = await api.listProjects()
+        if (!active) return
+        onProjectsLoaded?.(projects)
+        const enriched = await Promise.all(projects.map(enrichProject))
+        if (active) setSummaries(enriched)
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Unable to load projects.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      active = false
+    }
+  }, [onProjectsLoaded])
+
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    return summaries
+      .filter(({ project }) => `${project.name} ${project.description ?? ''}`.toLowerCase().includes(normalizedQuery))
+      .filter((summary) => filter === 'All' || summary.status === filter)
+      .sort((left, right) => {
+        if (sort === 'Name') return left.project.name.localeCompare(right.project.name)
+        if (sort === 'Readiness') return right.readiness - left.readiness
+        return new Date(right.project.created_at).getTime() - new Date(left.project.created_at).getTime()
+      })
+  }, [filter, query, sort, summaries])
+
+  const plannedShots = summaries.reduce(
+    (total, summary) => total + (summary.snapshot?.chapters.reduce(
+      (chapterTotal, chapter) => chapterTotal + chapter.scenes.reduce(
+        (sceneTotal, scene) => sceneTotal + scene.shots.length,
+        0,
+      ),
+      0,
+    ) ?? 0),
+    0,
+  )
+  const needReview = summaries.filter((summary) => summary.status === 'Review' || summary.status === 'Blocked').length
+  const ready = summaries.filter((summary) => summary.status === 'Ready').length
+  const filters = ['All', 'Setup', 'In progress', 'Review', 'Ready']
+
+  return (
+    <div className="page projects-page">
+      <div className="page-heading-row projects-heading">
+        <PageHeader
+          eyebrow="CINEFORGE WORKSPACE"
+          title="Projects"
+          description="Create, organize, and continue every production plan from one workspace."
+        />
+        <button type="button" className="primary-button" onClick={onCreateNew}>＋ New project</button>
+      </div>
+
+      {error ? <ErrorNotice message={error} /> : null}
+
+      <section className="projects-summary" aria-label="Project summary">
+        <div><span className="summary-icon mint">▣</span><span><small>Total projects</small><b>{summaries.length}</b></span></div>
+        <div><span className="summary-icon blue">▤</span><span><small>Planned shots</small><b>{plannedShots}</b></span></div>
+        <div><span className="summary-icon amber">△</span><span><small>Need review</small><b>{needReview}</b></span></div>
+        <div><span className="summary-icon purple">✓</span><span><small>Production ready</small><b>{ready}</b></span></div>
+      </section>
+
+      <div className="projects-toolbar">
+        <label className="projects-search">
+          <span aria-hidden="true">⌕</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…" aria-label="Search projects" />
+          {query ? <button type="button" onClick={() => setQuery('')} aria-label="Clear project search">×</button> : null}
+        </label>
+        <div className="projects-filter" aria-label="Filter projects">
+          {filters.map((item) => (
+            <button type="button" key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>
+              {item}<span>{item === 'All' ? summaries.length : summaries.filter((summary) => summary.status === item).length}</span>
+            </button>
+          ))}
+        </div>
+        <label className="sort-select">
+          <span>Sort</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort">
+            <option>Recently updated</option><option>Name</option><option>Readiness</option>
+          </select>
+        </label>
+      </div>
+
+      {loading ? <div className="projects-loading">Loading projects…</div> : null}
+      {!loading && filtered.length ? (
+        <div className="project-grid">
+          {filtered.map(({ project, story, snapshot, status, readiness, openGates }, index) => {
+            const chapters = snapshot?.chapters ?? []
+            const scenes = chapters.flatMap((chapter) => chapter.scenes)
+            const shots = scenes.flatMap((scene) => scene.shots)
+            const characters = snapshot?.characters ?? []
+            const open = () => onOpenProject?.(project.id, project.name)
+            return (
+              <article className="project-card" key={project.id}>
+                <button type="button" className={`project-cover project-cover-${index % 6}`} onClick={open} aria-label={`Open ${project.name}`}>
+                  <span className="cover-grid" /><span className="cover-orb orb-a" /><span className="cover-orb orb-b" />
+                  <span className="cover-initials">{projectInitials(project.name)}</span>
+                  <ProjectStatus status={status} />
+                </button>
+                <div className="project-card-body">
+                  <div className="project-card-title">
+                    <button type="button" onClick={open}><h2>{project.name}</h2><p>{project.description || 'A CineForge production plan.'}</p></button>
+                    <button type="button" className="icon-button" aria-label={`More actions for ${project.name}`}>•••</button>
+                  </div>
+                  <div className="project-meta">
+                    <span>{story ? 'Storyboard Phase A' : 'Project Setup'}</span><i /><span>{formatRuntime(snapshot?.target_duration_sec ?? story?.target_duration_sec ?? 300)} target</span><i /><span>16:9</span>
+                  </div>
+                  <div className="project-readiness">
+                    <span><b>{readiness}%</b> plan readiness</span>
+                    <div className="project-progress" aria-label={`${readiness}% complete`}><i style={{ width: `${readiness}%` }} /></div>
+                    <small>{openGates} gates open</small>
+                  </div>
+                  <dl className="project-counts">
+                    <div><dt>Chapters</dt><dd>{chapters.length}</dd></div><div><dt>Scenes</dt><dd>{scenes.length}</dd></div>
+                    <div><dt>Shots</dt><dd>{shots.length}</dd></div><div><dt>Characters</dt><dd>{characters.length}</dd></div>
+                  </dl>
+                </div>
+                <footer>
+                  <span className="project-team">
+                    {characters.slice(0, 3).map((character) => <i key={character.id}>{projectInitials(character.name)}</i>)}
+                    {characters.length > 3 ? <i>+{characters.length - 3}</i> : null}
+                  </span>
+                  <span>Updated {formatUpdated(project.created_at)}</span>
+                  <button type="button" onClick={open}>Open project →</button>
+                </footer>
+              </article>
+            )
+          })}
+          <button type="button" className="new-project-card" onClick={onCreateNew}>
+            <span>＋</span><b>Create a new project</b><small>Start from a story, blank structure, or imported package.</small>
+          </button>
+        </div>
+      ) : null}
+      {!loading && !filtered.length ? (
+        <EmptyState title={summaries.length ? 'No projects match.' : 'No projects yet.'} detail={summaries.length ? 'Clear the search or choose another status filter.' : 'Create a project to begin a production plan.'} />
+      ) : null}
+    </div>
+  )
+}
+
+function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'onBackToProjects' | 'onOpenProject'>) {
+  const [step, setStep] = useState(1)
+  const [draft, setDraft] = useState<ProjectDraft>(EMPTY_DRAFT)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const minutes = Math.floor(draft.targetRuntime / 60)
+  const seconds = draft.targetRuntime % 60
+
+  const update = <Key extends keyof ProjectDraft>(key: Key, value: ProjectDraft[Key]) => {
+    setDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  const setRuntime = (nextMinutes: number, nextSeconds: number) => {
+    update('targetRuntime', Math.max(6, Math.min(3600, Math.max(0, nextMinutes) * 60 + Math.max(0, Math.min(59, nextSeconds)))))
+  }
+
+  const validate = () => {
+    if (step === 1 && !draft.name.trim()) {
+      setError('Give the project a name before continuing.')
+      return false
+    }
+    if (step === 2 && draft.sourceMode !== 'blank' && !draft.baseStory.trim()) {
+      setError(draft.sourceMode === 'import' ? 'Choose a source file or paste its contents.' : 'Add the source story, script, or treatment.')
+      return false
+    }
     setError(null)
+    return true
+  }
+
+  const loadSource = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
     try {
-      setProjects(await api.listProjects())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load projects.')
-    } finally {
-      setLoading(false)
+      update('baseStory', await file.text())
+      if (!draft.name.trim()) update('name', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '))
+      setError(null)
+    } catch {
+      setError('That file could not be read. Try TXT, MD, or JSON.')
     }
   }
 
-  useEffect(() => {
-    if (mode !== 'list') {
-      return
-    }
-    const timer = window.setTimeout(() => void loadProjects(), 0)
-    return () => window.clearTimeout(timer)
-  }, [mode])
-
-  async function createProject(event: FormEvent<HTMLFormElement>) {
+  const createProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!validate()) return
     setSaving(true)
     setError(null)
-    setMessage(null)
     try {
-      const created = await api.createProject({
-        name,
-        description: description.trim() ? description : null,
-      })
-      setProjects((current) => [created, ...current.filter((project) => project.id !== created.id)])
-      setSelectedProject(created)
-      setLookupId(created.id)
-      setName('')
-      setDescription('')
-      setMessage(`Created project "${created.name}".`)
+      const project = await api.createProject({ name: draft.name.trim(), description: draft.description.trim() || null })
+      if (draft.sourceMode !== 'blank') {
+        await api.createStory({
+          project_id: project.id,
+          title: draft.name.trim(),
+          base_story: draft.baseStory.trim(),
+          target_duration_sec: draft.targetRuntime,
+        })
+      }
+      onOpenProject?.(project.id, project.name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create project.')
+      setError(err instanceof Error ? err.message : 'Unable to create the project.')
     } finally {
       setSaving(false)
     }
   }
 
-  async function readProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setMessage(null)
-    try {
-      const project = await api.getProject(lookupId.trim())
-      setSelectedProject(project)
-      setMessage(`Loaded project "${project.name}".`)
-    } catch (err) {
-      setSelectedProject(null)
-      setError(err instanceof Error ? err.message : 'Unable to read project.')
-    }
-  }
-
   return (
-    <div className="page">
-      <div className="page-heading-row">
-        <PageHeader
-          eyebrow="Projects"
-          title={mode === 'create' ? 'Create New Project' : 'Project workspace'}
-          description={
-            mode === 'create'
-              ? 'Create a DB-backed CineForge project, then open its planning workspace in Storyboard Studio.'
-              : 'Inspect DB-backed CineForge projects and open their planning workspaces in Storyboard Studio.'
-          }
-        />
-        <div className="page-actions">
-          {mode === 'list' && onCreateNew ? (
-            <button type="button" className="primary-button" onClick={onCreateNew}>
-              Create New Project
-            </button>
-          ) : null}
-          {mode === 'create' && onBackToProjects ? (
-            <button type="button" className="secondary-button" onClick={onBackToProjects}>
-              Back to projects
-            </button>
-          ) : null}
-        </div>
+    <form className="page new-project-page" onSubmit={createProject}>
+      <div className="page-heading-row projects-heading">
+        <PageHeader eyebrow="NEW PRODUCTION" title="Create a project" description="Set the creative foundation once. Every storyboard, reference, route, workflow, and export will inherit it." />
+        <button type="button" className="secondary-button" onClick={onBackToProjects}>Cancel</button>
       </div>
 
-      {error ? <ErrorNotice message={error} /> : null}
-      {message ? <SuccessNotice message={message} /> : null}
-
-      {mode === 'create' ? (
-        <form className="panel form-panel" onSubmit={createProject}>
-          <h2>Create Project</h2>
-          <label>
-            Project name
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Launch Film" />
-          </label>
-          <label>
-            Description
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Hero campaign, cinematic product short, or internal test reel."
-            />
-          </label>
-          <button className="primary-button" disabled={saving} type="submit">
-            {saving ? 'Creating...' : 'Create project'}
+      <div className="wizard-steps" aria-label="Project setup progress">
+        {[{ n: 1, label: 'Project foundation' }, { n: 2, label: 'Story & timing' }, { n: 3, label: 'Production defaults' }].map((item) => (
+          <button type="button" key={item.n} className={step === item.n ? 'active' : step > item.n ? 'complete' : ''} onClick={() => item.n < step && setStep(item.n)}>
+            <span>{step > item.n ? '✓' : item.n}</span><b>{item.label}</b><i />
           </button>
-          {selectedProject && onOpenProject ? (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => onOpenProject(selectedProject.id, selectedProject.name)}
-            >
-              Open in Storyboard Studio
-            </button>
-          ) : null}
-        </form>
-      ) : null}
+        ))}
+      </div>
 
-      {mode === 'list' ? (
-        <section className="form-grid project-lookup-grid">
-        <form className="panel form-panel" onSubmit={readProject}>
-          <h2>Read Project By ID</h2>
-          <label>
-            Project ID
-            <input value={lookupId} onChange={(event) => setLookupId(event.target.value)} placeholder="UUID" />
-          </label>
-          <button className="secondary-button" type="submit">
-            Load project
-          </button>
-          {selectedProject ? <DebugPanel title="Selected project response" data={selectedProject} /> : null}
-          {selectedProject && onOpenProject ? (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => onOpenProject(selectedProject.id, selectedProject.name)}
-            >
-              Open in Storyboard Studio
-            </button>
-          ) : null}
-        </form>
-        </section>
-      ) : null}
-
-      {mode === 'list' ? <section className="panel">
-        <div className="panel-title">
-          <h2>Projects</h2>
-          <span>{loading ? 'Loading...' : `${projects.length} total`}</span>
-        </div>
-        {projects.length === 0 ? (
-          <EmptyState
-            title="No projects yet."
-            detail="Create a project to start organizing campaigns before generation is enabled."
-          />
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Description</th>
-                  <th>Persistence</th>
-                  <th>Created</th>
-                  <th>ID</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((project) => (
-                  <tr key={project.id}>
-                    <td>{project.name}</td>
-                    <td>{project.description ?? 'No description'}</td>
-                    <td>{project.persistence}</td>
-                    <td>{formatDate(project.created_at)}</td>
-                    <td className="mono">{project.id}</td>
-                    <td>
-                      {onOpenProject ? (
-                        <button
-                          type="button"
-                          className="secondary-button project-open-button"
-                          onClick={() => onOpenProject(project.id, project.name)}
-                        >
-                          Open Studio
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
+      <div className="new-project-layout">
+        <section className="wizard-panel">
+          {step === 1 ? (
+            <div className="wizard-section">
+              <div className="wizard-heading"><span>STEP 1 OF 3</span><h2>How should this project begin?</h2><p>Choose the intake path and name the production. You can change every detail later.</p></div>
+              <div className="source-options">
+                {SOURCE_OPTIONS.map((option) => (
+                  <button type="button" key={option.id} className={draft.sourceMode === option.id ? 'selected' : ''} onClick={() => update('sourceMode', option.id)}>
+                    <span>{option.icon}</span><b>{option.title}</b><small>{option.detail}</small>{draft.sourceMode === option.id ? <i>✓</i> : null}
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section> : null}
-    </div>
+              </div>
+              <div className="wizard-form">
+                <label>Project name <em>Required</em><input autoFocus value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="e.g. The Transfiguration" /></label>
+                <label>Short description<textarea value={draft.description} onChange={(event) => update('description', event.target.value)} placeholder="What are you creating, and what should the audience experience?" /></label>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 2 ? (
+            <div className="wizard-section">
+              <div className="wizard-heading"><span>STEP 2 OF 3</span><h2>Shape the story and timing</h2><p>CineForge will use this source to propose chapters, scenes, shots, narration, and starting-image requirements.</p></div>
+              {draft.sourceMode === 'import' ? <label className="import-drop"><input type="file" accept=".txt,.md,.json,text/plain,application/json" onChange={(event) => void loadSource(event)} /><span>⇧</span><b>{draft.baseStory ? 'Source file loaded' : 'Choose a source file'}</b><small>TXT, Markdown, or JSON · the file stays in this browser until project creation</small></label> : null}
+              {draft.sourceMode === 'blank' ? (
+                <div className="blank-start-note"><span>✦</span><span><b>Blank structure selected</b><p>The new project will open as an empty project shell so you can build without inherited story content.</p></span></div>
+              ) : (
+                <div className="wizard-form"><label>{draft.sourceMode === 'import' ? 'Imported source' : 'Source story, script, or treatment'} <em>Required</em><textarea className="source-story" value={draft.baseStory} onChange={(event) => update('baseStory', event.target.value)} placeholder="Paste the complete source material here…" /><small>{draft.baseStory.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words</small></label></div>
+              )}
+              <div className="runtime-fields">
+                <label>Target minutes<input type="number" min="0" max="60" value={minutes} onChange={(event) => setRuntime(Number(event.target.value), seconds)} /></label>
+                <label>Seconds<input type="number" min="0" max="59" value={seconds} onChange={(event) => setRuntime(minutes, Number(event.target.value))} /></label>
+                <div><span>Target runtime</span><b>{formatRuntime(draft.targetRuntime)}</b><small>Storyboard duration must reconcile exactly before approval.</small></div>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <div className="wizard-section">
+              <div className="wizard-heading"><span>STEP 3 OF 3</span><h2>Choose production defaults</h2><p>These settings guide planning recommendations. Nothing will render or download during project creation.</p></div>
+              <div className="wizard-defaults wizard-form">
+                <label>Audience<input value={draft.audience} onChange={(event) => update('audience', event.target.value)} /></label>
+                <label>Genre<input value={draft.genre} onChange={(event) => update('genre', event.target.value)} /></label>
+                <label>Tone<input value={draft.tone} onChange={(event) => update('tone', event.target.value)} /></label>
+                <label>Point of view<select value={draft.pointOfView} onChange={(event) => update('pointOfView', event.target.value)}><option>Third person</option><option>First person</option><option>Second person</option><option>Omniscient</option></select></label>
+                <label className="full-span">Visual style<input value={draft.visualStyle} onChange={(event) => update('visualStyle', event.target.value)} /></label>
+                <label>Aspect ratio<select value={draft.aspectRatio} onChange={(event) => update('aspectRatio', event.target.value)}><option>16:9</option><option>9:16</option><option>2.39:1</option><option>1:1</option></select></label>
+                <label>Frame rate<select value={draft.fps} onChange={(event) => update('fps', Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label>
+                <label>Orchestration<select value={draft.orchestrationMode} onChange={(event) => update('orchestrationMode', event.target.value)}><option>Hybrid</option><option>Automatic</option><option>Manual</option></select></label>
+                <label>Privacy preference<select value={draft.privacy} onChange={(event) => update('privacy', event.target.value)}><option>Prefer local for bulk work</option><option>Hosted providers allowed</option><option>Local only</option></select></label>
+                <label>Quality preference<select value={draft.qualityPreference} onChange={(event) => update('qualityPreference', event.target.value)}><option>Quality weighted</option><option>Balanced</option><option>Speed weighted</option></select></label>
+                <label>Cost sensitivity<select value={draft.costSensitivity} onChange={(event) => update('costSensitivity', event.target.value)}><option>Balanced</option><option>Minimize hosted usage</option><option>Quality first</option></select></label>
+                <label className="full-span">Production notes<textarea value={draft.productionNotes} onChange={(event) => update('productionNotes', event.target.value)} placeholder="Continuity rules, visual boundaries, required moments, or technical constraints…" /></label>
+              </div>
+            </div>
+          ) : null}
+
+          {error ? <div className="wizard-error" role="alert">△ <span>{error}</span></div> : null}
+          <footer className="wizard-actions">
+            <button type="button" className="secondary-button" onClick={() => step === 1 ? onBackToProjects?.() : setStep((current) => current - 1)}>{step === 1 ? 'Cancel' : 'Back'}</button>
+            <span>Step {step} of 3</span>
+            {step < 3 ? <button type="button" className="primary-button" onClick={() => validate() && setStep((current) => current + 1)}>Continue →</button> : <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Creating project…' : '✦ Create project'}</button>}
+          </footer>
+        </section>
+
+        <aside className="project-preview">
+          <div className="preview-cover"><span className="cover-grid" /><span className="cover-orb orb-a" /><span className="cover-orb orb-b" /><b>{projectInitials(draft.name || 'New project')}</b><small>PROJECT PREVIEW</small></div>
+          <div className="preview-copy"><span className="eyebrow">PRODUCTION FOUNDATION</span><h2>{draft.name.trim() || 'Untitled project'}</h2><p>{draft.description.trim() || 'Your project description will appear here.'}</p></div>
+          <dl>
+            <div><dt>Source</dt><dd>{SOURCE_OPTIONS.find((option) => option.id === draft.sourceMode)?.title.replace('Start from a ', '')}</dd></div>
+            <div><dt>Target runtime</dt><dd>{formatRuntime(draft.targetRuntime)}</dd></div><div><dt>Output</dt><dd>{draft.aspectRatio} · {draft.fps} fps</dd></div>
+            <div><dt>Mode</dt><dd>{draft.orchestrationMode}</dd></div><div><dt>Visual style</dt><dd>{draft.visualStyle}</dd></div>
+          </dl>
+          <div className="creation-boundary"><span>▣</span><p><b>Planning only</b>Creating this project stores an editable setup and opens story development. It does not render video, call a model, or download assets.</p></div>
+        </aside>
+      </div>
+    </form>
   )
+}
+
+export function Projects({ mode = 'list', onCreateNew, onBackToProjects, onOpenProject, onProjectsLoaded }: ProjectsProps) {
+  return mode === 'create'
+    ? <NewProject onBackToProjects={onBackToProjects} onOpenProject={onOpenProject} />
+    : <ProjectList onCreateNew={onCreateNew} onOpenProject={onOpenProject} onProjectsLoaded={onProjectsLoaded} />
 }
