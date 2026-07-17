@@ -33,7 +33,7 @@ export function StudioChrome({
       <div className="studio-commandbar">
         <div>
           <span className="eyebrow">Production Phase A</span>
-          <strong>A New Journey</strong>
+          <strong>{data?.story.title ?? 'Storyboard Studio'}</strong>
           <small>
             {data
               ? `${formatDuration(target)} target · ${formatDuration(planned)} planned`

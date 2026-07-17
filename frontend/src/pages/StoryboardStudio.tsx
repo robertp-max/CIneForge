@@ -6,13 +6,14 @@ export type StudioPage = PageId
 
 type StoryboardStudioProps = {
   page: StudioPage
+  projectId: string
   backendStatus: string
   onNavigate: (page: PageId) => void
 }
 
-export function StoryboardStudio({ page, backendStatus, onNavigate }: StoryboardStudioProps) {
+export function StoryboardStudio({ page, projectId, backendStatus, onNavigate }: StoryboardStudioProps) {
   return (
-    <StudioProvider backendStatus={backendStatus} onNavigate={onNavigate}>
+    <StudioProvider projectId={projectId} backendStatus={backendStatus} onNavigate={onNavigate}>
       <StudioRouter page={page} />
     </StudioProvider>
   )

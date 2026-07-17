@@ -5,13 +5,25 @@ import { DebugPanel, EmptyState, ErrorNotice, SuccessNotice } from '../component
 import { PageHeader } from '../components/Page'
 import { formatDate } from '../components/formatDate'
 
-export function Projects() {
+type ProjectsProps = {
+  mode?: 'list' | 'create'
+  onCreateNew?: () => void
+  onBackToProjects?: () => void
+  onOpenProject?: (projectId: string, projectName?: string) => void
+}
+
+export function Projects({
+  mode = 'list',
+  onCreateNew,
+  onBackToProjects,
+  onOpenProject,
+}: ProjectsProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [lookupId, setLookupId] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(mode === 'list')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -29,9 +41,12 @@ export function Projects() {
   }
 
   useEffect(() => {
+    if (mode !== 'list') {
+      return
+    }
     const timer = window.setTimeout(() => void loadProjects(), 0)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [mode])
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -72,16 +87,34 @@ export function Projects() {
 
   return (
     <div className="page">
-      <PageHeader
-        eyebrow="Projects"
-        title="Project workspace"
-        description="Create and inspect DB-backed CineForge projects through the FastAPI backend."
-      />
+      <div className="page-heading-row">
+        <PageHeader
+          eyebrow="Projects"
+          title={mode === 'create' ? 'Create New Project' : 'Project workspace'}
+          description={
+            mode === 'create'
+              ? 'Create a DB-backed CineForge project, then open its planning workspace in Storyboard Studio.'
+              : 'Inspect DB-backed CineForge projects and open their planning workspaces in Storyboard Studio.'
+          }
+        />
+        <div className="page-actions">
+          {mode === 'list' && onCreateNew ? (
+            <button type="button" className="primary-button" onClick={onCreateNew}>
+              Create New Project
+            </button>
+          ) : null}
+          {mode === 'create' && onBackToProjects ? (
+            <button type="button" className="secondary-button" onClick={onBackToProjects}>
+              Back to projects
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       {error ? <ErrorNotice message={error} /> : null}
       {message ? <SuccessNotice message={message} /> : null}
 
-      <section className="form-grid">
+      {mode === 'create' ? (
         <form className="panel form-panel" onSubmit={createProject}>
           <h2>Create Project</h2>
           <label>
@@ -99,8 +132,20 @@ export function Projects() {
           <button className="primary-button" disabled={saving} type="submit">
             {saving ? 'Creating...' : 'Create project'}
           </button>
+          {selectedProject && onOpenProject ? (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => onOpenProject(selectedProject.id, selectedProject.name)}
+            >
+              Open in Storyboard Studio
+            </button>
+          ) : null}
         </form>
+      ) : null}
 
+      {mode === 'list' ? (
+        <section className="form-grid project-lookup-grid">
         <form className="panel form-panel" onSubmit={readProject}>
           <h2>Read Project By ID</h2>
           <label>
@@ -111,10 +156,20 @@ export function Projects() {
             Load project
           </button>
           {selectedProject ? <DebugPanel title="Selected project response" data={selectedProject} /> : null}
+          {selectedProject && onOpenProject ? (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => onOpenProject(selectedProject.id, selectedProject.name)}
+            >
+              Open in Storyboard Studio
+            </button>
+          ) : null}
         </form>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="panel">
+      {mode === 'list' ? <section className="panel">
         <div className="panel-title">
           <h2>Projects</h2>
           <span>{loading ? 'Loading...' : `${projects.length} total`}</span>
@@ -134,6 +189,7 @@ export function Projects() {
                   <th>Persistence</th>
                   <th>Created</th>
                   <th>ID</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,13 +200,24 @@ export function Projects() {
                     <td>{project.persistence}</td>
                     <td>{formatDate(project.created_at)}</td>
                     <td className="mono">{project.id}</td>
+                    <td>
+                      {onOpenProject ? (
+                        <button
+                          type="button"
+                          className="secondary-button project-open-button"
+                          onClick={() => onOpenProject(project.id, project.name)}
+                        >
+                          Open Studio
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </section>
+      </section> : null}
     </div>
   )
 }

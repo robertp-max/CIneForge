@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type FormEvent,
@@ -27,22 +28,28 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export function StudioProvider({
+  projectId: selectedProjectId,
   backendStatus,
   onNavigate,
   children,
 }: {
+  projectId: string
   backendStatus: string
   onNavigate: (page: PageId) => void
   children: ReactNode
 }) {
-  const [projectId, setProjectId] = useState(demoAggregate.story.project_id)
-  const [storyId, setStoryId] = useState(demoAggregate.story.id)
-  const [data, setData] = useState<StoryboardAggregate | null>(demoAggregate)
-  const [readiness, setReadiness] = useState<Readiness | null>(demoReadiness)
+  const isDemoProject =
+    selectedProjectId === 'a-new-journey' || selectedProjectId === demoAggregate.story.project_id
+  const [projectId, setProjectId] = useState(selectedProjectId || demoAggregate.story.project_id)
+  const [storyId, setStoryId] = useState(isDemoProject ? demoAggregate.story.id : '')
+  const [data, setData] = useState<StoryboardAggregate | null>(isDemoProject ? demoAggregate : null)
+  const [readiness, setReadiness] = useState<Readiness | null>(isDemoProject ? demoReadiness : null)
   const [message, setMessage] = useState(
-    'A New Journey demo plan is loaded for this local Studio session. Server data remains canonical when available.',
+    isDemoProject
+      ? 'A New Journey demo plan is loaded for this local Studio session. Server data remains canonical when available.'
+      : 'Loading the selected project from the CineForge backend.',
   )
-  const [loadState, setLoadState] = useState<LoadState>('ready')
+  const [loadState, setLoadState] = useState<LoadState>(isDemoProject ? 'ready' : 'loading')
   const [error, setError] = useState<string | null>(null)
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null)
   const [animaticOpen, setAnimaticOpen] = useState(false)
@@ -80,17 +87,75 @@ export function StudioProvider({
       })
     } catch (err) {
       const text = errorMessage(err, 'Unable to load storyboard data.')
-      setData(demoAggregate)
-      setReadiness(demoReadiness)
-      setStoryId(demoAggregate.story.id)
-      setProjectId(demoAggregate.story.project_id)
-      setError(null)
-      setLoadState('ready')
-      setMessage(`${text} Showing the local A New Journey Phase A demo plan instead.`)
+      if (isDemoProject) {
+        setData(demoAggregate)
+        setReadiness(demoReadiness)
+        setStoryId(demoAggregate.story.id)
+        setProjectId(demoAggregate.story.project_id)
+        setError(null)
+        setLoadState('ready')
+        setMessage(`${text} Showing the local A New Journey Phase A demo plan instead.`)
+      } else {
+        setData(null)
+        setReadiness(null)
+        setError(text)
+        setLoadState('error')
+        setMessage(text)
+      }
     } finally {
       setBusy(false)
     }
-  }, [storyId])
+  }, [isDemoProject, storyId])
+
+  useEffect(() => {
+    if (isDemoProject) return
+
+    let active = true
+    const loadSelectedProject = async () => {
+      setBusy(true)
+      setLoadState('loading')
+      setError(null)
+      setProjectId(selectedProjectId)
+      try {
+        const stories = await api.listStories(selectedProjectId)
+        if (!active) return
+        const story = stories[0]
+        if (!story) {
+          setStoryId('')
+          setData(null)
+          setReadiness(null)
+          setLoadState('empty')
+          setMessage('This project has no planning story yet. Create one below to begin Storyboard Studio work.')
+          return
+        }
+
+        const snapshot = await api.phaseA(story.id)
+        if (!active) return
+        const aggregate = normalizePhaseASnapshot(snapshot)
+        setData(aggregate)
+        setReadiness(snapshot.readiness)
+        setStoryId(aggregate.story.id)
+        setProjectId(aggregate.story.project_id)
+        setLoadState('ready')
+        setMessage('Loaded the selected project and its planning story from the CineForge backend.')
+      } catch (err) {
+        if (!active) return
+        const text = errorMessage(err, 'Unable to load the selected project in Storyboard Studio.')
+        setData(null)
+        setReadiness(null)
+        setError(text)
+        setLoadState('error')
+        setMessage(text)
+      } finally {
+        if (active) setBusy(false)
+      }
+    }
+
+    void loadSelectedProject()
+    return () => {
+      active = false
+    }
+  }, [isDemoProject, selectedProjectId])
 
   const createStory = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

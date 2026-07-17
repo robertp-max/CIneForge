@@ -295,7 +295,22 @@ main {
 
 .page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
+}
+
+.page-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.page-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .page-header {
@@ -634,6 +649,10 @@ a[aria-disabled='true'] {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.project-open-button {
+  min-width: max-content;
 }
 
 table {
@@ -1316,7 +1335,11 @@ td {
   }
 
   .storyboard-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .storyboard-layout > * {
+    min-width: 0;
   }
 
   .inspector {
@@ -1955,6 +1978,11 @@ tbody tr {
   overflow: hidden;
 }
 
+.sidebar .workspace-sidebar-spacer {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .sidebar .sidebar-project-label {
   flex: 0 0 auto;
   margin: 14px 12px 7px;
@@ -2164,6 +2192,39 @@ tbody tr {
 @media (max-width: 720px) {
   .topbar {
     padding-inline: 14px;
+  }
+
+  .topbar-leading,
+  .topbar-status,
+  .breadcrumb {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .breadcrumb {
+    flex-wrap: wrap;
+    gap: 6px 8px;
+  }
+
+  .breadcrumb > span,
+  .breadcrumb > strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .topbar-status {
+    justify-content: flex-start;
+  }
+
+  .page-heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-actions,
+  .page-actions > button {
+    width: 100%;
   }
 }
 

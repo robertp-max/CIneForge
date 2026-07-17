@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api/client'
-import { AppShell, type PageId } from './components/AppShell'
+import { AppShell, type PageId, type ShellView } from './components/AppShell'
+import { Projects } from './pages/Projects'
 import { StoryboardStudio } from './pages/StoryboardStudio'
 
 const DEFAULT_PROJECT_ID = 'a-new-journey'
@@ -33,6 +34,16 @@ const ROUTE_TO_PAGE: Record<string, PageId> = {
   settings: 'settings',
 }
 
+type AppRoute =
+  | { kind: 'projects' }
+  | { kind: 'new-project' }
+  | { kind: 'studio'; projectId: string; page: PageId }
+
+type ParsedRoute = {
+  route: AppRoute
+  canonicalPath?: string
+}
+
 function normalizeBackendStatus(value: string | undefined): string {
   const status = (value ?? 'unknown').toLowerCase()
   if (status === 'ok' || status === 'healthy' || status === 'up' || status === 'ready') return 'ok'
@@ -42,37 +53,73 @@ function normalizeBackendStatus(value: string | undefined): string {
   return 'unavailable'
 }
 
-function readStudioRoute(): { projectId: string; page: PageId } {
-  const match = window.location.pathname.match(/^\/projects\/([^/]+)\/studio\/([^/]+)\/?$/)
-  if (!match) return { projectId: DEFAULT_PROJECT_ID, page: 'overview' }
-
-  const [, projectId, route] = match
-  return {
-    projectId: decodeURIComponent(projectId || DEFAULT_PROJECT_ID),
-    page: ROUTE_TO_PAGE[route] ?? 'overview',
-  }
-}
-
 function studioPath(projectId: string, page: PageId): string {
   return `/projects/${encodeURIComponent(projectId || DEFAULT_PROJECT_ID)}/studio/${PAGE_TO_ROUTE[page]}`
 }
 
-function App() {
-  const [routeState, setRouteState] = useState(readStudioRoute)
-  const [backendStatus, setBackendStatus] = useState('checking')
-  const activePage = routeState.page
+function routePath(route: AppRoute): string {
+  if (route.kind === 'projects') return '/projects'
+  if (route.kind === 'new-project') return '/projects/new'
+  return studioPath(route.projectId, route.page)
+}
 
-  const navigate = useCallback(
-    (page: PageId, options?: { replace?: boolean }) => {
-      const next = { projectId: routeState.projectId || DEFAULT_PROJECT_ID, page }
-      const path = studioPath(next.projectId, page)
-      const method = options?.replace ? 'replaceState' : 'pushState'
-      if (window.location.pathname !== path) {
-        window.history[method]({ page, projectId: next.projectId }, '', path)
-      }
-      setRouteState(next)
+function readAppRoute(pathname = window.location.pathname): ParsedRoute {
+  if (pathname === '/' || pathname === '') {
+    return { route: { kind: 'projects' }, canonicalPath: '/projects' }
+  }
+
+  if (/^\/projects\/?$/.test(pathname)) {
+    return { route: { kind: 'projects' } }
+  }
+
+  if (/^\/projects\/new\/?$/.test(pathname)) {
+    return { route: { kind: 'new-project' } }
+  }
+
+  const studioMatch = pathname.match(/^\/projects\/([^/]+)\/studio\/([^/]+)\/?$/)
+  if (studioMatch) {
+    const [, encodedProjectId, routeSegment] = studioMatch
+    try {
+      const projectId = decodeURIComponent(encodedProjectId || DEFAULT_PROJECT_ID)
+      const page = ROUTE_TO_PAGE[routeSegment]
+      const route: AppRoute = { kind: 'studio', projectId, page: page ?? 'overview' }
+      return page ? { route } : { route, canonicalPath: routePath(route) }
+    } catch {
+      return { route: { kind: 'projects' }, canonicalPath: '/projects' }
+    }
+  }
+
+  return { route: { kind: 'projects' }, canonicalPath: '/projects' }
+}
+
+function App() {
+  const [routeState, setRouteState] = useState<AppRoute>(() => readAppRoute().route)
+  const [backendStatus, setBackendStatus] = useState('checking')
+  const [projectName, setProjectName] = useState('A New Journey')
+
+  const navigateTo = useCallback((route: AppRoute, options?: { replace?: boolean }) => {
+    const path = routePath(route)
+    const method = options?.replace ? 'replaceState' : 'pushState'
+    if (window.location.pathname !== path) {
+      window.history[method](route, '', path)
+    }
+    setRouteState(route)
+  }, [])
+
+  const navigateStudio = useCallback(
+    (page: PageId) => {
+      const projectId = routeState.kind === 'studio' ? routeState.projectId : DEFAULT_PROJECT_ID
+      navigateTo({ kind: 'studio', projectId, page })
     },
-    [routeState.projectId],
+    [navigateTo, routeState],
+  )
+
+  const openProject = useCallback(
+    (projectId: string, name?: string) => {
+      if (name) setProjectName(name)
+      navigateTo({ kind: 'studio', projectId, page: 'overview' })
+    },
+    [navigateTo],
   )
 
   const refreshBackendStatus = useCallback(async () => {
@@ -85,16 +132,32 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const route = readStudioRoute()
-    const canonical = studioPath(route.projectId, route.page)
-    if (window.location.pathname !== canonical) {
-      window.history.replaceState({ page: route.page, projectId: route.projectId }, '', canonical)
+    const parsed = readAppRoute()
+    if (parsed.canonicalPath && window.location.pathname !== parsed.canonicalPath) {
+      window.history.replaceState(parsed.route, '', parsed.canonicalPath)
     }
-
-    const onPopState = () => setRouteState(readStudioRoute())
+    const onPopState = () => setRouteState(readAppRoute().route)
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
+
+  useEffect(() => {
+    if (routeState.kind !== 'studio') return
+    if (routeState.projectId === DEFAULT_PROJECT_ID) return
+
+    let active = true
+    void api
+      .getProject(routeState.projectId)
+      .then((project) => {
+        if (active) setProjectName(project.name)
+      })
+      .catch(() => {
+        if (active) setProjectName('Selected project')
+      })
+    return () => {
+      active = false
+    }
+  }, [routeState])
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refreshBackendStatus(), 0)
@@ -107,19 +170,52 @@ function App() {
     }
   }, [refreshBackendStatus])
 
+  const shellView: ShellView =
+    routeState.kind === 'studio' ? 'studio' : routeState.kind === 'new-project' ? 'new-project' : 'projects'
+  const activePage = routeState.kind === 'studio' ? routeState.page : 'overview'
+  const activeProjectId = routeState.kind === 'studio' ? routeState.projectId : ''
+  const activeProjectName =
+    routeState.kind === 'studio' && routeState.projectId === DEFAULT_PROJECT_ID
+      ? 'A New Journey'
+      : projectName
+
   return (
     <AppShell
       activePage={activePage}
       backendStatus={backendStatus}
-      projectId={routeState.projectId}
-      onNavigate={navigate}
+      projectId={activeProjectId}
+      projectName={activeProjectName}
+      view={shellView}
+      onNavigate={navigateStudio}
+      onOpenProjects={() => navigateTo({ kind: 'projects' })}
+      onCreateProject={() => navigateTo({ kind: 'new-project' })}
       onRefreshStatus={() => void refreshBackendStatus()}
     >
-      <StoryboardStudio
-        page={activePage}
-        backendStatus={backendStatus}
-        onNavigate={navigate}
-      />
+      {routeState.kind === 'projects' ? (
+        <Projects
+          key="projects-list"
+          mode="list"
+          onCreateNew={() => navigateTo({ kind: 'new-project' })}
+          onOpenProject={openProject}
+        />
+      ) : null}
+      {routeState.kind === 'new-project' ? (
+        <Projects
+          key="project-create"
+          mode="create"
+          onBackToProjects={() => navigateTo({ kind: 'projects' })}
+          onOpenProject={openProject}
+        />
+      ) : null}
+      {routeState.kind === 'studio' ? (
+        <StoryboardStudio
+          key={routeState.projectId}
+          page={routeState.page}
+          projectId={routeState.projectId}
+          backendStatus={backendStatus}
+          onNavigate={navigateStudio}
+        />
+      ) : null}
     </AppShell>
   )
 }

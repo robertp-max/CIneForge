@@ -13,6 +13,8 @@ export type PageId =
   | 'exports'
   | 'settings'
 
+export type ShellView = 'projects' | 'new-project' | 'studio'
+
 const navItems: {
   id: PageId
   label: string
@@ -36,7 +38,11 @@ type AppShellProps = {
   activePage: PageId
   backendStatus: string
   projectId: string
+  projectName: string
+  view: ShellView
   onNavigate: (page: PageId) => void
+  onOpenProjects: () => void
+  onCreateProject: () => void
   onRefreshStatus?: () => void
   children: ReactNode
 }
@@ -45,7 +51,11 @@ export function AppShell({
   activePage,
   backendStatus,
   projectId,
+  projectName,
+  view,
   onNavigate,
+  onOpenProjects,
+  onCreateProject,
   onRefreshStatus,
   children,
 }: AppShellProps) {
@@ -54,7 +64,20 @@ export function AppShell({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const navId = useId()
-  const activeLabel = navItems.find((item) => item.id === activePage)?.label ?? 'Studio'
+  const sidebarId = useId()
+  const isStudio = view === 'studio'
+  const activeLabel =
+    view === 'projects'
+      ? 'Projects'
+      : view === 'new-project'
+        ? 'Create New Project'
+        : navItems.find((item) => item.id === activePage)?.label ?? 'Studio'
+  const projectInitials = projectName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'PR'
 
   useEffect(() => {
     if (!mobileNavOpen && !projectMenuOpen && !profileMenuOpen) return
@@ -76,6 +99,13 @@ export function AppShell({
     setProfileMenuOpen(false)
   }
 
+  const handleWorkspaceNavigate = (action: () => void) => {
+    action()
+    setMobileNavOpen(false)
+    setProjectMenuOpen(false)
+    setProfileMenuOpen(false)
+  }
+
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       <a className="skip-link" href="#main-content">
@@ -83,6 +113,7 @@ export function AppShell({
       </a>
 
       <aside
+        id={sidebarId}
         className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileNavOpen ? 'sidebar-open' : ''}`}
         aria-label="Studio sidebar"
       >
@@ -116,19 +147,25 @@ export function AppShell({
         <nav className="sidebar-workspace-nav" aria-label="Workspace navigation">
           <button
             type="button"
-            className="nav-item touch-target"
-            aria-expanded={projectMenuOpen}
-            onClick={() => {
-              setProjectMenuOpen((open) => !open)
-              setProfileMenuOpen(false)
-            }}
+            className={`nav-item touch-target ${view === 'projects' ? 'active' : ''}`}
+            aria-current={view === 'projects' ? 'page' : undefined}
+            onClick={() => handleWorkspaceNavigate(onOpenProjects)}
           >
             <span className="nav-icon" aria-hidden="true">▣</span>
             <span className="nav-label-full">Projects</span>
           </button>
+          <button
+            type="button"
+            className={`nav-item touch-target ${view === 'new-project' ? 'active' : ''}`}
+            aria-current={view === 'new-project' ? 'page' : undefined}
+            onClick={() => handleWorkspaceNavigate(onCreateProject)}
+          >
+            <span className="nav-icon" aria-hidden="true">＋</span>
+            <span className="nav-label-full">Create New Project</span>
+          </button>
         </nav>
 
-        <div className="project-switch-wrap">
+        {isStudio ? <div className="project-switch-wrap">
           <button
             type="button"
             className="project-switcher touch-target"
@@ -139,9 +176,9 @@ export function AppShell({
               setProfileMenuOpen(false)
             }}
           >
-            <span className="project-avatar">AJ</span>
+            <span className="project-avatar">{projectInitials}</span>
             <span>
-              <strong>A New Journey</strong>
+              <strong>{projectName}</strong>
               <small>Storyboard Phase A</small>
             </span>
             <span aria-hidden="true">⌄</span>
@@ -149,18 +186,26 @@ export function AppShell({
           {projectMenuOpen ? (
             <div className="sidebar-popover project-popover" role="menu" aria-label="Projects">
               <button type="button" role="menuitem" className="active" onClick={() => setProjectMenuOpen(false)}>
-                <span className="project-avatar">AJ</span>
+                <span className="project-avatar">{projectInitials}</span>
                 <span>
-                  <strong>A New Journey</strong>
+                  <strong>{projectName}</strong>
                   <small>Current project</small>
                 </span>
                 <span aria-hidden="true">✓</span>
               </button>
+              <button type="button" role="menuitem" onClick={() => handleWorkspaceNavigate(onOpenProjects)}>
+                <span className="nav-icon" aria-hidden="true">▣</span>
+                <span>
+                  <strong>All projects</strong>
+                  <small>Return to the project workspace</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </button>
             </div>
           ) : null}
-        </div>
+        </div> : null}
 
-        <div className="sidebar-project-nav-section">
+        {isStudio ? <div className="sidebar-project-nav-section">
           <span className="sidebar-section-label sidebar-project-label">Project</span>
           <nav id={navId} className="sidebar-project-nav" aria-label="Primary navigation">
             {navItems.map((item) => {
@@ -183,13 +228,13 @@ export function AppShell({
               )
             })}
           </nav>
-        </div>
+        </div> : <div className="workspace-sidebar-spacer" />}
 
         <div className="sidebar-footer">
-          <button type="button" className="settings-entry touch-target" onClick={() => handleNavigate('settings')}>
+          {isStudio ? <button type="button" className="settings-entry touch-target" onClick={() => handleNavigate('settings')}>
             <span className="nav-icon" aria-hidden="true">⚙</span>
             <span>Project settings</span>
-          </button>
+          </button> : null}
           <div className="runtime-card">
             <span className="live-dot" aria-hidden="true" />
             <strong>ComfyUI ready</strong>
@@ -244,7 +289,7 @@ export function AppShell({
               type="button"
               className="mobile-nav-toggle touch-target"
               aria-expanded={mobileNavOpen}
-              aria-controls={navId}
+              aria-controls={sidebarId}
               onClick={() => setMobileNavOpen((open) => !open)}
             >
               <span className="sr-only">Open navigation</span>
@@ -252,11 +297,21 @@ export function AppShell({
             </button>
             <div className="breadcrumb" aria-label="Breadcrumb">
               <span>Projects</span>
-              <span aria-hidden="true">›</span>
-              <span>A New Journey</span>
-              <span aria-hidden="true">›</span>
-              <strong>{activeLabel}</strong>
-              <span className="phase-badge">Phase A</span>
+              {view === 'new-project' ? (
+                <>
+                  <span aria-hidden="true">›</span>
+                  <strong>{activeLabel}</strong>
+                </>
+              ) : null}
+              {isStudio ? (
+                <>
+                  <span aria-hidden="true">›</span>
+                  <span>{projectName}</span>
+                  <span aria-hidden="true">›</span>
+                  <strong>{activeLabel}</strong>
+                  <span className="phase-badge">Phase A</span>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="topbar-status">
