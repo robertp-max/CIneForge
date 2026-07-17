@@ -26,6 +26,7 @@ from scripts.checkpoint_watchdog import build_watchdog_report
 
 BACKEND_TESTS = [
     "backend/tests/test_safe_local_boundary_script.py",
+    "backend/tests/test_ai_proposal_validator.py",
     "backend/tests/test_checkpoint_watchdog.py",
     "backend/tests/test_offline_safe_validation_runner.py",
     "backend/tests/test_local_safe_boundary.py",

@@ -94,7 +94,7 @@ Run the curated offline-safe validation suite. It runs static boundary checks, s
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
-Current checkpoint result: `232 passed`, frontend lint/build passed, static boundary validation passed, `git diff --check` passed, and the checkpoint watchdog banner printed; the suite remains no-live/offline-safe.
+Current checkpoint result: `235 passed`, frontend lint/build passed, static boundary validation passed, `git diff --check` passed, and the checkpoint watchdog banner printed; the suite remains no-live/offline-safe.
 
 Checkpoint watchdog helpers. A watchdog/status check is not a stopping point; after reading it, immediately continue the offline-safe loop unless blocked by the live boundary. `--fail-on-dirty` fails on dirty tracked files or source/docs/test/config-like untracked files while ignored local watchdog JSON artifacts remain excluded.
 

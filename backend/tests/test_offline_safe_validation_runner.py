@@ -7,7 +7,8 @@ from scripts.checkpoint_watchdog import CheckpointWatchdogReport
 from scripts.run_offline_safe_validation import BACKEND_TESTS, run_validation
 
 
-def test_offline_safe_validation_runner_includes_path_output_runtime_catalog_and_cf_vid01_contract_tests():
+def test_offline_safe_validation_runner_includes_advisory_boundary_path_output_runtime_catalog_and_cf_vid01_contract_tests():
+    assert "backend/tests/test_ai_proposal_validator.py" in BACKEND_TESTS
     assert "backend/tests/test_gpu_telemetry_parser.py" in BACKEND_TESTS
     assert "backend/tests/test_path_safety.py" in BACKEND_TESTS
     assert "backend/tests/test_output_collector.py" in BACKEND_TESTS
