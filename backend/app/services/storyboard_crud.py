@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -59,6 +59,10 @@ class StoryboardCrudNotFoundError(StoryboardCrudError):
 
 class StoryboardCrudConflictError(Exception):
     """Unique/constraint conflict (typically HTTP 409)."""
+
+
+def _now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _audit(
@@ -111,7 +115,7 @@ def _story_for_active_shot(db: Session, shot_id: UUID) -> Story:
 
 def _mark_story_draft(story: Story) -> None:
     story.approval_state = "draft"
-    story.updated_at = datetime.utcnow()
+    story.updated_at = _now()
 
 
 def _lock_story_for_mutation(db: Session, story_id: UUID) -> Story:
@@ -472,7 +476,7 @@ def update_recommendation(
         setattr(row, field, value)
 
     if acknowledge is True and row.acknowledged_at is None:
-        row.acknowledged_at = datetime.utcnow()
+        row.acknowledged_at = _now()
 
     _mark_story_draft(story)
 
@@ -837,7 +841,7 @@ def update_proposal(
 ) -> AIProposalRecord:
     row = get_proposal(db, proposal_id)
     data = payload.model_dump(exclude_unset=True)
-    now = datetime.utcnow()
+    now = _now()
 
     new_status = data.get("status")
     if new_status is not None:
