@@ -1,12 +1,18 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import not_found
 from backend.app.db.base import Project
 from backend.app.db.session import get_db
-from backend.app.schemas.api import ProjectCreate, ProjectRead
+from backend.app.schemas.api import ProjectCreate, ProjectRead, ProjectWorkspaceCreate, ProjectWorkspaceRead
+from backend.app.schemas.storyboard import StoryRead
+from backend.app.schemas.storyboard_settings import ProjectStoryboardSettingsRead
+from backend.app.services.project_workspace import (
+    ProjectWorkspaceConflictError,
+    create_project_workspace,
+)
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -29,6 +35,22 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Pro
     db.commit()
     db.refresh(project)
     return project_to_response(project)
+
+
+@router.post("/workspace", response_model=ProjectWorkspaceRead, status_code=201)
+def create_workspace(
+    payload: ProjectWorkspaceCreate, db: Session = Depends(get_db)
+) -> ProjectWorkspaceRead:
+    try:
+        result = create_project_workspace(db, payload)
+    except ProjectWorkspaceConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ProjectWorkspaceRead(
+        project=project_to_response(result.project),
+        story=StoryRead.model_validate(result.story),
+        settings=ProjectStoryboardSettingsRead.model_validate(result.settings),
+        idempotent_replay=result.idempotent_replay,
+    )
 
 
 @router.get("", response_model=list[ProjectRead])

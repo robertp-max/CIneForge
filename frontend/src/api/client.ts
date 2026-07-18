@@ -12,6 +12,40 @@ export type Project = {
   persistence: string
 }
 
+export type ProjectWorkspaceCreatePayload = {
+  idempotency_key: string
+  name: string
+  description?: string | null
+  source_mode: 'story' | 'blank' | 'import'
+  story_title: string
+  base_story: string
+  target_duration_sec: number
+  audience?: string | null
+  genre?: string | null
+  tone?: string | null
+  point_of_view?: string | null
+  visual_style?: string | null
+  production_notes?: string | null
+  aspect_ratio: string
+  preview_width: number
+  preview_height: number
+  final_width: number
+  final_height: number
+  fps: number
+  captions_enabled: boolean
+  audio_enabled: boolean
+  speaking_rate: number
+  prefer_hosted_providers: boolean
+  prefer_local_providers: boolean
+  allow_model_download: false
+  allow_rendering: false
+  require_production_plan_approval: true
+  orchestration_mode: string
+  privacy_preference: string
+  quality_preference: string
+  cost_sensitivity: string
+}
+
 export type Campaign = {
   id: string
   project_id: string
@@ -727,6 +761,13 @@ export type ProjectStoryboardSettingsUpdate = Omit<
   expected_settings_version?: number
 }
 
+export type ProjectWorkspace = {
+  project: Project
+  story: Story
+  settings: ProjectStoryboardSettings
+  idempotent_replay: boolean
+}
+
 export type VoiceProfileCreatePayload = {
   name: string
   setup_mode: VoiceSetupMode
@@ -1183,6 +1224,8 @@ export const api = {
   listProjects: () => request<Project[]>('/projects'),
   createProject: (payload: { name: string; description?: string | null }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(payload) }),
+  createProjectWorkspace: (payload: ProjectWorkspaceCreatePayload) =>
+    request<ProjectWorkspace>('/projects/workspace', { method: 'POST', body: JSON.stringify(payload) }),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
 
   listCampaigns: (projectId?: string) =>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
   api,
@@ -73,6 +73,13 @@ const SOURCE_OPTIONS: { id: SourceMode; icon: string; title: string; detail: str
   { id: 'blank', icon: '＋', title: 'Start blank', detail: 'Create the project shell and shape the story inside CineForge.' },
   { id: 'import', icon: '⇧', title: 'Import a package', detail: 'Load a TXT, MD, or JSON source file for intake.' },
 ]
+
+const OUTPUT_DIMENSIONS: Record<string, { preview: [number, number]; final: [number, number] }> = {
+  '16:9': { preview: [1280, 720], final: [1920, 1080] },
+  '9:16': { preview: [720, 1280], final: [1080, 1920] },
+  '2.39:1': { preview: [1280, 536], final: [1920, 804] },
+  '1:1': { preview: [1024, 1024], final: [1920, 1920] },
+}
 
 function projectInitials(name: string) {
   return name
@@ -297,6 +304,7 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
   const [draft, setDraft] = useState<ProjectDraft>(EMPTY_DRAFT)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const idempotencyKey = useRef(`project-workspace-${crypto.randomUUID()}`)
   const minutes = Math.floor(draft.targetRuntime / 60)
   const seconds = draft.targetRuntime % 60
 
@@ -339,16 +347,42 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
     setSaving(true)
     setError(null)
     try {
-      const project = await api.createProject({ name: draft.name.trim(), description: draft.description.trim() || null })
-      if (draft.sourceMode !== 'blank') {
-        await api.createStory({
-          project_id: project.id,
-          title: draft.name.trim(),
-          base_story: draft.baseStory.trim(),
-          target_duration_sec: draft.targetRuntime,
-        })
-      }
-      onOpenProject?.(project.id, project.name)
+      const dimensions = OUTPUT_DIMENSIONS[draft.aspectRatio] ?? OUTPUT_DIMENSIONS['16:9']
+      const hostedAllowed = draft.privacy === 'Hosted providers allowed'
+      const workspace = await api.createProjectWorkspace({
+        idempotency_key: idempotencyKey.current,
+        name: draft.name.trim(),
+        description: draft.description.trim() || null,
+        source_mode: draft.sourceMode,
+        story_title: draft.name.trim(),
+        base_story: draft.baseStory.trim(),
+        target_duration_sec: draft.targetRuntime,
+        audience: draft.audience.trim() || null,
+        genre: draft.genre.trim() || null,
+        tone: draft.tone.trim() || null,
+        point_of_view: draft.pointOfView,
+        visual_style: draft.visualStyle.trim() || null,
+        production_notes: draft.productionNotes.trim() || null,
+        aspect_ratio: draft.aspectRatio,
+        preview_width: dimensions.preview[0],
+        preview_height: dimensions.preview[1],
+        final_width: dimensions.final[0],
+        final_height: dimensions.final[1],
+        fps: draft.fps,
+        captions_enabled: true,
+        audio_enabled: true,
+        speaking_rate: 1,
+        prefer_hosted_providers: hostedAllowed,
+        prefer_local_providers: draft.privacy !== 'Hosted providers allowed' || draft.orchestrationMode === 'Hybrid',
+        allow_model_download: false,
+        allow_rendering: false,
+        require_production_plan_approval: true,
+        orchestration_mode: draft.orchestrationMode,
+        privacy_preference: draft.privacy,
+        quality_preference: draft.qualityPreference,
+        cost_sensitivity: draft.costSensitivity,
+      })
+      onOpenProject?.(workspace.project.id, workspace.project.name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create the project.')
     } finally {

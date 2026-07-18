@@ -61,6 +61,26 @@ class Project(UUIDMixin, TimestampMixin, Base):
     campaigns: Mapped[list["Campaign"]] = relationship(back_populates="project")
 
 
+class ProjectWorkspaceCreation(UUIDMixin, TimestampMixin, Base):
+    """Durable replay record for atomic project workspace creation."""
+
+    __tablename__ = "project_workspace_creations"
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    settings_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("project_storyboard_settings.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+
 class Campaign(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "campaigns"
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"))
