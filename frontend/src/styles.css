@@ -2340,6 +2340,123 @@ tbody tr {
   font-weight: 800;
 }
 
+.managed-asset-frame {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0f1214;
+  color: var(--muted);
+}
+
+.managed-asset-image {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.managed-asset-image--cover {
+  object-fit: cover;
+}
+
+.managed-asset-image--contain {
+  object-fit: contain;
+}
+
+.managed-asset-frame[data-managed-asset-state='loading'] .managed-asset-image,
+.managed-asset-frame[data-managed-asset-state='error'] .managed-asset-image {
+  visibility: hidden;
+}
+
+.managed-asset-loading,
+.managed-asset-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 6px;
+  place-content: center;
+  padding: 14px;
+  text-align: center;
+}
+
+.managed-asset-loading {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+.managed-asset-fallback {
+  background: linear-gradient(145deg, #15191d, #111315);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.managed-asset-fallback--error {
+  color: #ff9da0;
+}
+
+.managed-asset-fallback small {
+  color: inherit;
+}
+
+.character-card-portrait,
+.selected-character-portrait {
+  aspect-ratio: 4 / 3;
+}
+
+.selected-character-portrait {
+  max-height: 360px;
+}
+
+.managed-asset-frame .avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 1rem;
+}
+
+.reference-strip .reference-thumbnail,
+.shot-starting-image,
+.candidate-comparison-image,
+.selected-shot-review-image,
+.art-direction-image {
+  aspect-ratio: 16 / 9;
+}
+
+.selected-shot-review-image {
+  max-height: 520px;
+}
+
+.art-direction-references {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 18px;
+}
+
+.art-direction-references .panel-title {
+  margin-bottom: 0;
+}
+
+.status-pill {
+  align-self: start;
+  border: 1px solid #365646;
+  border-radius: 999px;
+  background: #19261f;
+  color: var(--mint);
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.art-direction-grid article p {
+  color: var(--mint);
+}
+
 .summary-icon.mint { color: var(--mint); background: #1a3528; }
 .summary-icon.blue { color: var(--blue); background: #1d2d42; }
 .summary-icon.amber { color: var(--amber); background: #382c1e; }

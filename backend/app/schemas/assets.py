@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class AssetKind(StrEnum):
     character_reference = "character_reference"
+    art_direction_reference = "art_direction_reference"
     starting_image = "starting_image"
     voice_source = "voice_source"
     story_document = "story_document"

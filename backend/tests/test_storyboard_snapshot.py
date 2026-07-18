@@ -13,6 +13,7 @@ from backend.app.db.base import (
     Base,
     Chapter,
     Character,
+    PlanningMediaAsset,
     Project,
     Scene,
     Shot,
@@ -103,6 +104,44 @@ def test_snapshot_hash_is_deterministic(db_session):
     assert second["chapters"][0]["scenes"][0]["shots"][0]["narration"]["narration_text"] == (
         "Once upon a time."
     )
+
+
+def test_scene_art_direction_reference_is_separate_from_shot_start(db_session):
+    story, shot = _seed_story(db_session)
+    board = PlanningMediaAsset(
+        project_id=story.project_id,
+        kind="art_direction_reference",
+        source_type="bundled_project_reference",
+        managed_uri=(
+            f"cineforge-planning://{story.project_id}/art_direction_reference/board.jpg"
+        ),
+        sha256="a" * 64,
+        mime_type="image/jpeg",
+        approval_state="draft",
+        metadata_json={
+            "client": {
+                "asset_key": "scene_01_storyboard",
+                "scene_number": 1,
+                "role": "scene_storyboard_reference_board",
+            }
+        },
+        original_filename="board.jpg",
+        size_bytes=10,
+    )
+    db_session.add(board)
+    db_session.commit()
+
+    snapshot, _ = snapshot_service.build_snapshot_with_hash(db_session, story.id)
+    scene = snapshot["chapters"][0]["scenes"][0]
+    snap_shot = scene["shots"][0]
+
+    assert scene["art_direction_reference_asset_ids"] == [str(board.id)]
+    assert snap_shot["starting_image_asset_id"] is None
+    assert shot.starting_image_asset_id is None
+    planning_asset = next(
+        item for item in snapshot["planning_assets"] if item["id"] == str(board.id)
+    )
+    assert planning_asset["kind"] == "art_direction_reference"
 
 
 def test_snapshot_hash_changes_when_duration_changes(db_session):

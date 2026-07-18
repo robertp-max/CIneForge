@@ -1,10 +1,14 @@
+import re
 from functools import lru_cache
 from pathlib import Path
-import re
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_STORAGE_ROOT = (REPO_ROOT / "storage").resolve()
+DEFAULT_DATABASE_URL = f"sqlite:///{(DEFAULT_STORAGE_ROOT / 'cineforge_local.db').as_posix()}"
 
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]{0,199}$")
 _FORBIDDEN_URL_CHARS = set(";|`$\n\r&<>")
@@ -12,16 +16,16 @@ _FORBIDDEN_URL_CHARS = set(";|`$\n\r&<>")
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=REPO_ROOT / ".env",
         env_prefix="CINEFORGE_",
         extra="ignore",
     )
 
     env: str = "local"
     log_level: str = "INFO"
-    database_url: str = "sqlite:///./storage/cineforge_local.db"
+    database_url: str = DEFAULT_DATABASE_URL
     comfyui_base_url: AnyHttpUrl = "http://127.0.0.1:8188"
-    storage_root: Path = Field(default=Path("./storage"))
+    storage_root: Path = Field(default=DEFAULT_STORAGE_ROOT)
     allow_absolute_input_paths: bool = False
     queue_worker_enabled: bool = False
     autonomy_mode: str = "scaffold_only"
@@ -48,6 +52,29 @@ class Settings(BaseSettings):
     openai_logical_model_luna: str = "gpt-4o-mini"
     openai_logical_model_terra: str = "gpt-4o"
     openai_logical_model_sol: str = "gpt-4.1"
+
+    @field_validator("storage_root", mode="before")
+    @classmethod
+    def resolve_storage_root(cls, value: str | Path) -> Path:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = REPO_ROOT / path
+        return path.resolve()
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def resolve_sqlite_database_url(cls, value: str) -> str:
+        cleaned = str(value).strip()
+        prefix = "sqlite:///"
+        if not cleaned.startswith(prefix):
+            return cleaned
+        raw_path = cleaned[len(prefix) :]
+        if raw_path in {":memory:", ""} or raw_path.startswith("file:"):
+            return cleaned
+        database_path = Path(raw_path).expanduser()
+        if not database_path.is_absolute():
+            database_path = REPO_ROOT / database_path
+        return f"{prefix}{database_path.resolve().as_posix()}"
 
     @field_validator("openai_base_url")
     @classmethod

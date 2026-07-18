@@ -197,6 +197,182 @@ def test_duplicate_sha_never_clones(db):
     assert len(files) == 1
 
 
+def test_duplicate_reuse_repairs_missing_managed_file(db):
+    session, project = db
+    png = _make_png(7, 5)
+    original, created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="character_reference",
+        data=png,
+        original_filename="hero.png",
+        content_type="image/png",
+    )
+    path = assets.resolve_managed_path(original)
+    path.unlink()
+
+    repaired, created_again = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="character_reference",
+        data=png,
+        original_filename="hero-copy.png",
+        content_type="image/png",
+    )
+
+    assert created is True
+    assert created_again is False
+    assert repaired.id == original.id
+    assert path.read_bytes() == png
+    assert repaired.size_bytes == len(png)
+    assert (repaired.width, repaired.height) == (7, 5)
+    assert len(list(session.scalars(__import__("sqlalchemy").select(PlanningMediaAsset)))) == 1
+    repairs = list(
+        session.scalars(
+            __import__("sqlalchemy").select(AuditLog).where(
+                AuditLog.action == "planning_media_asset_bytes_repaired"
+            )
+        )
+    )
+    assert len(repairs) == 1
+    assert repairs[0].entity_id == original.id
+    assert repairs[0].details["repair_reasons"] == ["managed_file_missing"]
+
+
+def test_duplicate_reuse_repairs_corrupt_managed_file(db):
+    session, project = db
+    png = _make_png(9, 6)
+    original, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="frame.png",
+        content_type="image/png",
+    )
+    path = assets.resolve_managed_path(original)
+    path.write_bytes(b"corrupt image bytes")
+
+    repaired, created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="frame-copy.png",
+        content_type="image/png",
+    )
+
+    assert created is False
+    assert repaired.id == original.id
+    assert path.read_bytes() == png
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original.sha256
+    assert assets._image_bytes_are_decodable(path.read_bytes(), repaired.mime_type)
+    repairs = list(
+        session.scalars(
+            __import__("sqlalchemy").select(AuditLog).where(
+                AuditLog.action == "planning_media_asset_bytes_repaired"
+            )
+        )
+    )
+    assert repairs[-1].entity_id == original.id
+    assert repairs[-1].details["repair_reasons"] == ["sha256_mismatch"]
+
+
+def test_healthy_duplicate_reuse_does_not_rewrite_bytes(db):
+    session, project = db
+    png = _make_png(4, 4)
+    original, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="healthy.png",
+        content_type="image/png",
+    )
+    path = assets.resolve_managed_path(original)
+    original_mtime = path.stat().st_mtime_ns
+
+    reused, created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="healthy-copy.png",
+        content_type="image/png",
+    )
+
+    assert created is False
+    assert reused.id == original.id
+    assert path.stat().st_mtime_ns == original_mtime
+    actions = list(session.scalars(__import__("sqlalchemy").select(AuditLog.action)))
+    assert "planning_media_asset_duplicate_reused" in actions
+    assert "planning_media_asset_bytes_repaired" not in actions
+
+
+def test_asset_content_returns_decodable_image_after_duplicate_repair(db):
+    session, project = db
+    png = _make_png(6, 4)
+    original, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="stream.png",
+        content_type="image/png",
+    )
+    assets.resolve_managed_path(original).unlink()
+    repaired, created = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="stream-copy.png",
+        content_type="image/png",
+    )
+    assert created is False
+
+    app = FastAPI()
+    app.include_router(assets_router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    response = TestClient(app).get(f"/assets/{repaired.id}/content")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.content == png
+    assert assets._image_bytes_are_decodable(response.content, response.headers["content-type"].split(";")[0])
+
+
+def test_asset_content_fails_closed_when_file_sha_mismatches(db):
+    session, project = db
+    png = _make_png(5, 4)
+    asset, _ = assets.upload_asset(
+        session,
+        project_id=project.id,
+        kind="starting_image",
+        data=png,
+        original_filename="corrupt-stream.png",
+        content_type="image/png",
+    )
+    path = assets.resolve_managed_path(asset)
+    path.write_bytes(b"wrong existing bytes")
+
+    app = FastAPI()
+    app.include_router(assets_router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    response = TestClient(app).get(f"/assets/{asset.id}/content")
+
+    assert response.status_code == 422
+    assert "failed SHA-256 verification" in response.json()["detail"]
+    assert path.read_bytes() == b"wrong existing bytes"
+
+
 def test_same_bytes_in_different_asset_kinds_remain_distinct(db):
     session, project = db
     png = _make_png(3, 3)

@@ -8,7 +8,7 @@ This bundle adds a **planning-only** CineForge project for a 5:00 live-action bi
 - Exact planned duration: 300 seconds.
 - Valid LTX planning frame counts: 169 or 193 (`8n+1`) at 24 fps.
 - 6 user-supplied character identity boards, linked as draft character references (low-resolution previews bundled in `assets_preview.zip`; full originals supported at import).
-- 8 user-supplied scene storyboard boards, imported as draft planning references (low-resolution previews bundled in `assets_preview.zip`; full originals supported at import).
+- 8 user-supplied scene storyboard boards, imported as draft `art_direction_reference` planning assets and never assigned as shot starting images (low-resolution previews bundled in `assets_preview.zip`; full originals supported at import).
 - 15 additional user-supplied art-direction images are incorporated through explicit palette/cloud/light restrictions in the prompts; their Ascension poses are prohibited.
 - Timed non-diegetic narration.
 - Per-shot image/video/negative prompts and continuity instructions.
@@ -43,6 +43,7 @@ The importer is idempotent by deterministic project/story/campaign IDs and asset
 - Story and all planning records remain `draft`.
 - `allow_rendering` remains `false`.
 - Character references and storyboard boards remain unapproved.
+- `--repair-assets-only` verifies existing asset rows and managed SHA-256 values, and rehydrates only absent bytes from a matching verified archive without changing hierarchy, shots, prompts, settings, approvals, campaigns, or timeline records.
 - Every video shot remains blocked until clean single-frame start images, identity references and required workflow/benchmark gates are approved.
 - No direct ComfyUI `/prompt` submission is performed.
 

@@ -13,12 +13,15 @@ Safety guarantees:
 
 from __future__ import annotations
 
+import binascii
 import hashlib
 import mimetypes
+import os
 import re
 import struct
 import uuid
 import wave
+import zlib
 from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
@@ -65,6 +68,7 @@ MANAGED_URI_SCHEME = "cineforge-planning"
 ASSET_KINDS = frozenset(
     {
         "character_reference",
+        "art_direction_reference",
         "starting_image",
         "voice_source",
         "story_document",
@@ -76,6 +80,12 @@ ACTIVE_APPROVAL_STATES = frozenset({"draft", "in_review", "approved", "blocked"}
 # Per-kind allowlists: MIME types, extensions (lowercase with dot), max bytes.
 KIND_POLICY: dict[str, dict] = {
     "character_reference": {
+        "mimes": frozenset({"image/png", "image/jpeg", "image/webp"}),
+        "extensions": frozenset({".png", ".jpg", ".jpeg", ".webp"}),
+        "max_bytes": 25 * 1024 * 1024,
+        "category": "image",
+    },
+    "art_direction_reference": {
         "mimes": frozenset({"image/png", "image/jpeg", "image/webp"}),
         "extensions": frozenset({".png", ".jpg", ".jpeg", ".webp"}),
         "max_bytes": 25 * 1024 * 1024,
@@ -346,6 +356,74 @@ def _image_dimensions(data: bytes, mime_type: str | None) -> tuple[int | None, i
     return dims[0], dims[1]
 
 
+def _image_bytes_are_decodable(data: bytes, mime_type: str | None) -> bool:
+    """Verify supported image bytes without requiring an external decoder.
+
+    Pillow is used when installed. The dependency-free fallbacks validate the
+    complete PNG chunk stream (including CRCs and compressed pixel data), the
+    JPEG framing/dimensions, or the WebP RIFF envelope/dimensions.
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image  # type: ignore
+
+        with Image.open(BytesIO(data)) as image:
+            image.load()
+        return True
+    except ImportError:
+        pass
+    except Exception:
+        return False
+
+    width, height = _image_dimensions(data, mime_type)
+    if width is None or height is None or width <= 0 or height <= 0:
+        return False
+
+    if mime_type == "image/png" or data[:8] == b"\x89PNG\r\n\x1a\n":
+        if data[:8] != b"\x89PNG\r\n\x1a\n":
+            return False
+        offset = 8
+        idat = bytearray()
+        saw_ihdr = saw_iend = False
+        try:
+            while offset + 12 <= len(data):
+                length = struct.unpack(">I", data[offset : offset + 4])[0]
+                chunk_type = data[offset + 4 : offset + 8]
+                chunk_end = offset + 12 + length
+                if chunk_end > len(data):
+                    return False
+                chunk_data = data[offset + 8 : offset + 8 + length]
+                recorded_crc = struct.unpack(">I", data[offset + 8 + length : chunk_end])[0]
+                actual_crc = binascii.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
+                if recorded_crc != actual_crc:
+                    return False
+                if chunk_type == b"IHDR":
+                    saw_ihdr = True
+                elif chunk_type == b"IDAT":
+                    idat.extend(chunk_data)
+                elif chunk_type == b"IEND":
+                    saw_iend = True
+                    offset = chunk_end
+                    break
+                offset = chunk_end
+            if not saw_ihdr or not saw_iend or not idat:
+                return False
+            return bool(zlib.decompress(bytes(idat))) and offset == len(data)
+        except (ValueError, struct.error, zlib.error):
+            return False
+
+    if mime_type == "image/jpeg" or data[:2] == b"\xff\xd8":
+        return data[:2] == b"\xff\xd8" and data[-2:] == b"\xff\xd9"
+
+    if mime_type == "image/webp" or (len(data) >= 12 and data[8:12] == b"WEBP"):
+        if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+            return False
+        return int.from_bytes(data[4:8], "little") + 8 == len(data)
+
+    return False
+
+
 def _wav_duration_sec(path: Path) -> float | None:
     try:
         with wave.open(str(path), "rb") as handle:
@@ -428,6 +506,221 @@ def _audit(
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _record_integrity_failure(
+    db: Session,
+    asset: PlanningMediaAsset,
+    *,
+    actual_sha256: str | None,
+    operation: str,
+) -> None:
+    _audit(
+        db,
+        entity_id=asset.id,
+        action="planning_media_asset_integrity_failure",
+        details={
+            "kind": asset.kind,
+            "managed_uri": asset.managed_uri,
+            "expected_sha256": asset.sha256,
+            "actual_sha256": actual_sha256,
+            "operation": operation,
+            "fail_closed": True,
+        },
+    )
+    db.commit()
+
+
+def _atomic_restore_missing(path: Path, data: bytes, expected_sha256: str) -> None:
+    """Atomically install verified bytes only while the destination is absent."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.repair")
+    try:
+        with temporary_path.open("xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_sha = sha256_file(temporary_path)
+        if temporary_sha != expected_sha256:
+            raise ReferenceAssetError(
+                "Rehydration temporary file failed SHA-256 verification."
+            )
+        if path.exists():
+            actual_sha = sha256_file(path) if path.is_file() else None
+            if actual_sha != expected_sha256:
+                raise ReferenceAssetError(
+                    "Managed asset appeared during rehydration with unexpected bytes."
+                )
+            return
+        temporary_path.replace(path)
+        if sha256_file(path) != expected_sha256:
+            raise ReferenceAssetError(
+                "Rehydrated managed file failed final SHA-256 verification."
+            )
+    finally:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def rehydrate_missing_asset(
+    db: Session,
+    asset: PlanningMediaAsset,
+    *,
+    source_data: bytes,
+    source_sha256: str,
+    source_label: str,
+) -> bool:
+    """Restore absent managed bytes while preserving the row and approval state.
+
+    Existing files are never overwritten. A wrong existing SHA is audited and
+    rejected. The caller must supply bytes from a manifest-verified source.
+    """
+    expected_sha = asset.sha256
+    if not expected_sha:
+        raise ReferenceAssetError("Asset database row has no SHA-256 value.")
+    actual_source_sha = sha256_bytes(source_data)
+    if source_sha256 != expected_sha or actual_source_sha != expected_sha:
+        raise ReferenceAssetError(
+            "Rehydration source SHA-256 does not match the database asset SHA-256."
+        )
+
+    policy = KIND_POLICY.get(asset.kind)
+    if policy and policy["category"] == "image" and not _image_bytes_are_decodable(
+        source_data, asset.mime_type
+    ):
+        raise ReferenceAssetError("Rehydration source image could not be decoded.")
+
+    path = resolve_managed_path(asset)
+    if path.exists():
+        actual_sha = sha256_file(path) if path.is_file() else None
+        if actual_sha != expected_sha:
+            _record_integrity_failure(
+                db,
+                asset,
+                actual_sha256=actual_sha,
+                operation="rehydrate_missing_asset",
+            )
+            raise ReferenceAssetError(
+                "Managed asset bytes do not match the database SHA-256; refusing to overwrite."
+            )
+        return False
+
+    _atomic_restore_missing(path, source_data, expected_sha)
+    _audit(
+        db,
+        entity_id=asset.id,
+        action="planning_media_asset_bytes_rehydrated",
+        details={
+            "kind": asset.kind,
+            "managed_uri": asset.managed_uri,
+            "sha256": expected_sha,
+            "size_bytes": len(source_data),
+            "source_label": source_label,
+            "atomic_replace": True,
+            "approval_state_preserved": asset.approval_state,
+        },
+    )
+    db.commit()
+    db.refresh(asset)
+    return True
+
+
+def repair_duplicate_asset_bytes(
+    db: Session,
+    asset: PlanningMediaAsset,
+    *,
+    data: bytes,
+    digest: str,
+    mime_type: str | None,
+    policy: dict,
+    extra_metadata: dict | None,
+) -> bool:
+    """Self-heal a duplicate row's absent or corrupt managed bytes in place."""
+    path = resolve_managed_path(asset)
+    repair_reasons: list[str] = []
+    if not path.exists():
+        repair_reasons.append("managed_file_missing")
+    elif not path.is_file():
+        raise ReferenceAssetError("Managed asset path is not a file.")
+    else:
+        actual_sha = sha256_file(path)
+        if actual_sha != digest:
+            repair_reasons.append("sha256_mismatch")
+        elif policy["category"] == "image" and not _image_bytes_are_decodable(
+            path.read_bytes(), mime_type
+        ):
+            repair_reasons.append("image_decode_failed")
+
+    if not repair_reasons:
+        return False
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.repair")
+    try:
+        with temporary_path.open("xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if sha256_file(temporary_path) != digest:
+            raise ReferenceAssetError(
+                "Repaired asset temporary file failed SHA-256 verification."
+            )
+        temporary_path.replace(path)
+        if sha256_file(path) != digest:
+            raise ReferenceAssetError(
+                "Repaired managed asset failed final SHA-256 verification."
+            )
+    finally:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    extracted = _extract_metadata(
+        category=policy["category"],
+        data=data,
+        mime_type=mime_type,
+        path=path,
+    )
+    metadata = dict(asset.metadata_json or {})
+    metadata.update(extracted["metadata_json"])
+    if extra_metadata:
+        metadata["client"] = extra_metadata
+    if asset.kind == "voice_source":
+        metadata["consent_confirmed"] = True
+
+    asset.sha256 = digest
+    asset.mime_type = mime_type
+    asset.width = extracted["width"]
+    asset.height = extracted["height"]
+    asset.duration_sec = extracted["duration_sec"]
+    asset.metadata_json = metadata
+    asset.size_bytes = len(data)
+    _audit(
+        db,
+        entity_id=asset.id,
+        action="planning_media_asset_bytes_repaired",
+        details={
+            "kind": asset.kind,
+            "sha256": digest,
+            "size_bytes": len(data),
+            "mime_type": mime_type,
+            "repair_reasons": repair_reasons,
+        },
+    )
+    db.commit()
+    db.refresh(asset)
+    return True
 
 
 def find_duplicate(
@@ -532,12 +825,27 @@ def upload_asset(
         mime_type=mime_type,
         extension=extension,
     )
+    if policy["category"] == "image" and not _image_bytes_are_decodable(data, mime_type):
+        raise ReferenceAssetError("Image payload could not be decoded.")
 
     digest = sha256_bytes(data)
     existing = find_duplicate(db, project_id, kind, digest)
     if existing is not None:
-        # Never clone: return the existing record. Optionally un-archive if needed.
-        if existing.archived_at is not None:
+        # Never clone. A verified duplicate payload is also the recovery source
+        # for an absent or corrupt managed file at the existing safe path.
+        repaired = repair_duplicate_asset_bytes(
+            db,
+            existing,
+            data=data,
+            digest=digest,
+            mime_type=mime_type,
+            policy=policy,
+            extra_metadata=extra_metadata,
+        )
+
+        # Byte repair preserves approval/archive state. Legacy duplicate-upload
+        # unarchiving remains available only when bytes were already healthy.
+        if existing.archived_at is not None and not repaired:
             affected_story_ids = _story_ids_referencing_asset(db, existing.id)
             existing.archived_at = None
             if existing.approval_state == "archived":
@@ -555,16 +863,16 @@ def upload_asset(
                     ),
                 },
             )
-            db.commit()
-            db.refresh(existing)
-        else:
+        elif not repaired:
             _audit(
                 db,
                 entity_id=existing.id,
                 action="planning_media_asset_duplicate_reused",
                 details={"sha256": digest, "kind": kind, "requested_kind": kind},
             )
+        if not repaired:
             db.commit()
+            db.refresh(existing)
         return existing, False
 
     stored_name = f"{uuid.uuid4().hex}{extension}"
@@ -575,8 +883,15 @@ def upload_asset(
     except ValueError as exc:
         raise ReferenceAssetError("Generated path escapes managed root.") from exc
 
-    # Write bytes, then extract metadata (audio duration needs a path for wave).
-    dest_path.write_bytes(data)
+    # Generated names still use exclusive creation so a collision can never
+    # overwrite an existing managed file.
+    with dest_path.open("xb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+    if sha256_file(dest_path) != digest:
+        dest_path.unlink(missing_ok=True)
+        raise ReferenceAssetError("Managed asset failed SHA-256 verification after write.")
     try:
         extracted = _extract_metadata(
             category=policy["category"],
@@ -878,6 +1193,17 @@ def open_asset_for_stream(
     path = resolve_managed_path(asset)
     if not path.exists() or not path.is_file():
         raise ReferenceAssetNotFoundError("Asset bytes are not available on disk.")
+    actual_sha = sha256_file(path)
+    if not asset.sha256 or actual_sha != asset.sha256:
+        _record_integrity_failure(
+            db,
+            asset,
+            actual_sha256=actual_sha,
+            operation="stream_asset_content",
+        )
+        raise ReferenceAssetError(
+            "Asset bytes failed SHA-256 verification and will not be streamed."
+        )
     return asset, path
 
 

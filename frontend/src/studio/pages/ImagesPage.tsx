@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, planningAssetContentUrl, type PlanningMediaAsset } from '../../api/client'
+import { api, type PlanningMediaAsset } from '../../api/client'
 import { useStudio } from '../StudioState'
+import { ManagedAssetImage } from '../components/ManagedAssetImage'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
 const GENERATION_DISABLED_REASON =
@@ -24,6 +25,7 @@ function errorText(error: unknown): string {
 export function ImagesPage() {
   const { data, readiness, busy, saveShot, setMessage } = useStudio()
   const [items, setItems] = useState<PlanningMediaAsset[] | null>(null)
+  const [artDirectionItems, setArtDirectionItems] = useState<PlanningMediaAsset[]>([])
   const [available, setAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,13 +56,18 @@ export function ImagesPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await api.listStartingImageAssets(data.story.project_id)
-      if (result == null) {
+      const [startingImageResult, artDirectionResult] = await Promise.all([
+        api.listStartingImageAssets(data.story.project_id),
+        api.listArtDirectionReferenceAssets(data.story.project_id),
+      ])
+      if (startingImageResult == null || artDirectionResult == null) {
         setAvailable(false)
         setItems(null)
+        setArtDirectionItems([])
       } else {
         setAvailable(true)
-        setItems(result.items)
+        setItems(startingImageResult.items)
+        setArtDirectionItems(artDirectionResult.items)
       }
     } catch (err) {
       setError(errorText(err))
@@ -77,6 +84,26 @@ export function ImagesPage() {
   if (!data) return null
 
   const assetsById = new Map(items?.map((asset) => [asset.id, asset]) ?? [])
+  const sceneRows = data.chapters.flatMap((chapter) =>
+    chapter.scenes.map((scene) => ({ chapter, scene })),
+  )
+  const sceneById = new Map(sceneRows.map((row) => [row.scene.id, row]))
+  const artDirectionRows = artDirectionItems
+    .map((asset) => {
+      const client = asset.metadata_json.client as Record<string, unknown> | undefined
+      const sceneId = typeof client?.scene_id === 'string' ? client.scene_id : null
+      const sceneNumber = typeof client?.scene_number === 'number' ? client.scene_number : null
+      const sceneRow =
+        (sceneId ? sceneById.get(sceneId) : null) ??
+        (sceneNumber ? sceneRows[sceneNumber - 1] : null) ??
+        null
+      return { asset, sceneRow, sceneNumber }
+    })
+    .sort(
+      (left, right) =>
+        (left.sceneNumber ?? Number.MAX_SAFE_INTEGER) -
+        (right.sceneNumber ?? Number.MAX_SAFE_INTEGER),
+    )
   const filteredRows = shotRows.filter(({ shot, scene, chapter }) => {
     const matchesRequirement =
       requirementFilter === 'all' ||
@@ -204,6 +231,41 @@ export function ImagesPage() {
           <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={loading || busy}>Refresh assets</button>
         </div>
 
+        <section className="art-direction-references" aria-labelledby="art-direction-heading">
+          <div className="panel-title">
+            <div>
+              <h3 id="art-direction-heading">Scene art-direction references</h3>
+              <p>Planning-only multi-panel boards. These are never shot starting images.</p>
+            </div>
+            <span className="status-pill">{artDirectionRows.length} references</span>
+          </div>
+          {artDirectionRows.length ? (
+            <div className="card-grid art-direction-grid">
+              {artDirectionRows.map(({ asset, sceneRow, sceneNumber }) => (
+                <article key={asset.id}>
+                  <ManagedAssetImage
+                    assetId={asset.mime_type?.startsWith('image/') ? asset.id : null}
+                    alt={`Art-direction storyboard reference for ${sceneRow?.scene.title ?? `scene ${sceneNumber ?? 'unknown'}`}`}
+                    fit="contain"
+                    className="art-direction-image"
+                    fallback={<span>Art-direction reference record unavailable</span>}
+                    errorLabel="Reference bytes unavailable"
+                    loading="eager"
+                  />
+                  <b>{sceneRow?.scene.title ?? `Scene ${sceneNumber ?? 'unmapped'}`}</b>
+                  <small>{sceneRow?.chapter.title ?? 'Scene mapping unavailable'}</small>
+                  <p>Planning reference · not an approved frame zero</p>
+                </article>
+              ))}
+            </div>
+          ) : !loading ? (
+            <EmptyState
+              title="No scene art-direction references"
+              detail="No planning-only storyboard boards are linked to this project."
+            />
+          ) : null}
+        </section>
+
         <div className="filters-row">
           <label>
             Requirement
@@ -242,7 +304,20 @@ export function ImagesPage() {
               const reasons = readiness?.reasons.filter((reason) => reason.entity_id === shot.id) ?? []
               return (
                 <article key={shot.id}>
-                  {asset?.mime_type?.startsWith('image/') ? <img src={planningAssetContentUrl(asset.id)} alt={`Starting image for ${shot.title}`} width="200" height="113" loading="lazy" /> : null}
+                  <ManagedAssetImage
+                    assetId={asset?.mime_type?.startsWith('image/') ? asset.id : null}
+                    alt={`Starting image for ${shot.title}`}
+                    fit="contain"
+                    className="shot-starting-image"
+                    fallback={
+                      <span>
+                        {shot.starting_image_asset_id
+                          ? 'Assigned image record unavailable'
+                          : 'No starting image assigned'}
+                      </span>
+                    }
+                    errorLabel="The assigned managed image could not be loaded."
+                  />
                   <b>{shot.title}</b>
                   <small>{chapter.title} · {scene.title}</small>
                   <ul className="kv-list">
@@ -266,6 +341,24 @@ export function ImagesPage() {
         {selectedShot ? (
           <section className="panel stack-form">
             <div className="panel-title"><div><h2>{selectedShot.title}</h2><p>{selectedRow?.chapter.title} · {selectedRow?.scene.title} · {selectedShot.duration_sec}s</p></div></div>
+            <ManagedAssetImage
+              assetId={
+                selectedAssignedAsset?.mime_type?.startsWith('image/')
+                  ? selectedAssignedAsset.id
+                  : null
+              }
+              alt={`Selected starting image for ${selectedShot.title}`}
+              fit="contain"
+              className="selected-shot-review-image"
+              fallback={
+                <span>
+                  {selectedShot.starting_image_asset_id
+                    ? 'Assigned image record unavailable'
+                    : 'No starting image assigned'}
+                </span>
+              }
+              errorLabel="The selected managed image could not be loaded."
+            />
             <ul className="kv-list">
               <li><span>Starting image</span><strong>{selectedShot.starting_image_required ? 'Required' : 'Optional'}</strong></li>
               <li><span>Current asset</span><strong>{selectedAssignedAsset?.original_filename ?? selectedShot.starting_image_asset_id ?? 'None'}</strong></li>
@@ -323,9 +416,22 @@ export function ImagesPage() {
         {items?.length ? (
           <section className="panel">
             <h2>Candidate inventory</h2>
-            <ul className="kv-list">
-              {items.map((asset) => <li key={asset.id}><span>{asset.original_filename ?? asset.id} · {formatBytes(asset.size_bytes)}</span><strong>{asset.approval_state}</strong></li>)}
-            </ul>
+            <div className="card-grid candidate-comparison-grid">
+              {items.map((asset) => (
+                <article key={asset.id}>
+                  <ManagedAssetImage
+                    assetId={asset.mime_type?.startsWith('image/') ? asset.id : null}
+                    alt={`Starting-image candidate ${asset.original_filename ?? asset.id}`}
+                    fit="contain"
+                    className="candidate-comparison-image"
+                    fallback={<span>Candidate image unavailable</span>}
+                    errorLabel="The candidate content request failed."
+                  />
+                  <b>{asset.original_filename ?? asset.id}</b>
+                  <small>{formatBytes(asset.size_bytes)} · {asset.approval_state}</small>
+                </article>
+              ))}
+            </div>
           </section>
         ) : null}
       </div>

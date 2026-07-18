@@ -130,7 +130,7 @@
     },
     {
       "asset_key": "scene_01_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 1,
@@ -150,7 +150,7 @@
     },
     {
       "asset_key": "scene_02_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 2,
@@ -170,7 +170,7 @@
     },
     {
       "asset_key": "scene_03_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 3,
@@ -190,7 +190,7 @@
     },
     {
       "asset_key": "scene_04_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 4,
@@ -210,7 +210,7 @@
     },
     {
       "asset_key": "scene_05_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 5,
@@ -230,7 +230,7 @@
     },
     {
       "asset_key": "scene_06_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 6,
@@ -250,7 +250,7 @@
     },
     {
       "asset_key": "scene_07_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 7,
@@ -270,7 +270,7 @@
     },
     {
       "asset_key": "scene_08_storyboard",
-      "kind": "starting_image",
+      "kind": "art_direction_reference",
       "role": "scene_storyboard_reference_board",
       "character_client_id": null,
       "scene_number": 8,

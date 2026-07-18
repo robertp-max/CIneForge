@@ -288,6 +288,28 @@ def build_canonical_snapshot(db: Session, story_id: UUID) -> dict:
         )
     )
 
+    art_direction_assets = list(
+        db.scalars(
+            select(PlanningMediaAsset)
+            .where(
+                PlanningMediaAsset.project_id == story.project_id,
+                PlanningMediaAsset.kind == "art_direction_reference",
+                PlanningMediaAsset.archived_at.is_(None),
+            )
+            .order_by(PlanningMediaAsset.id)
+        )
+    )
+    art_assets_by_scene_id: dict[str, list[PlanningMediaAsset]] = {}
+    art_assets_by_scene_number: dict[int, list[PlanningMediaAsset]] = {}
+    for asset in art_direction_assets:
+        client_metadata = (asset.metadata_json or {}).get("client", {})
+        scene_id = client_metadata.get("scene_id")
+        scene_number = client_metadata.get("scene_number")
+        if scene_id:
+            art_assets_by_scene_id.setdefault(str(scene_id), []).append(asset)
+        if scene_number is not None:
+            art_assets_by_scene_number.setdefault(int(scene_number), []).append(asset)
+
     asset_ids: set[UUID] = set()
     asset_ids.update(
         reference.asset_id
@@ -307,6 +329,7 @@ def build_canonical_snapshot(db: Session, story_id: UUID) -> dict:
         for preview in selected_previews.values()
         if preview.planning_media_asset_id is not None
     )
+    asset_ids.update(asset.id for asset in art_direction_assets)
     planning_assets = list(
         db.scalars(
             select(PlanningMediaAsset)
@@ -329,10 +352,15 @@ def build_canonical_snapshot(db: Session, story_id: UUID) -> dict:
     chapters_payload: list[dict] = []
     planned_duration = 0.0
 
+    scene_sequence_number = 0
     for chapter in chapters:
         chapter_duration = 0.0
         scenes_payload: list[dict] = []
         for scene in scenes_by_chapter.get(chapter.id, []):
+            scene_sequence_number += 1
+            art_references = art_assets_by_scene_id.get(str(scene.id))
+            if art_references is None:
+                art_references = art_assets_by_scene_number.get(scene_sequence_number, [])
             scene_duration = 0.0
             shots_payload: list[dict] = []
             for shot in shots_by_scene.get(scene.id, []):
@@ -434,6 +462,9 @@ def build_canonical_snapshot(db: Session, story_id: UUID) -> dict:
                     "conflict_or_beat": scene.conflict_or_beat,
                     "target_duration_sec": _float_or_none(scene.target_duration_sec),
                     "approval_state": scene.approval_state,
+                    "art_direction_reference_asset_ids": [
+                        str(asset.id) for asset in art_references
+                    ],
                     "duration_sec": scene_duration,
                     "shots": shots_payload,
                 }

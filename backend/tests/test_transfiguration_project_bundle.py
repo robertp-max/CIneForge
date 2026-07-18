@@ -67,6 +67,11 @@ def test_transfiguration_bundle_is_complete_and_fail_closed() -> None:
     assert len(manifest_items) == 14
     assert sum(item["role"] == "identity_reference_sheet" for item in manifest_items) == 6
     assert sum(item["role"] == "scene_storyboard_reference_board" for item in manifest_items) == 8
+    assert {
+        item["kind"]
+        for item in manifest_items
+        if item["role"] == "scene_storyboard_reference_board"
+    } == {"art_direction_reference"}
     preview_zip = BUNDLE / assets["bundled_preview_archive"]["path"]
     assert preview_zip.is_file()
     with zipfile.ZipFile(preview_zip) as archive:

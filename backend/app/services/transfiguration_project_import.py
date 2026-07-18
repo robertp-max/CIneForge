@@ -5,11 +5,12 @@ import json
 from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 from sqlalchemy import select
-from backend.app.db.base import AuditLog, Campaign, Chapter, ProjectStoryboardSettings, Scene, Shot, Story, StoryboardVersion, TimelineSlot, Track
+from backend.app.core.config import get_settings
+from backend.app.db.base import AuditLog, Campaign, Chapter, Project, ProjectStoryboardSettings, Scene, Shot, Story, StoryboardVersion, TimelineSlot, Track
 from backend.app.db.session import SessionLocal
 from backend.app.services import storyboard_mutations as mutations
 from backend.app.services import storyboard_snapshot
-from backend.app.services.transfiguration_project_bundle import ASSET_MANIFEST_PATH, PAYLOAD_PATH, _apply_settings, _bind_existing_ids, _import_assets, _load_json, _resolved_story_payload, _upsert_project_and_story
+from backend.app.services.transfiguration_project_bundle import ASSET_MANIFEST_PATH, PAYLOAD_PATH, _apply_settings, _bind_existing_ids, _import_assets, _load_json, _resolved_story_payload, _upsert_project_and_story, bind_scene_art_direction_metadata, migrate_legacy_storyboard_assets, repair_manifest_assets
 IMPORT_NAMESPACE = UUID('f2ad03b3-124e-4b76-a7c9-53f4a93b16ef')
 
 def _upsert_campaign_timeline(db, payload: dict) -> None:
@@ -82,8 +83,9 @@ def _apply_story_graph(db, story: Story, payload: dict, assets: dict[str, UUID])
                 shot.production_status = 'blocked'
                 metadata = shot_payload.get('production_metadata') or {}
                 shot.blocked_reason = f"Human approval required for character references and a clean single-frame start image; workflow admission/benchmark gates must pass; 2x final upscale required. Planned routes: preview={metadata.get('preview_workflow')}, final={metadata.get('final_workflow')}, control={metadata.get('control_workflow')}, continuity={metadata.get('continuity_workflow')}."
-                board_key = shot_payload.get('starting_image_reference_asset_key')
-                shot.starting_image_asset_id = assets.get(board_key) if board_key else None
+                # Multi-panel scene storyboard boards are planning references,
+                # never shot-specific frame-zero candidates.
+                shot.starting_image_asset_id = None
                 shot.starting_image_required = True
                 shot.approval_state = 'draft'
     db.flush()
@@ -114,6 +116,7 @@ def _dry_run_summary(payload: dict, manifest: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--dry-run', action='store_true', help='Validate and print without database or asset writes.')
+    parser.add_argument('--repair-assets-only', action='store_true', help='Verify managed Transfiguration assets and rehydrate missing bytes without changing hierarchy, shots, prompts, settings, approvals, campaigns, or timelines.')
     parser.add_argument('--source-archive', type=Path, help='Optional path to the original transfiguration.zip. Full-resolution selected images are SHA-verified and preferred over bundled previews.')
     args = parser.parse_args()
     payload = _load_json(PAYLOAD_PATH)
@@ -128,13 +131,37 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps({'status': 'dry_run_ok', **summary}, indent=2))
         return
+    settings = get_settings()
+    configuration = {
+        'database_url': settings.database_url,
+        'storage_root': str(settings.storage_root.resolve()),
+    }
     with SessionLocal() as db:
+        if args.repair_assets_only:
+            project_id = UUID(payload['project']['id'])
+            if db.get(Project, project_id) is None:
+                raise SystemExit(f'Transfiguration project not found: {project_id}')
+            repair = repair_manifest_assets(
+                db,
+                project_id,
+                manifest,
+                source_archive=args.source_archive,
+            )
+            print(json.dumps({
+                'status': 'assets_repaired_or_verified',
+                **configuration,
+                'project_id': str(project_id),
+                **repair,
+            }, indent=2))
+            return
         project, story = _upsert_project_and_story(db, payload)
+        semantic_migration = migrate_legacy_storyboard_assets(db, project.id, manifest)
         _apply_settings(db, project.id, payload['settings'])
         assets = _import_assets(db, project.id, manifest, source_archive=args.source_archive)
         _upsert_campaign_timeline(db, payload)
         shots = _apply_story_graph(db, story, payload, assets)
+        bind_scene_art_direction_metadata(db, story, payload, manifest, assets)
         version = _create_or_reuse_draft_version(db, story)
-        print(json.dumps({'status': 'imported', **summary, 'project_id': str(project.id), 'story_id': str(story.id), 'storyboard_version_id': str(version.id), 'storyboard_version_number': version.version_number, 'managed_asset_ids': {key: str(value) for key, value in assets.items()}, 'shot_ids': {key: str(value.id) for key, value in shots.items()}, 'rendering_enabled': False, 'next_action': 'Review and approve character references, clean per-shot start frames, narration and workflow benchmark gates in CineForge.'}, indent=2))
+        print(json.dumps({'status': 'imported', **configuration, **summary, 'project_id': str(project.id), 'story_id': str(story.id), 'storyboard_version_id': str(version.id), 'storyboard_version_number': version.version_number, 'managed_asset_ids': {key: str(value) for key, value in assets.items()}, 'shot_ids': {key: str(value.id) for key, value in shots.items()}, 'semantic_migration': semantic_migration, 'rendering_enabled': False, 'next_action': 'Review character references, scene art-direction boards, clean per-shot start frames, narration and workflow benchmark gates in CineForge.'}, indent=2))
 if __name__ == '__main__':
     main()

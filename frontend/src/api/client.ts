@@ -172,6 +172,7 @@ export type Scene = {
   title: string
   summary: string | null
   duration_sec: number
+  art_direction_reference_asset_ids?: string[]
   shots: Shot[]
 }
 
@@ -354,6 +355,7 @@ export type PhaseAScene = {
   title: string
   summary: string | null
   duration_sec: number
+  art_direction_reference_asset_ids?: string[]
   shots: PhaseAShot[]
 }
 
@@ -1446,6 +1448,10 @@ export const api = {
 
   listStartingImageAssets: (projectId: string) =>
     optionalRequest<PlanningMediaAssetList>(`/assets/projects/${projectId}?kind=starting_image`),
+  listArtDirectionReferenceAssets: (projectId: string) =>
+    optionalRequest<PlanningMediaAssetList>(
+      `/assets/projects/${projectId}?kind=art_direction_reference`,
+    ),
   uploadStartingImageAsset: (projectId: string, file: File) => {
     const query = new URLSearchParams({
       kind: 'starting_image',

@@ -694,6 +694,33 @@ def _project_shot_bounds(db: Session, scene_id: UUID) -> tuple[float, float]:
     return float(settings.shot_duration_min_sec), float(settings.shot_duration_max_sec)
 
 
+def _validate_starting_image_asset(
+    db: Session,
+    scene_id: UUID,
+    asset_id: UUID | None,
+) -> None:
+    if asset_id is None:
+        return
+    project_id = db.scalar(
+        select(Story.project_id)
+        .join(Chapter, Chapter.story_id == Story.id)
+        .join(Scene, Scene.chapter_id == Chapter.id)
+        .where(Scene.id == scene_id)
+    )
+    asset = db.get(PlanningMediaAsset, asset_id)
+    if (
+        project_id is None
+        or asset is None
+        or asset.project_id != project_id
+        or asset.kind != "starting_image"
+        or asset.archived_at is not None
+    ):
+        raise StoryboardDomainError(
+            "Shot starting_image_asset_id must reference an active starting_image "
+            "asset from the same project. Art-direction references cannot be assigned."
+        )
+
+
 def create_shot(db: Session, scene_id: UUID, payload: ShotCreate) -> Shot:
     scene, _, story = _active_scene_context(db, scene_id)
     story = _lock_story_for_mutation(db, story.id)
@@ -701,6 +728,7 @@ def create_shot(db: Session, scene_id: UUID, payload: ShotCreate) -> Shot:
     _enforce_shot_duration_policy(
         payload.duration_sec, payload.duration_override_reason, min_sec, max_sec
     )
+    _validate_starting_image_asset(db, scene_id, payload.starting_image_asset_id)
     shot = Shot(scene_id=scene_id, **payload.model_dump())
     db.add(shot)
     db.flush()
@@ -718,6 +746,7 @@ def update_shot(db: Session, shot_id: UUID, payload: ShotCreate) -> Shot:
     _enforce_shot_duration_policy(
         payload.duration_sec, payload.duration_override_reason, min_sec, max_sec
     )
+    _validate_starting_image_asset(db, shot.scene_id, payload.starting_image_asset_id)
     for field, value in payload.model_dump().items():
         setattr(shot, field, value)
     db.flush()
@@ -741,6 +770,10 @@ def patch_shot(db: Session, shot_id: UUID, payload: ShotUpdate) -> Shot:
     override_reason = data.get("duration_override_reason", shot.duration_override_reason)
     min_sec, max_sec = _project_shot_bounds(db, shot.scene_id)
     _enforce_shot_duration_policy(duration, override_reason, min_sec, max_sec)
+    if "starting_image_asset_id" in data:
+        _validate_starting_image_asset(
+            db, shot.scene_id, data["starting_image_asset_id"]
+        )
 
     if "order_index" in data and data["order_index"] != shot.order_index:
         collision = db.scalar(

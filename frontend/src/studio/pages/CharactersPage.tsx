@@ -1,15 +1,28 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   api,
-  planningAssetContentUrl,
   type CharacterReferenceLink,
   type PlanningMediaAsset,
 } from '../../api/client'
 import { useStudio } from '../StudioState'
+import { selectCharacterHeroReference } from '../characterReferences'
+import { ManagedAssetImage } from '../components/ManagedAssetImage'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 import { initials } from '../utils'
 
 const REFERENCE_ROLES = ['primary', 'alternate', 'expression', 'costume', 'detail'] as const
+
+function selectDisplayReference(
+  links: CharacterReferenceLink[],
+): CharacterReferenceLink | null {
+  return selectCharacterHeroReference(
+    links.filter(
+      (reference) =>
+        reference.asset?.archived_at == null &&
+        reference.asset?.mime_type?.startsWith('image/'),
+    ),
+  )
+}
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
@@ -22,7 +35,9 @@ export function CharactersPage() {
   const [newRole, setNewRole] = useState('')
   const [newDescription, setNewDescription] = useState('')
   const [assets, setAssets] = useState<PlanningMediaAsset[]>([])
-  const [references, setReferences] = useState<CharacterReferenceLink[]>([])
+  const [referencesByCharacter, setReferencesByCharacter] = useState<
+    Record<string, CharacterReferenceLink[]>
+  >({})
   const [referenceApiAvailable, setReferenceApiAvailable] = useState(true)
   const [selectedAssetId, setSelectedAssetId] = useState('')
   const [referenceRole, setReferenceRole] = useState<(typeof REFERENCE_ROLES)[number]>('primary')
@@ -36,29 +51,36 @@ export function CharactersPage() {
 
   const selectedCharacter =
     data?.characters.find((character) => character.id === selectedId) ?? data?.characters[0] ?? null
+  const references = selectedCharacter
+    ? (referencesByCharacter[selectedCharacter.id] ?? [])
+    : []
 
   const loadReferences = useCallback(async () => {
-    if (!data || !selectedCharacter) {
+    if (!data) {
       setAssets([])
-      setReferences([])
+      setReferencesByCharacter({})
       return
     }
     setLoadingReferences(true)
     setError(null)
     try {
-      const [assetResult, linkResult] = await Promise.all([
+      const [assetResult, ...linkResults] = await Promise.all([
         api.listCharacterReferenceAssets(data.story.project_id),
-        api.listCharacterReferences(selectedCharacter.id),
+        ...data.characters.map((character) => api.listCharacterReferences(character.id)),
       ])
-      if (assetResult == null || linkResult == null) {
+      if (assetResult == null || linkResults.some((result) => result == null)) {
         setReferenceApiAvailable(false)
         setAssets([])
-        setReferences([])
+        setReferencesByCharacter({})
         return
       }
       setReferenceApiAvailable(true)
       setAssets(assetResult.items)
-      setReferences(linkResult)
+      setReferencesByCharacter(
+        Object.fromEntries(
+          data.characters.map((character, index) => [character.id, linkResults[index] ?? []]),
+        ),
+      )
       setSelectedAssetId((current) =>
         assetResult.items.some((asset) => asset.id === current)
           ? current
@@ -69,7 +91,7 @@ export function CharactersPage() {
     } finally {
       setLoadingReferences(false)
     }
-  }, [data, selectedCharacter])
+  }, [data])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadReferences(), 0)
@@ -104,9 +126,13 @@ export function CharactersPage() {
     ? data.voices.find((voice) => voice.id === selectedCharacter.assigned_voice_profile_id)
     : null
   const selectedVoice = data.voices.find((voice) => voice.id === selectedVoiceId)
-  const heroReference = references.find(
-    (reference) => reference.reference_role === 'primary' && reference.approved,
-  )
+  const heroReference = selectDisplayReference(references)
+  const approvedHeroReference =
+    heroReference?.approved &&
+    (heroReference.reference_role === 'primary' || heroReference.reference_role === 'hero')
+      ? heroReference
+      : null
+  const selectedDisplayReference = selectDisplayReference(references)
 
   const onAddCharacter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -323,14 +349,30 @@ export function CharactersPage() {
           <EmptyState title="No characters yet" detail="Add a character to begin the production bible." />
         ) : (
           <div className="people-grid">
-            {data.characters.map((character) => (
+            {data.characters.map((character) => {
+              const displayReference = selectDisplayReference(
+                referencesByCharacter[character.id] ?? [],
+              )
+              return (
               <article key={character.id}>
-                <span className="avatar" aria-hidden="true">{initials(character.name)}</span>
+                <ManagedAssetImage
+                  assetId={displayReference?.asset_id}
+                  alt={`${character.name} character reference`}
+                  fit="cover"
+                  className="character-card-portrait"
+                  fallback={<span className="avatar" aria-hidden="true">{initials(character.name)}</span>}
+                  errorLabel={`The linked reference for ${character.name} is unavailable.`}
+                />
                 <b>{character.name}</b>
                 <small>{character.role ?? 'Role not specified'} · {character.approval_state}</small>
                 <p>{character.physical_description || 'Physical description not recorded.'}</p>
                 <button
                   type="button"
+                  aria-label={
+                    character.id === selectedCharacter?.id
+                      ? `${character.name} selected`
+                      : `Open ${character.name} bible`
+                  }
                   className={character.id === selectedCharacter?.id ? 'primary-button touch-target' : 'secondary-button touch-target'}
                   onClick={() => {
                     setSelectedId(character.id)
@@ -340,7 +382,8 @@ export function CharactersPage() {
                   {character.id === selectedCharacter?.id ? 'Selected' : 'Open bible'}
                 </button>
               </article>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -359,6 +402,14 @@ export function CharactersPage() {
             <div className="panel-title">
               <div><h2>{selectedCharacter.name}</h2><p>Persisted identity fields · {selectedCharacter.approval_state}</p></div>
             </div>
+            <ManagedAssetImage
+              assetId={selectedDisplayReference?.asset_id}
+              alt={`${selectedCharacter.name} selected character reference`}
+              fit="cover"
+              className="selected-character-portrait"
+              fallback={<span className="avatar" aria-hidden="true">{initials(selectedCharacter.name)}</span>}
+              errorLabel={`The selected reference for ${selectedCharacter.name} is unavailable.`}
+            />
             {error ? <ErrorState detail={error} /> : null}
             <label>Name<input name="name" required defaultValue={selectedCharacter.name} disabled={busy || saving} /></label>
             <label>Role<input name="role" defaultValue={selectedCharacter.role ?? ''} disabled={busy || saving} /></label>
@@ -389,7 +440,7 @@ export function CharactersPage() {
             <ul className="kv-list">
               <li><span>Scenes</span><strong>{linkedScenes.length}</strong></li>
               <li><span>Shots</span><strong>{linkedShots.length}</strong></li>
-              <li><span>Approved hero</span><strong>{heroReference ? 'Ready' : 'Missing'}</strong></li>
+              <li><span>Approved hero</span><strong>{approvedHeroReference ? 'Ready' : 'Missing'}</strong></li>
               <li><span>Canonical voice</span><strong>{canonicalVoice?.name ?? 'Not assigned by an applied proposal'}</strong></li>
             </ul>
             {linkedScenes.length ? <p className="form-hint">Scenes: {linkedScenes.map((scene) => scene.title).join(', ')}</p> : null}
@@ -444,10 +495,22 @@ export function CharactersPage() {
             {loadingReferences ? <LoadingState title="Loading character references…" /> : null}
             {!referenceApiAvailable && !loadingReferences ? <UnavailableState title="Character-reference API unavailable" detail="No file or link operation was substituted." /> : null}
             {references.length ? (
-              <div className="card-grid">
+              <div className="card-grid reference-strip">
                 {references.map((reference) => (
                   <article key={reference.id}>
-                    {reference.asset?.mime_type?.startsWith('image/') ? <img src={planningAssetContentUrl(reference.asset_id)} alt={`${selectedCharacter.name} ${reference.reference_role} reference`} width="200" height="140" loading="lazy" /> : null}
+                    <ManagedAssetImage
+                      assetId={
+                        reference.asset?.archived_at == null &&
+                        reference.asset?.mime_type?.startsWith('image/')
+                          ? reference.asset_id
+                          : null
+                      }
+                      alt={`${selectedCharacter.name} ${reference.reference_role} reference`}
+                      fit="contain"
+                      className="reference-thumbnail"
+                      fallback={<span>Reference image unavailable</span>}
+                      errorLabel="The managed reference content request failed."
+                    />
                     <b>{reference.asset?.original_filename ?? reference.asset_id}</b>
                     <small>{reference.reference_role} · {reference.approved ? 'approved' : 'not approved'}</small>
                     <p>{reference.asset?.approval_state ?? 'Asset record unavailable'} · {reference.asset?.mime_type ?? 'Unknown type'}</p>
