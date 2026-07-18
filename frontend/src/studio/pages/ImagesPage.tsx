@@ -66,8 +66,10 @@ export function ImagesPage() {
         setArtDirectionItems([])
       } else {
         setAvailable(true)
-        setItems(startingImageResult.items)
-        setArtDirectionItems(artDirectionResult.items)
+        setItems(startingImageResult.items.filter((asset) => asset.kind === 'starting_image'))
+        setArtDirectionItems(
+          artDirectionResult.items.filter((asset) => asset.kind === 'art_direction_reference'),
+        )
       }
     } catch (err) {
       setError(errorText(err))
@@ -132,6 +134,9 @@ export function ImagesPage() {
   const selectedReadiness = selectedShot
     ? (readiness?.reasons.filter((reason) => reason.entity_id === selectedShot.id) ?? [])
     : []
+  const selectedReviewMetadata = selectedAssignedAsset?.metadata_json.client as
+    | Record<string, unknown>
+    | undefined
 
   const onUpload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -365,7 +370,19 @@ export function ImagesPage() {
               <li><span>Current approval</span><strong>{selectedAssignedAsset?.approval_state ?? 'Not assigned'}</strong></li>
               <li><span>Continuity source</span><strong>{selectedShot.continuity_source_type || 'none'}</strong></li>
               <li><span>Source shot</span><strong>{selectedShot.continuity_source_shot_id ?? 'None'}</strong></li>
+              {selectedReviewMetadata?.classification ? (
+                <li><span>Review class</span><strong>{String(selectedReviewMetadata.classification)}</strong></li>
+              ) : null}
+              {selectedReviewMetadata?.confidence != null ? (
+                <li><span>Mapping confidence</span><strong>{Number(selectedReviewMetadata.confidence).toFixed(2)}</strong></li>
+              ) : null}
             </ul>
+            {Array.isArray(selectedReviewMetadata?.alternate_candidate_filenames) && selectedReviewMetadata.alternate_candidate_filenames.length ? (
+              <p className="form-hint">
+                <strong>Reviewed alternates:</strong>{' '}
+                {selectedReviewMetadata.alternate_candidate_filenames.map(String).join(', ')}
+              </p>
+            ) : null}
             <label>
               Candidate asset
               <select value={selectedAssetId} onChange={(event) => setAssetDraft({ shotId: selectedShot.id, assetId: event.target.value })} disabled={approvalSaving || saving || busy || !available}>
@@ -429,6 +446,17 @@ export function ImagesPage() {
                   />
                   <b>{asset.original_filename ?? asset.id}</b>
                   <small>{formatBytes(asset.size_bytes)} · {asset.approval_state}</small>
+                  {asset.metadata_json.client && typeof asset.metadata_json.client === 'object' ? (
+                    <p className="form-hint">
+                      {String((asset.metadata_json.client as Record<string, unknown>).classification ?? 'Unclassified candidate')}
+                      {(asset.metadata_json.client as Record<string, unknown>).suggested_shot_code
+                        ? ` · ${(asset.metadata_json.client as Record<string, unknown>).suggested_shot_code}`
+                        : ''}
+                      {(asset.metadata_json.client as Record<string, unknown>).confidence != null
+                        ? ` · ${Number((asset.metadata_json.client as Record<string, unknown>).confidence).toFixed(2)}`
+                        : ''}
+                    </p>
+                  ) : null}
                 </article>
               ))}
             </div>

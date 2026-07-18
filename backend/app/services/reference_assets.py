@@ -948,6 +948,102 @@ def upload_asset(
         raise
 
 
+def stage_asset_for_transaction(
+    db: Session,
+    *,
+    project_id: UUID,
+    kind: str,
+    data: bytes,
+    original_filename: str,
+    content_type: str,
+    source_type: str = "imported",
+    approval_state: str = "draft",
+    extra_metadata: dict | None = None,
+) -> tuple[PlanningMediaAsset, bool, Path | None]:
+    """Stage one managed asset without committing so a caller can own the transaction.
+
+    The returned path is non-null only for newly written bytes. The caller must
+    delete that path if its wider transaction rolls back. Existing managed bytes
+    are verified and never repaired or overwritten by this boundary.
+    """
+    _project_or_error(db, project_id)
+    safe_name = _sanitize_original_filename(original_filename)
+    extension = _extension_for(safe_name, content_type)
+    mime_type = _normalize_mime(content_type, extension)
+    policy = _validate_kind_and_payload(
+        kind,
+        size_bytes=len(data),
+        mime_type=mime_type,
+        extension=extension,
+    )
+    if policy["category"] == "image" and not _image_bytes_are_decodable(data, mime_type):
+        raise ReferenceAssetError("Image payload could not be decoded.")
+
+    digest = sha256_bytes(data)
+    existing = find_duplicate(db, project_id, kind, digest)
+    if existing is not None:
+        if existing.archived_at is not None:
+            raise ReferenceAssetError("Matching managed asset is archived; refusing implicit reuse.")
+        path = resolve_managed_path(existing)
+        if not path.is_file() or sha256_file(path) != digest:
+            raise ReferenceAssetError(
+                "Matching managed asset bytes are missing or changed; refusing implicit repair."
+            )
+        if existing.approval_state != approval_state:
+            raise ReferenceAssetError(
+                "Matching managed asset has a different approval state; refusing to change it."
+            )
+        return existing, False, None
+
+    stored_name = f"{uuid.uuid4().hex}{extension}"
+    dest_path = (_kind_dir(project_id, kind) / stored_name).resolve()
+    try:
+        dest_path.relative_to(managed_root())
+    except ValueError as exc:
+        raise ReferenceAssetError("Generated path escapes managed root.") from exc
+
+    try:
+        with dest_path.open("xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if sha256_file(dest_path) != digest:
+            raise ReferenceAssetError("Managed asset failed SHA-256 verification after write.")
+        extracted = _extract_metadata(
+            category=policy["category"],
+            data=data,
+            mime_type=mime_type,
+            path=dest_path,
+        )
+        metadata = dict(extracted["metadata_json"])
+        if extra_metadata:
+            metadata["client"] = extra_metadata
+        asset = PlanningMediaAsset(
+            project_id=project_id,
+            kind=kind,
+            source_type=source_type,
+            managed_uri=build_managed_uri(project_id, kind, stored_name),
+            sha256=digest,
+            mime_type=mime_type,
+            width=extracted["width"],
+            height=extracted["height"],
+            duration_sec=extracted["duration_sec"],
+            approval_state=approval_state,
+            metadata_json=metadata,
+            original_filename=safe_name,
+            size_bytes=len(data),
+        )
+        db.add(asset)
+        db.flush()
+        return asset, True, dest_path
+    except Exception:
+        try:
+            dest_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def upload_asset_from_fileobj(
     db: Session,
     *,
