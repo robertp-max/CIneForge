@@ -15,6 +15,7 @@ from backend.app.schemas.storyboard_settings import (
     DEFAULT_SPEAKING_RATE,
     ProjectStoryboardSettingsRead,
 )
+from backend.app.schemas.production import PhaseOneBaselineKey, ProductionPipelineRead
 
 
 class ProjectCreate(BaseModel):
@@ -37,6 +38,7 @@ class ProjectWorkspaceCreate(BaseModel):
 
     idempotency_key: str = Field(min_length=8, max_length=128)
     name: str = Field(min_length=1, max_length=200)
+    auto_title: bool = False
     description: str | None = Field(default=None, max_length=2000)
     source_mode: Literal["story", "blank", "import"]
     story_title: str = Field(min_length=1, max_length=300)
@@ -48,6 +50,12 @@ class ProjectWorkspaceCreate(BaseModel):
     point_of_view: str | None = None
     visual_style: str | None = None
     production_notes: str | None = None
+    language: str = Field(default="English", min_length=1, max_length=100)
+    narration_dialogue_preference: str | None = None
+    source_fidelity_constraints: str | None = None
+    content_constraints: str | None = None
+    run_phase_one: bool = False
+    comparison_baseline: PhaseOneBaselineKey | None = None
 
     aspect_ratio: str = Field(default="16:9", min_length=1, max_length=32)
     preview_width: int = Field(default=DEFAULT_PREVIEW_WIDTH, gt=0)
@@ -72,6 +80,8 @@ class ProjectWorkspaceCreate(BaseModel):
     def require_source_material(self):
         if self.source_mode != "blank" and not self.base_story.strip():
             raise ValueError("base_story is required unless source_mode is blank.")
+        if self.run_phase_one and not self.base_story.strip():
+            raise ValueError("base_story is required when run_phase_one is enabled.")
         return self
 
 
@@ -80,6 +90,7 @@ class ProjectWorkspaceRead(BaseModel):
     story: StoryRead
     settings: ProjectStoryboardSettingsRead
     idempotent_replay: bool
+    production_pipeline: ProductionPipelineRead | None = None
 
 
 class CampaignCreate(BaseModel):

@@ -515,6 +515,104 @@ class Story(UUIDMixin, StoryboardTimestampMixin, Base):
     )
 
 
+PRODUCTION_PHASE_LIFECYCLE_STATES = (
+    "not_started",
+    "drafting",
+    "qa_pending",
+    "needs_revision",
+    "ready_for_review",
+    "approved",
+    "blocked",
+)
+
+
+class ProductionPhase(UUIDMixin, StoryboardTimestampMixin, Base):
+    """Canonical seven-phase lifecycle ledger for one story.
+
+    Completion and approval intentionally remain separate.  ``is_stale`` is
+    orthogonal to lifecycle state so an upstream revision can preserve, rather
+    than delete, downstream work while making its regeneration need explicit.
+    """
+
+    __tablename__ = "production_phases"
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    phase_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_started"
+    )
+    current_version_number: Mapped[int | None] = mapped_column(Integer)
+    is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    locked_reason: Mapped[str | None] = mapped_column(Text)
+    is_stale: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    stale_reason: Mapped[str | None] = mapped_column(Text)
+    generation_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("story_id", "phase_number", name="uq_production_phase_story_number"),
+        CheckConstraint(
+            "phase_number >= 1 AND phase_number <= 7",
+            name="ck_production_phase_number",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ("
+            "'not_started', 'drafting', 'qa_pending', 'needs_revision', "
+            "'ready_for_review', 'approved', 'blocked')",
+            name="ck_production_phase_lifecycle_state",
+        ),
+        CheckConstraint(
+            "current_version_number IS NULL OR current_version_number > 0",
+            name="ck_production_phase_current_version",
+        ),
+        Index("ix_production_phases_story_number", "story_id", "phase_number"),
+    )
+
+
+class ProductionPhaseVersion(UUIDMixin, StoryboardTimestampMixin, Base):
+    """Immutable output snapshot for one production-phase attempt/revision."""
+
+    __tablename__ = "production_phase_versions"
+    production_phase_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("production_phases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    input_snapshot_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    output_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    previous_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("production_phase_versions.id", ondelete="SET NULL")
+    )
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "production_phase_id",
+            "version_number",
+            name="uq_production_phase_version",
+        ),
+        CheckConstraint("version_number > 0", name="ck_production_phase_version_number"),
+        CheckConstraint(
+            "lifecycle_state IN ("
+            "'not_started', 'drafting', 'qa_pending', 'needs_revision', "
+            "'ready_for_review', 'approved', 'blocked')",
+            name="ck_production_phase_version_lifecycle_state",
+        ),
+        Index(
+            "ix_production_phase_versions_phase_version",
+            "production_phase_id",
+            "version_number",
+        ),
+    )
+
+
 class PlanningMediaAsset(UUIDMixin, StoryboardTimestampMixin, Base):
     __tablename__ = "planning_media_assets"
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True)

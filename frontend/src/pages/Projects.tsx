@@ -46,6 +46,10 @@ type ProjectDraft = {
   qualityPreference: string
   costSensitivity: string
   productionNotes: string
+  language: string
+  narrationDialoguePreference: string
+  sourceFidelityConstraints: string
+  contentConstraints: string
 }
 
 const EMPTY_DRAFT: ProjectDraft = {
@@ -66,6 +70,10 @@ const EMPTY_DRAFT: ProjectDraft = {
   qualityPreference: 'Quality weighted',
   costSensitivity: 'Balanced',
   productionNotes: '',
+  language: 'English',
+  narrationDialoguePreference: 'Non-diegetic narration with intentional silence; dialogue only when the story requires it.',
+  sourceFidelityConstraints: '',
+  contentConstraints: '',
 }
 
 const SOURCE_OPTIONS: { id: SourceMode; icon: string; title: string; detail: string }[] = [
@@ -317,10 +325,6 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
   }
 
   const validate = () => {
-    if (step === 1 && !draft.name.trim()) {
-      setError('Give the project a name before continuing.')
-      return false
-    }
     if (step === 2 && draft.sourceMode !== 'blank' && !draft.baseStory.trim()) {
       setError(draft.sourceMode === 'import' ? 'Choose a source file or paste its contents.' : 'Add the source story, script, or treatment.')
       return false
@@ -349,12 +353,15 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
     try {
       const dimensions = OUTPUT_DIMENSIONS[draft.aspectRatio] ?? OUTPUT_DIMENSIONS['16:9']
       const hostedAllowed = draft.privacy === 'Hosted providers allowed'
+      const autoTitle = !draft.name.trim()
+      const workingTitle = draft.name.trim() || 'CineForge Production'
       const workspace = await api.createProjectWorkspace({
         idempotency_key: idempotencyKey.current,
-        name: draft.name.trim(),
+        name: workingTitle,
+        auto_title: autoTitle,
         description: draft.description.trim() || null,
         source_mode: draft.sourceMode,
-        story_title: draft.name.trim(),
+        story_title: workingTitle,
         base_story: draft.baseStory.trim(),
         target_duration_sec: draft.targetRuntime,
         audience: draft.audience.trim() || null,
@@ -363,6 +370,11 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
         point_of_view: draft.pointOfView,
         visual_style: draft.visualStyle.trim() || null,
         production_notes: draft.productionNotes.trim() || null,
+        language: draft.language,
+        narration_dialogue_preference: draft.narrationDialoguePreference.trim() || null,
+        source_fidelity_constraints: draft.sourceFidelityConstraints.trim() || null,
+        content_constraints: draft.contentConstraints.trim() || null,
+        run_phase_one: draft.sourceMode !== 'blank',
         aspect_ratio: draft.aspectRatio,
         preview_width: dimensions.preview[0],
         preview_height: dimensions.preview[1],
@@ -409,7 +421,7 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
         <section className="wizard-panel">
           {step === 1 ? (
             <div className="wizard-section">
-              <div className="wizard-heading"><span>STEP 1 OF 3</span><h2>How should this project begin?</h2><p>Choose the intake path and name the production. You can change every detail later.</p></div>
+              <div className="wizard-heading"><span>STEP 1 OF 3</span><h2>How should this project begin?</h2><p>Choose the intake path. A title is optional—CineForge can create the first working title from your prompt.</p></div>
               <div className="source-options">
                 {SOURCE_OPTIONS.map((option) => (
                   <button type="button" key={option.id} className={draft.sourceMode === option.id ? 'selected' : ''} onClick={() => update('sourceMode', option.id)}>
@@ -418,7 +430,7 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
                 ))}
               </div>
               <div className="wizard-form">
-                <label>Project name <em>Required</em><input autoFocus value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="e.g. The Transfiguration" /></label>
+                <label>Project name <em>Optional</em><input autoFocus value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="Leave blank and CineForge will create the title" /></label>
                 <label>Short description<textarea value={draft.description} onChange={(event) => update('description', event.target.value)} placeholder="What are you creating, and what should the audience experience?" /></label>
               </div>
             </div>
@@ -426,12 +438,12 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
 
           {step === 2 ? (
             <div className="wizard-section">
-              <div className="wizard-heading"><span>STEP 2 OF 3</span><h2>Shape the story and timing</h2><p>CineForge will use this source to propose chapters, scenes, shots, narration, and starting-image requirements.</p></div>
+              <div className="wizard-heading"><span>STEP 2 OF 3</span><h2>Give CineForge one creative prompt</h2><p>Phase 1 will expand it into a complete editable script, narration/dialogue structure, pacing plan, duration analysis, assumptions, and QA report. Scene and shot segmentation remains locked for Phase 2.</p></div>
               {draft.sourceMode === 'import' ? <label className="import-drop"><input type="file" accept=".txt,.md,.json,text/plain,application/json" onChange={(event) => void loadSource(event)} /><span>⇧</span><b>{draft.baseStory ? 'Source file loaded' : 'Choose a source file'}</b><small>TXT, Markdown, or JSON · the file stays in this browser until project creation</small></label> : null}
               {draft.sourceMode === 'blank' ? (
                 <div className="blank-start-note"><span>✦</span><span><b>Blank structure selected</b><p>The new project will open as an empty project shell so you can build without inherited story content.</p></span></div>
               ) : (
-                <div className="wizard-form"><label>{draft.sourceMode === 'import' ? 'Imported source' : 'Source story, script, or treatment'} <em>Required</em><textarea className="source-story" value={draft.baseStory} onChange={(event) => update('baseStory', event.target.value)} placeholder="Paste the complete source material here…" /><small>{draft.baseStory.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words</small></label></div>
+                <div className="wizard-form"><label>{draft.sourceMode === 'import' ? 'Imported creative source' : 'Original creative prompt, story, or source text'} <em>Required</em><textarea className="source-story" value={draft.baseStory} onChange={(event) => update('baseStory', event.target.value)} placeholder="Describe the complete story, required moments, and creative boundaries in one prompt…" /><small>{draft.baseStory.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words</small></label></div>
               )}
               <div className="runtime-fields">
                 <label>Target minutes<input type="number" min="0" max="60" value={minutes} onChange={(event) => setRuntime(Number(event.target.value), seconds)} /></label>
@@ -446,6 +458,7 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
               <div className="wizard-heading"><span>STEP 3 OF 3</span><h2>Choose production defaults</h2><p>These settings guide planning recommendations. Nothing will render or download during project creation.</p></div>
               <div className="wizard-defaults wizard-form">
                 <label>Audience<input value={draft.audience} onChange={(event) => update('audience', event.target.value)} /></label>
+                <label>Language<input value={draft.language} onChange={(event) => update('language', event.target.value)} /></label>
                 <label>Genre<input value={draft.genre} onChange={(event) => update('genre', event.target.value)} /></label>
                 <label>Tone<input value={draft.tone} onChange={(event) => update('tone', event.target.value)} /></label>
                 <label>Point of view<select value={draft.pointOfView} onChange={(event) => update('pointOfView', event.target.value)}><option>Third person</option><option>First person</option><option>Second person</option><option>Omniscient</option></select></label>
@@ -456,6 +469,9 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
                 <label>Privacy preference<select value={draft.privacy} onChange={(event) => update('privacy', event.target.value)}><option>Prefer local for bulk work</option><option>Hosted providers allowed</option><option>Local only</option></select></label>
                 <label>Quality preference<select value={draft.qualityPreference} onChange={(event) => update('qualityPreference', event.target.value)}><option>Quality weighted</option><option>Balanced</option><option>Speed weighted</option></select></label>
                 <label>Cost sensitivity<select value={draft.costSensitivity} onChange={(event) => update('costSensitivity', event.target.value)}><option>Balanced</option><option>Minimize hosted usage</option><option>Quality first</option></select></label>
+                <label className="full-span">Narration and dialogue preference<textarea value={draft.narrationDialoguePreference} onChange={(event) => update('narrationDialoguePreference', event.target.value)} /></label>
+                <label className="full-span">Source-fidelity constraints<textarea value={draft.sourceFidelityConstraints} onChange={(event) => update('sourceFidelityConstraints', event.target.value)} placeholder="Required source events, facts, canon, quotation, or adaptation boundaries…" /></label>
+                <label className="full-span">Content constraints<textarea value={draft.contentConstraints} onChange={(event) => update('contentConstraints', event.target.value)} placeholder="Forbidden actions, sensitive-content boundaries, or other non-negotiables…" /></label>
                 <label className="full-span">Production notes<textarea value={draft.productionNotes} onChange={(event) => update('productionNotes', event.target.value)} placeholder="Continuity rules, visual boundaries, required moments, or technical constraints…" /></label>
               </div>
             </div>
@@ -465,21 +481,40 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
           <footer className="wizard-actions">
             <button type="button" className="secondary-button" onClick={() => step === 1 ? onBackToProjects?.() : setStep((current) => current - 1)}>{step === 1 ? 'Cancel' : 'Back'}</button>
             <span>Step {step} of 3</span>
-            {step < 3 ? <button type="button" className="primary-button" onClick={() => validate() && setStep((current) => current + 1)}>Continue →</button> : <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Creating project…' : '✦ Create project'}</button>}
+            {step < 3 ? <button type="button" className="primary-button" onClick={() => validate() && setStep((current) => current + 1)}>Continue →</button> : <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Phase 1 · Drafting complete script…' : draft.sourceMode === 'blank' ? '✦ Create project shell' : '✦ Create project & complete script'}</button>}
           </footer>
         </section>
 
         <aside className="project-preview">
           <div className="preview-cover"><span className="cover-grid" /><span className="cover-orb orb-a" /><span className="cover-orb orb-b" /><b>{projectInitials(draft.name || 'New project')}</b><small>PROJECT PREVIEW</small></div>
-          <div className="preview-copy"><span className="eyebrow">PRODUCTION FOUNDATION</span><h2>{draft.name.trim() || 'Untitled project'}</h2><p>{draft.description.trim() || 'Your project description will appear here.'}</p></div>
+          <div className="preview-copy"><span className="eyebrow">PRODUCTION FOUNDATION</span><h2>{draft.name.trim() || 'Title generated from your prompt'}</h2><p>{draft.description.trim() || 'Your complete Phase 1 script will remain editable and unapproved.'}</p></div>
           <dl>
             <div><dt>Source</dt><dd>{SOURCE_OPTIONS.find((option) => option.id === draft.sourceMode)?.title.replace('Start from a ', '')}</dd></div>
             <div><dt>Target runtime</dt><dd>{formatRuntime(draft.targetRuntime)}</dd></div><div><dt>Output</dt><dd>{draft.aspectRatio} · {draft.fps} fps</dd></div>
             <div><dt>Mode</dt><dd>{draft.orchestrationMode}</dd></div><div><dt>Visual style</dt><dd>{draft.visualStyle}</dd></div>
           </dl>
-          <div className="creation-boundary"><span>▣</span><p><b>Planning only</b>Creating this project stores an editable setup and opens story development. It does not render video, call a model, or download assets.</p></div>
+          <div className="creation-boundary"><span>▣</span><p><b>Phase 1 only</b>One submission creates an editable script package and QA report. Phases 2–7 stay locked. No image, voice, video, ComfyUI, FFmpeg, model-download, or render job can start.</p></div>
         </aside>
       </div>
+      {saving ? (
+        <div className="phase-one-progress" role="status" aria-live="polite">
+          <div className="phase-one-progress-card">
+            <span className="phase-one-spinner" aria-hidden="true" />
+            <div><span className="eyebrow">PHASE 1 OF EXACTLY 7</span><h2>Building your complete script</h2><p>CineForge is drafting the narrative package and running Phase 1 QA. Approval is never automatic.</p></div>
+            <ol>
+              <li className="active"><b>1</b><span>Script and Narrative Development<small>Drafting · QA pending</small></span></li>
+              {[
+                'Scene and Shot Segmentation',
+                'Character Development',
+                'Location and Key-Asset Development',
+                'Production Prompt and Workflow Package',
+                'Image and Voice Generation and Mapping',
+                'Video Generation, Assembly, and Final QA',
+              ].map((name, index) => <li key={name}><b>{index + 2}</b><span>{name}<small>Locked · not started</small></span></li>)}
+            </ol>
+          </div>
+        </div>
+      ) : null}
     </form>
   )
 }

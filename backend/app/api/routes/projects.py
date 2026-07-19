@@ -13,6 +13,7 @@ from backend.app.services.project_workspace import (
     ProjectWorkspaceConflictError,
     create_project_workspace,
 )
+from backend.app.services import production_phases
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -50,6 +51,7 @@ def create_workspace(
         story=StoryRead.model_validate(result.story),
         settings=ProjectStoryboardSettingsRead.model_validate(result.settings),
         idempotent_replay=result.idempotent_replay,
+        production_pipeline=production_phases.get_pipeline(db, result.story.id),
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -17,6 +18,8 @@ from backend.app.db.base import (
     Story,
 )
 from backend.app.schemas.api import ProjectWorkspaceCreate
+from backend.app.schemas.production import PhaseOneGenerationInput
+from backend.app.services import production_phases
 from backend.app.services.storyboard_settings import default_settings_values
 
 
@@ -55,6 +58,33 @@ def _new_story(project_id, payload: ProjectWorkspaceCreate) -> Story:
         production_notes=payload.production_notes,
         approval_state="draft",
     )
+
+
+def _derived_title(prompt: str) -> str:
+    """Derive a reviewable working title without assuming any story domain."""
+    first = next(
+        (line.strip() for line in re.split(r"[\r\n]+", prompt) if line.strip()),
+        "Untitled CineForge Production",
+    )
+    subject_match = re.search(
+        r"\b(?:story|film|narrative|sequence|documentary)\s+(?:about|of)\s+(.+?)(?:\s+using\b|\s+with\b|[.;]|$)",
+        first,
+        flags=re.IGNORECASE,
+    )
+    candidate = subject_match.group(1) if subject_match else first
+    candidate = re.sub(
+        r"^(?:create|develop|write|make)\s+(?:an?\s+)?(?:\d+[\s-]*(?:minute|min)\s+)?",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    ).strip(" .,:;–—-")
+    words = candidate.split()
+    if len(words) > 10:
+        candidate = " ".join(words[:10]).rstrip(" ,;:")
+    if not candidate:
+        return "Untitled CineForge Production"
+    titled = candidate[0].upper() + candidate[1:]
+    return titled[:200]
 
 
 def _new_settings(project_id, payload: ProjectWorkspaceCreate) -> ProjectStoryboardSettings:
@@ -113,14 +143,39 @@ def create_project_workspace(db: Session, payload: ProjectWorkspaceCreate) -> Pr
         return _load_replay(db, existing, request_hash)
 
     try:
-        project = Project(name=payload.name, description=payload.description)
+        workspace_title = _derived_title(payload.base_story) if payload.auto_title else payload.name
+        project = Project(name=workspace_title, description=payload.description)
         db.add(project)
         db.flush()
 
         story = _new_story(project.id, payload)
+        if payload.auto_title:
+            story.title = workspace_title
         settings = _new_settings(project.id, payload)
         db.add_all((story, settings))
         db.flush()
+
+        production_phases.ensure_contract(db, story, commit=False)
+        if payload.run_phase_one:
+            production_phases.generate_phase_one(
+                db,
+                story.id,
+                PhaseOneGenerationInput(
+                    original_prompt=payload.base_story,
+                    target_duration_sec=payload.target_duration_sec,
+                    audience=payload.audience,
+                    genre=payload.genre,
+                    tone=payload.tone,
+                    language=payload.language,
+                    visual_style=payload.visual_style,
+                    narration_dialogue_preference=payload.narration_dialogue_preference,
+                    source_fidelity_constraints=payload.source_fidelity_constraints,
+                    content_constraints=payload.content_constraints,
+                    comparison_baseline=payload.comparison_baseline,
+                    requested_by="project_creation",
+                ),
+                commit=False,
+            )
 
         db.add(
             ProjectWorkspaceCreation(

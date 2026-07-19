@@ -1,0 +1,60 @@
+{
+  "schema_name": "cineforge.phase_one_quality_baseline",
+  "schema_version": 1,
+  "baseline_project_id": "1823e5da-e926-5b61-9d45-4bf9bea10c94",
+  "baseline_title": "The Transfiguration — Five-Minute Cinematic Sequence",
+  "target_duration_sec": 300,
+  "required_events": [
+    {
+      "label": "Jesus leads Peter, James, and John up the mountain to pray",
+      "term_groups": [["jesus"], ["peter"], ["james"], ["john"], ["mountain"], ["pray", "prayer"]]
+    },
+    {
+      "label": "The disciples struggle with sleep",
+      "term_groups": [["disciples", "peter"], ["sleep", "weary", "exhausted"]]
+    },
+    {
+      "label": "Jesus is transfigured in white-gold glory",
+      "term_groups": [["transfigured", "transfiguration"], ["glory", "radiance", "light"], ["white", "gold"]]
+    },
+    {
+      "label": "Moses and Elijah appear beside Jesus",
+      "term_groups": [["moses"], ["elijah"], ["jesus"]]
+    },
+    {
+      "label": "Peter proposes shelters",
+      "term_groups": [["peter"], ["shelters", "tents", "tabernacles"]]
+    },
+    {
+      "label": "The bright cloud overshadows the group",
+      "term_groups": [["bright"], ["cloud"], ["overshadows", "envelops"]]
+    },
+    {
+      "label": "The Father's voice commands the disciples to listen to the Son",
+      "term_groups": [["father"], ["voice"], ["listen", "hear"], ["son"]]
+    },
+    {
+      "label": "The disciples fall in fear",
+      "term_groups": [["disciples"], ["fall", "ground"], ["fear", "afraid"]]
+    },
+    {
+      "label": "Jesus touches and reassures them",
+      "term_groups": [["jesus"], ["touches", "touch"], ["reassures", "afraid", "fear"]]
+    },
+    {
+      "label": "Jesus remains alone with the disciples on the mountain",
+      "term_groups": [["jesus"], ["alone"], ["disciples"], ["mountain", "summit"]]
+    }
+  ],
+  "unsafe_positive_assertions": [
+    "jesus flies upward",
+    "jesus ascends into heaven",
+    "jesus disappears into the sky",
+    "jesus stands on clouds"
+  ],
+  "required_human_review": [
+    "Confirm the combined Synoptic account remains faithful to the intended source tradition.",
+    "Confirm that divine speech and quoted scripture use the approved translation or paraphrase.",
+    "Confirm that expansion adds performance and atmosphere without inventing contradictory theology."
+  ]
+}

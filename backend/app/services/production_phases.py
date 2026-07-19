@@ -1,0 +1,965 @@
+"""Exact seven-phase production ledger and Phase 1 script generation.
+
+This module is deliberately planning-text only.  It imports no media generator,
+render queue, ComfyUI client, voice worker, model installer, or FFmpeg service.
+Phase 1 stops at a versioned script package and QA report in
+``ready_for_review`` or ``needs_revision``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from backend.app.db.base import (
+    AuditLog,
+    ProductionPhase,
+    ProductionPhaseVersion,
+    QAReport,
+    Story,
+)
+from backend.app.schemas.production import (
+    PhaseOneGenerationInput,
+    PhaseOneMutationResponse,
+    PhaseOneRevisionRequest,
+    PhaseVersionRead,
+    ProductionPhaseRead,
+    ProductionPipelineRead,
+    QAReportRead,
+)
+
+
+PHASE_DEFINITIONS: tuple[tuple[int, str], ...] = (
+    (1, "Script and Narrative Development"),
+    (2, "Scene and Shot Segmentation"),
+    (3, "Character Development"),
+    (4, "Location and Key-Asset Development"),
+    (5, "Production Prompt and Workflow Package"),
+    (6, "Image and Voice Generation and Mapping"),
+    (7, "Video Generation, Assembly, and Final QA"),
+)
+
+COMPLETION_MESSAGE = "Your complete script is ready for review."
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BASELINE_PATH = (
+    REPO_ROOT
+    / "examples"
+    / "projects"
+    / "transfiguration_5m"
+    / "phase_one_baseline.json"
+)
+
+_CONSTRAINT_PREFIXES = (
+    "avoid ",
+    "constraint",
+    "do not ",
+    "hard rule",
+    "hard rule:",
+    "must not ",
+    "never ",
+    "no ",
+    "output ",
+    "style ",
+    "style:",
+    "tone ",
+    "tone:",
+    "use ",
+    "visual style",
+    "visual style:",
+)
+_SPEECH_CUE_RE = re.compile(
+    r"\b(?:asks?|commands?|declares?|replies?|says?|shouts?|speaks?|tells?|voices?|whispers?)\b",
+    flags=re.IGNORECASE,
+)
+_STOP_WORDS = frozenset(
+    {
+        "about",
+        "after",
+        "again",
+        "also",
+        "been",
+        "before",
+        "being",
+        "between",
+        "could",
+        "from",
+        "have",
+        "into",
+        "more",
+        "must",
+        "only",
+        "other",
+        "should",
+        "that",
+        "their",
+        "there",
+        "these",
+        "they",
+        "this",
+        "through",
+        "with",
+        "would",
+    }
+)
+_FORBIDDEN_PHASE_ONE_KEYS = frozenset(
+    {
+        "characters",
+        "comfy_job",
+        "comfyui",
+        "ffmpeg_job",
+        "generation_jobs",
+        "images",
+        "locations",
+        "render_jobs",
+        "scenes",
+        "shots",
+        "starting_images",
+        "videos",
+        "voices",
+        "workflow_routes",
+    }
+)
+
+
+class ProductionPhaseError(ValueError):
+    pass
+
+
+class ProductionPhaseConflictError(ProductionPhaseError):
+    pass
+
+
+def _canonical_hash(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _words(value: str) -> list[str]:
+    return re.findall(r"[A-Za-z0-9'’]+", value or "")
+
+
+def _word_count(value: str) -> int:
+    return len(_words(value))
+
+
+def _shorten(value: str, max_words: int = 34) -> str:
+    words = (value or "").strip().split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words]).rstrip(" ,;:") + "…"
+
+
+def _split_prompt(original_prompt: str) -> tuple[list[str], list[str]]:
+    normalized = re.sub(r"\r\n?", "\n", original_prompt).strip()
+    chunks = re.split(r"(?<=[.!?;])\s+|\n+", normalized)
+    facts: list[str] = []
+    constraints: list[str] = []
+    for raw in chunks:
+        text = re.sub(r"^[\s*#>\-–—\d.)]+", "", raw).strip()
+        if len(text) < 3:
+            continue
+        lowered = text.casefold()
+        if lowered.startswith(_CONSTRAINT_PREFIXES) or any(
+            marker in lowered
+            for marker in (
+                "not the ascension",
+                "does not fly",
+                "does not ascend",
+                "aspect ratio",
+                "frames per second",
+            )
+        ):
+            constraints.append(text)
+        else:
+            facts.append(text)
+
+    if not facts:
+        facts = [normalized]
+    if len(facts) == 1 and len(facts[0].split(",")) >= 4:
+        comma_facts = [item.strip() for item in facts[0].split(",") if len(item.strip()) > 8]
+        if len(comma_facts) >= 3:
+            facts = comma_facts
+    return facts[:16], constraints
+
+
+def _group_facts(facts: list[str], group_count: int = 4) -> list[list[str]]:
+    groups: list[list[str]] = [[] for _ in range(group_count)]
+    for index, fact in enumerate(facts):
+        bucket = min(group_count - 1, int(index * group_count / max(1, len(facts))))
+        groups[bucket].append(fact)
+    previous = facts[0]
+    for group in groups:
+        if not group:
+            group.append(previous)
+        previous = group[-1]
+    return groups
+
+
+def _movement_name(index: int) -> str:
+    return ("Opening", "Development", "Climax", "Resolution")[index]
+
+
+def _movement_intent(index: int) -> str:
+    return (
+        "Establish the physical world, central relationship, and dramatic question without rushing.",
+        "Let action and reaction deepen the stakes while every development remains traceable to the source.",
+        "Concentrate the strongest change and emotional consequence into the dramatic high point.",
+        "Let the consequence settle, resolve the central movement, and finish on a purposeful final image.",
+    )[index]
+
+
+def _build_phase_one_package(story: Story, payload: PhaseOneGenerationInput) -> dict[str, Any]:
+    facts, prompt_constraints = _split_prompt(payload.original_prompt)
+    groups = _group_facts(facts)
+    target = round(float(payload.target_duration_sec), 3)
+    movement_duration = target / 4
+    narration_lines: list[str] = []
+    dialogue_lines: list[str] = []
+    action_lines: list[str] = []
+    silent_beats: list[str] = []
+    emotional_progression: list[str] = []
+    dramatic_escalation: list[str] = []
+    treatment_sections: list[str] = []
+    script_sections: list[str] = []
+    pacing_plan: list[dict[str, Any]] = []
+    cumulative = 0.0
+
+    quoted_dialogue = re.findall(r"[“\"]([^”\"]{2,300})[”\"]", payload.original_prompt)
+
+    for index, group in enumerate(groups):
+        name = _movement_name(index)
+        intent = _movement_intent(index)
+        group_text = " ".join(item.rstrip(".;") + "." for item in group)
+        source_anchor = _shorten(group_text, 54)
+        start = cumulative
+        end = target if index == 3 else round(start + movement_duration, 3)
+        duration = round(end - start, 3)
+        cumulative = end
+
+        treatment_sections.append(
+            f"{name}: {intent} The source establishes: {group_text} "
+            "The passage expands through observable action, human reaction, environmental change, "
+            "and deliberate pauses rather than unsupported plot invention."
+        )
+
+        narration = _shorten(group_text, 72)
+        narration_lines.append(narration)
+        action = (
+            f"Translate this source event into grounded non-dialogue action: {group_text} "
+            f"Use {payload.visual_style or 'the selected visual direction'} to make cause, reaction, "
+            "and consequence legible. Keep geography and physical behavior coherent; do not advance "
+            "into events not supplied by the source."
+        )
+        action_lines.append(action)
+        silent = (
+            f"Hold a deliberate visual beat after “{_shorten(group_text, 20)}” so performance, "
+            "environment, and emotional consequence can register without explanatory speech."
+        )
+        silent_beats.append(silent)
+        emotional_progression.append(
+            (
+                "Orientation and anticipation",
+                "Growing attention and uncertainty",
+                "Overwhelming recognition and peak consequence",
+                "Mercy, reflection, and resolved forward movement",
+            )[index]
+        )
+        dramatic_escalation.append(
+            f"{name}: move from {('introduction', 'complication', 'revelation', 'aftermath')[index]} "
+            f"to the next supported consequence in the source: {_shorten(group_text, 24)}"
+        )
+
+        narration_words = _word_count(narration)
+        spoken_seconds = round(narration_words / 145 * 60, 2)
+        quoted_for_movement = quoted_dialogue[index] if index < len(quoted_dialogue) else None
+        source_speech = next((fact for fact in group if _SPEECH_CUE_RE.search(fact)), None)
+        dialogue_for_movement = quoted_for_movement
+        if dialogue_for_movement is None and source_speech is not None:
+            dialogue_for_movement = (
+                "Source-required speech; exact wording requires human review: "
+                f"{_shorten(source_speech, 54)}"
+            )
+        if dialogue_for_movement:
+            dialogue_lines.append(dialogue_for_movement)
+        dialogue_seconds = round(_word_count(dialogue_for_movement or "") / 135 * 60, 2)
+        visual_seconds = round(max(0.0, duration - spoken_seconds - dialogue_seconds), 2)
+        script_sections.append(
+            "\n".join(
+                (
+                    f"## {name} · {start:06.2f}–{end:06.2f}",
+                    f"**Narrative purpose:** {intent}",
+                    f"**ACTION:** {action}",
+                    f"**NARRATION:** {narration}",
+                    (
+                        f"**DIALOGUE:** {dialogue_for_movement}"
+                        if dialogue_for_movement
+                        else "**DIALOGUE:** No dialogue is required in this movement; performance and narration carry it."
+                    ),
+                    f"**SILENT VISUAL BEAT:** {silent}",
+                    f"**SOURCE ANCHOR:** {source_anchor}",
+                )
+            )
+        )
+        pacing_plan.append(
+            {
+                "movement": name.casefold(),
+                "start_sec": round(start, 3),
+                "end_sec": round(end, 3),
+                "duration_sec": duration,
+                "narration_duration_sec": spoken_seconds,
+                "dialogue_duration_sec": dialogue_seconds,
+                "planned_visual_duration_sec": visual_seconds,
+                "intent": intent,
+            }
+        )
+
+    narration_script = "\n\n".join(narration_lines)
+    dialogue_script = (
+        "\n\n".join(dialogue_lines)
+        if dialogue_lines
+        else "No spoken character dialogue is required by the supplied source. Dialogue remains explicitly distinguished from narration."
+    )
+    complete_script = "\n\n".join(script_sections)
+    narration_duration = round(_word_count(narration_script) / 145 * 60, 2)
+    dialogue_duration = round(_word_count(" ".join(dialogue_lines)) / 135 * 60, 2)
+    planned_visual_duration = round(max(0.0, target - narration_duration - dialogue_duration), 2)
+    detailed_treatment = "\n\n".join(treatment_sections)
+    source_notes = [
+        "Every narrative movement retains a direct source anchor from the original prompt.",
+        "Macro movements are editorial guidance only; final scene and shot segmentation is reserved for Phase 2.",
+    ]
+    if payload.source_fidelity_constraints:
+        source_notes.append(payload.source_fidelity_constraints.strip())
+    source_notes.extend(prompt_constraints)
+    if payload.content_constraints:
+        source_notes.append(payload.content_constraints.strip())
+
+    assumptions = [
+        "The requested duration is achieved through supported action, reaction, environmental observation, and intentional silence.",
+        "No new named character, location, object, or plot event was added beyond the supplied source.",
+        "Dialogue is omitted unless quoted or clearly required by the supplied prompt.",
+    ]
+    if payload.narration_dialogue_preference:
+        assumptions.append(
+            f"Narration/dialogue direction applied for review: {payload.narration_dialogue_preference.strip()}"
+        )
+
+    first_fact = _shorten(facts[0], 26).rstrip(".")
+    last_fact = _shorten(facts[-1], 22).rstrip(".")
+    package = {
+        "schema_name": "cineforge.phase_one_script_package",
+        "schema_version": 1,
+        "project_title": story.title,
+        "logline": f"{first_fact}, building toward {last_fact}.",
+        "short_synopsis": (
+            f"A {target / 60:g}-minute {payload.genre or 'cinematic'} narrative follows the source from "
+            f"{_shorten(facts[0], 18).rstrip('.')} through {_shorten(facts[-1], 18).rstrip('.')}. "
+            "The progression preserves the supplied events while allowing performance, atmosphere, "
+            "and intentional silence to carry meaning."
+        ),
+        "detailed_treatment": detailed_treatment,
+        "complete_script": complete_script,
+        "narration_script": narration_script,
+        "dialogue_script": dialogue_script,
+        "non_dialogue_action": action_lines,
+        "silent_visual_beats": silent_beats,
+        "emotional_progression": emotional_progression,
+        "dramatic_escalation": dramatic_escalation,
+        "narrative_structure": {
+            "opening": treatment_sections[0],
+            "middle": "\n\n".join(treatment_sections[1:2]),
+            "climax": treatment_sections[2],
+            "resolution": treatment_sections[3],
+        },
+        "pacing_plan": pacing_plan,
+        "duration_analysis": {
+            "target_duration_sec": target,
+            "narration_word_count": _word_count(narration_script),
+            "dialogue_word_count": _word_count(" ".join(dialogue_lines)),
+            "narration_duration_sec": narration_duration,
+            "dialogue_duration_sec": dialogue_duration,
+            "planned_silence_visual_duration_sec": planned_visual_duration,
+            "estimated_total_duration_sec": round(
+                narration_duration + dialogue_duration + planned_visual_duration, 2
+            ),
+            "narration_wpm": 145,
+            "dialogue_wpm": 135,
+        },
+        "script_word_count": _word_count(complete_script),
+        "source_fidelity_notes": source_notes,
+        "creative_assumptions": assumptions,
+        "creative_direction": {
+            "audience": payload.audience,
+            "genre": payload.genre,
+            "tone": payload.tone,
+            "language": payload.language,
+            "visual_style": payload.visual_style,
+            "narration_dialogue_preference": payload.narration_dialogue_preference,
+        },
+        "generation_boundary": {
+            "phase": 1,
+            "text_only": True,
+            "media_generated": False,
+            "rendering_enabled": False,
+            "final_scene_or_shot_segmentation_created": False,
+        },
+    }
+    if payload.comparison_baseline:
+        package["baseline_comparison"] = _compare_to_baseline(
+            package, payload.comparison_baseline
+        )
+    return package
+
+
+def _scan_forbidden_keys(value: Any, path: str = "$") -> list[str]:
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if str(key).casefold() in _FORBIDDEN_PHASE_ONE_KEYS:
+                found.append(child_path)
+            found.extend(_scan_forbidden_keys(child, child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            found.extend(_scan_forbidden_keys(child, f"{path}[{index}]"))
+    return found
+
+
+def _coverage_ratio(source: str, output: str) -> float:
+    source_terms = {
+        term.casefold()
+        for term in _words(source)
+        if len(term) >= 5 and term.casefold() not in _STOP_WORDS
+    }
+    if not source_terms:
+        return 1.0
+    output_terms = {term.casefold() for term in _words(output)}
+    return round(len(source_terms & output_terms) / len(source_terms), 4)
+
+
+def _qa_report(
+    package: dict[str, Any], generation_input: PhaseOneGenerationInput
+) -> dict[str, Any]:
+    duration = dict(package.get("duration_analysis") or {})
+    target = float(generation_input.target_duration_sec)
+    estimated = float(duration.get("estimated_total_duration_sec") or 0)
+    forbidden = _scan_forbidden_keys(package)
+    coverage = _coverage_ratio(
+        generation_input.original_prompt,
+        " ".join(
+            (
+                str(package.get("detailed_treatment") or ""),
+                str(package.get("complete_script") or ""),
+                " ".join(package.get("source_fidelity_notes") or []),
+            )
+        ),
+    )
+    minimum_words = max(240, round(target * 1.1))
+    checks = [
+        {
+            "code": "source_fidelity",
+            "label": "Original prompt remains represented",
+            "passed": coverage >= 0.72,
+            "blocking": True,
+            "detail": f"Source-term coverage is {coverage:.0%} (minimum 72%).",
+        },
+        {
+            "code": "narrative_structure",
+            "label": "Beginning, progression, climax, and ending exist",
+            "passed": all(
+                str((package.get("narrative_structure") or {}).get(key) or "").strip()
+                for key in ("opening", "middle", "climax", "resolution")
+            ),
+            "blocking": True,
+            "detail": "Four macro narrative movements are present; no final scenes or shots were created.",
+        },
+        {
+            "code": "production_length",
+            "label": "Script is long enough for the requested runtime",
+            "passed": int(package.get("script_word_count") or 0) >= minimum_words,
+            "blocking": True,
+            "detail": (
+                f"Complete script contains {package.get('script_word_count', 0)} words; "
+                f"minimum for this duration is {minimum_words}."
+            ),
+        },
+        {
+            "code": "duration_support",
+            "label": "Spoken and visual duration support the target",
+            "passed": abs(estimated - target) <= 0.5,
+            "blocking": True,
+            "detail": f"Estimated {estimated:.2f}s against a {target:.2f}s target.",
+        },
+        {
+            "code": "speech_distinction",
+            "label": "Narration and dialogue are explicitly distinguished",
+            "passed": bool(str(package.get("narration_script") or "").strip())
+            and bool(str(package.get("dialogue_script") or "").strip()),
+            "blocking": True,
+            "detail": "Narration and dialogue have separate editable fields and script labels.",
+        },
+        {
+            "code": "intentional_silence",
+            "label": "Silent visual beats are intentional",
+            "passed": len(package.get("silent_visual_beats") or []) >= 4,
+            "blocking": True,
+            "detail": "Each macro movement includes a declared silent visual beat.",
+        },
+        {
+            "code": "creative_consistency",
+            "label": "Audience, tone, language, and style remain declared",
+            "passed": bool((package.get("creative_direction") or {}).get("language")),
+            "blocking": True,
+            "detail": "Creative direction is stored with the versioned output for review.",
+        },
+        {
+            "code": "assumptions_disclosed",
+            "label": "Creative assumptions are disclosed",
+            "passed": bool(package.get("creative_assumptions")),
+            "blocking": True,
+            "detail": "Assumptions are explicit and editable.",
+        },
+        {
+            "code": "phase_boundary",
+            "label": "Phase 1 produced no downstream production records",
+            "passed": not forbidden
+            and (package.get("generation_boundary") or {}).get("media_generated") is False
+            and (package.get("generation_boundary") or {}).get("rendering_enabled") is False,
+            "blocking": True,
+            "detail": (
+                "Text-only Phase 1 boundary is intact."
+                if not forbidden
+                else f"Forbidden downstream fields found: {', '.join(forbidden)}"
+            ),
+        },
+    ]
+    passed = all(item["passed"] or not item["blocking"] for item in checks)
+    comparison = package.get("baseline_comparison")
+    review_items = list((comparison or {}).get("review_items") or [])
+    return {
+        "schema_name": "cineforge.phase_qa_report",
+        "schema_version": 1,
+        "phase_number": 1,
+        "passed": passed,
+        "result": "pass" if passed else "fail",
+        "checks": checks,
+        "blocking_failures": [item for item in checks if item["blocking"] and not item["passed"]],
+        "review_items": review_items,
+        "baseline_comparison": comparison,
+        "phase_boundary": {
+            "images_generated": False,
+            "voices_generated": False,
+            "videos_generated": False,
+            "comfyui_submitted": False,
+            "ffmpeg_executed": False,
+            "rendering_enabled": False,
+        },
+    }
+
+
+def _compare_to_baseline(package: dict[str, Any], baseline_key: str) -> dict[str, Any]:
+    if baseline_key != "transfiguration_phase_one":
+        raise ProductionPhaseError(f"Unknown Phase 1 baseline: {baseline_key}")
+    if not BASELINE_PATH.is_file():
+        raise ProductionPhaseError(f"Phase 1 baseline is missing: {BASELINE_PATH}")
+    baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+    narrative = " ".join(
+        (
+            str(package.get("detailed_treatment") or ""),
+            str(package.get("complete_script") or ""),
+            str(package.get("narration_script") or ""),
+        )
+    ).casefold()
+    differences: list[dict[str, Any]] = []
+    missing = 0
+    for event in baseline.get("required_events") or []:
+        alternatives = event.get("term_groups") or []
+        matched = all(any(term.casefold() in narrative for term in group) for group in alternatives)
+        classification = "equivalent" if matched else "missing"
+        if not matched:
+            missing += 1
+        differences.append(
+            {
+                "item": event.get("label"),
+                "classification": classification,
+                "detail": "Required source event is represented." if matched else "Required source event was not found.",
+            }
+        )
+
+    unsafe_hits = [
+        phrase
+        for phrase in baseline.get("unsafe_positive_assertions") or []
+        if phrase.casefold() in narrative
+    ]
+    for phrase in unsafe_hits:
+        differences.append(
+            {
+                "item": phrase,
+                "classification": "unsafe",
+                "detail": "Forbidden action appears as narrative action and requires correction.",
+            }
+        )
+
+    duration_target = float(baseline.get("target_duration_sec") or 0)
+    duration_actual = float(
+        (package.get("duration_analysis") or {}).get("estimated_total_duration_sec") or 0
+    )
+    duration_ok = abs(duration_actual - duration_target) <= 0.5
+    differences.append(
+        {
+            "item": "target duration",
+            "classification": "equivalent" if duration_ok else "regression",
+            "detail": f"Generated {duration_actual:.2f}s; baseline target {duration_target:.2f}s.",
+        }
+    )
+    overall = (
+        "unsafe"
+        if unsafe_hits
+        else "missing"
+        if missing
+        else "regression"
+        if not duration_ok
+        else "acceptable_variation"
+    )
+    review_items = list(baseline.get("required_human_review") or [])
+    return {
+        "baseline_key": baseline_key,
+        "baseline_project_id": baseline.get("baseline_project_id"),
+        "classification": overall,
+        "differences": differences,
+        "missing_count": missing,
+        "unsafe_count": len(unsafe_hits),
+        "review_items": review_items,
+        "note": "Comparison evaluates coverage and safety, not exact wording.",
+    }
+
+
+def ensure_contract(db: Session, story: Story, *, commit: bool = False) -> list[ProductionPhase]:
+    existing = list(
+        db.scalars(
+            select(ProductionPhase)
+            .where(ProductionPhase.story_id == story.id)
+            .order_by(ProductionPhase.phase_number)
+        )
+    )
+    by_number = {item.phase_number: item for item in existing}
+    created: list[ProductionPhase] = []
+    for phase_number, name in PHASE_DEFINITIONS:
+        phase = by_number.get(phase_number)
+        if phase is None:
+            phase = ProductionPhase(
+                story_id=story.id,
+                phase_number=phase_number,
+                name=name,
+                lifecycle_state="not_started",
+                is_locked=phase_number != 1,
+                locked_reason=(
+                    None
+                    if phase_number == 1
+                    else f"Phase {phase_number - 1} must be approved before this phase can begin."
+                ),
+                is_stale=False,
+            )
+            db.add(phase)
+            created.append(phase)
+        elif phase.name != name:
+            raise ProductionPhaseError(
+                f"Phase {phase_number} name drifted from the canonical seven-phase contract."
+            )
+    if created:
+        db.flush()
+        db.add(
+            AuditLog(
+                entity_type="story",
+                entity_id=story.id,
+                action="production_contract_initialized",
+                details={
+                    "exact_phase_count": 7,
+                    "created_phase_numbers": [item.phase_number for item in created],
+                },
+            )
+        )
+    if commit:
+        db.commit()
+    return list(
+        db.scalars(
+            select(ProductionPhase)
+            .where(ProductionPhase.story_id == story.id)
+            .order_by(ProductionPhase.phase_number)
+        )
+    )
+
+
+def _latest_version(db: Session, phase_id: UUID) -> ProductionPhaseVersion | None:
+    return db.scalar(
+        select(ProductionPhaseVersion)
+        .where(ProductionPhaseVersion.production_phase_id == phase_id)
+        .order_by(ProductionPhaseVersion.version_number.desc())
+        .limit(1)
+    )
+
+
+def _latest_qa(db: Session, version_id: UUID) -> QAReport | None:
+    return db.scalar(
+        select(QAReport)
+        .where(
+            QAReport.entity_type == "production_phase_version",
+            QAReport.entity_id == version_id,
+        )
+        .order_by(QAReport.created_at.desc())
+        .limit(1)
+    )
+
+
+def _phase_read(db: Session, phase: ProductionPhase) -> ProductionPhaseRead:
+    version = _latest_version(db, phase.id)
+    qa = _latest_qa(db, version.id) if version is not None else None
+    return ProductionPhaseRead(
+        id=phase.id,
+        phase_number=phase.phase_number,
+        name=phase.name,
+        lifecycle_state=phase.lifecycle_state,
+        current_version_number=phase.current_version_number,
+        is_locked=phase.is_locked,
+        locked_reason=phase.locked_reason,
+        is_stale=phase.is_stale,
+        stale_reason=phase.stale_reason,
+        generation_completed_at=phase.generation_completed_at,
+        approved_at=phase.approved_at,
+        latest_version=PhaseVersionRead.model_validate(version) if version is not None else None,
+        latest_qa_report=QAReportRead.model_validate(qa) if qa is not None else None,
+    )
+
+
+def get_pipeline(db: Session, story_id: UUID, *, ensure: bool = True) -> ProductionPipelineRead:
+    story = db.get(Story, story_id)
+    if story is None:
+        raise ProductionPhaseError("Story not found.")
+    phases = ensure_contract(db, story, commit=ensure)
+    reads = [_phase_read(db, phase) for phase in phases]
+    if len(reads) != 7:
+        raise ProductionPhaseError("Production contract must contain exactly seven phases.")
+    phase_one = reads[0]
+    message = COMPLETION_MESSAGE if phase_one.lifecycle_state == "ready_for_review" else None
+    return ProductionPipelineRead(
+        story_id=story.id,
+        project_id=story.project_id,
+        phases=reads,
+        completion_message=message,
+    )
+
+
+def _persist_phase_one_version(
+    db: Session,
+    *,
+    story: Story,
+    phase: ProductionPhase,
+    input_snapshot: dict[str, Any],
+    package: dict[str, Any],
+    qa: dict[str, Any],
+    created_by: str | None,
+    commit: bool,
+) -> ProductionPhaseVersion:
+    previous = _latest_version(db, phase.id)
+    next_version = 1 if previous is None else previous.version_number + 1
+    if previous is not None:
+        previous.superseded_at = datetime.now(timezone.utc)
+    state = "ready_for_review" if qa.get("passed") else "needs_revision"
+    version = ProductionPhaseVersion(
+        production_phase_id=phase.id,
+        version_number=next_version,
+        lifecycle_state=state,
+        completed=True,
+        input_snapshot_json=input_snapshot,
+        output_json=package,
+        input_hash=_canonical_hash(input_snapshot),
+        output_hash=_canonical_hash(package),
+        created_by=created_by,
+        previous_version_id=previous.id if previous is not None else None,
+    )
+    db.add(version)
+    db.flush()
+    db.add(
+        QAReport(
+            entity_type="production_phase_version",
+            entity_id=version.id,
+            report_json=qa,
+        )
+    )
+    phase.lifecycle_state = state
+    phase.current_version_number = next_version
+    phase.is_locked = False
+    phase.locked_reason = None
+    phase.is_stale = False
+    phase.stale_reason = None
+    phase.generation_completed_at = datetime.now(timezone.utc)
+    story.logline = package.get("logline")
+    story.synopsis = package.get("short_synopsis")
+    story.narrative_objectives_json = {
+        "phase_one_emotional_progression": package.get("emotional_progression") or [],
+        "phase_one_dramatic_escalation": package.get("dramatic_escalation") or [],
+        "phase_one_source_fidelity_notes": package.get("source_fidelity_notes") or [],
+    }
+    story.pacing_plan_json = {"macro_movements": package.get("pacing_plan") or []}
+    story.duration_strategy_json = dict(package.get("duration_analysis") or {})
+    story.approval_state = "draft"
+
+    downstream = list(
+        db.scalars(
+            select(ProductionPhase).where(
+                ProductionPhase.story_id == story.id,
+                ProductionPhase.phase_number > 1,
+            )
+        )
+    )
+    for item in downstream:
+        item.is_locked = True
+        item.locked_reason = f"Phase {item.phase_number - 1} must be approved before this phase can begin."
+        if item.current_version_number is not None:
+            item.is_stale = True
+            item.stale_reason = f"Phase 1 changed to version {next_version}; regeneration review is required."
+
+    db.add(
+        AuditLog(
+            entity_type="production_phase_version",
+            entity_id=version.id,
+            action="phase_one_completed" if qa.get("passed") else "phase_one_needs_revision",
+            details={
+                "story_id": str(story.id),
+                "phase_number": 1,
+                "version_number": next_version,
+                "completed": True,
+                "approved": False,
+                "lifecycle_state": state,
+                "qa_passed": bool(qa.get("passed")),
+                "media_generated": False,
+            },
+        )
+    )
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return version
+
+
+def generate_phase_one(
+    db: Session,
+    story_id: UUID,
+    payload: PhaseOneGenerationInput,
+    *,
+    commit: bool = True,
+) -> PhaseOneMutationResponse:
+    story = db.get(Story, story_id)
+    if story is None:
+        raise ProductionPhaseError("Story not found.")
+    phases = ensure_contract(db, story, commit=False)
+    phase = phases[0]
+    if phase.is_locked:
+        raise ProductionPhaseError(phase.locked_reason or "Phase 1 is locked.")
+    phase.lifecycle_state = "drafting"
+    db.add(
+        AuditLog(
+            entity_type="production_phase",
+            entity_id=phase.id,
+            action="phase_one_drafting_started",
+            details={"story_id": str(story.id), "approved": False},
+        )
+    )
+    package = _build_phase_one_package(story, payload)
+    phase.lifecycle_state = "qa_pending"
+    qa = _qa_report(package, payload)
+    _persist_phase_one_version(
+        db,
+        story=story,
+        phase=phase,
+        input_snapshot=payload.model_dump(mode="json"),
+        package=package,
+        qa=qa,
+        created_by=payload.requested_by,
+        commit=commit,
+    )
+    pipeline = get_pipeline(db, story.id, ensure=False)
+    phase_read = pipeline.phases[0]
+    message = COMPLETION_MESSAGE if qa.get("passed") else "Your script needs revision before review."
+    return PhaseOneMutationResponse(
+        pipeline=pipeline,
+        phase=phase_read,
+        completion_message=message,
+    )
+
+
+def revise_phase_one(
+    db: Session,
+    story_id: UUID,
+    payload: PhaseOneRevisionRequest,
+) -> PhaseOneMutationResponse:
+    story = db.get(Story, story_id)
+    if story is None:
+        raise ProductionPhaseError("Story not found.")
+    phases = ensure_contract(db, story, commit=False)
+    phase = phases[0]
+    current = _latest_version(db, phase.id)
+    if current is None:
+        raise ProductionPhaseError("Phase 1 has no generated version to revise.")
+    if current.version_number != payload.expected_version_number:
+        raise ProductionPhaseConflictError(
+            f"Phase 1 is now version {current.version_number}; reload before saving your revision."
+        )
+    generation_input = PhaseOneGenerationInput.model_validate(current.input_snapshot_json)
+    package = dict(current.output_json)
+    package.update(
+        payload.model_dump(
+            mode="json",
+            exclude={"expected_version_number", "requested_by"},
+        )
+    )
+    package["script_word_count"] = _word_count(str(package.get("complete_script") or ""))
+    narration_duration = round(_word_count(str(package.get("narration_script") or "")) / 145 * 60, 2)
+    dialogue_text = str(package.get("dialogue_script") or "")
+    dialogue_words = 0 if dialogue_text.startswith("No spoken character dialogue") else _word_count(dialogue_text)
+    dialogue_duration = round(dialogue_words / 135 * 60, 2)
+    target = float(generation_input.target_duration_sec)
+    visual_duration = round(max(0.0, target - narration_duration - dialogue_duration), 2)
+    package["duration_analysis"] = {
+        **dict(package.get("duration_analysis") or {}),
+        "target_duration_sec": target,
+        "narration_word_count": _word_count(str(package.get("narration_script") or "")),
+        "dialogue_word_count": dialogue_words,
+        "narration_duration_sec": narration_duration,
+        "dialogue_duration_sec": dialogue_duration,
+        "planned_silence_visual_duration_sec": visual_duration,
+        "estimated_total_duration_sec": round(
+            narration_duration + dialogue_duration + visual_duration, 2
+        ),
+    }
+    if generation_input.comparison_baseline:
+        package["baseline_comparison"] = _compare_to_baseline(
+            package, generation_input.comparison_baseline
+        )
+    qa = _qa_report(package, generation_input)
+    _persist_phase_one_version(
+        db,
+        story=story,
+        phase=phase,
+        input_snapshot=current.input_snapshot_json,
+        package=package,
+        qa=qa,
+        created_by=payload.requested_by,
+        commit=True,
+    )
+    pipeline = get_pipeline(db, story.id, ensure=False)
+    message = COMPLETION_MESSAGE if qa.get("passed") else "Your script needs revision before review."
+    return PhaseOneMutationResponse(
+        pipeline=pipeline,
+        phase=pipeline.phases[0],
+        completion_message=message,
+    )

@@ -56,6 +56,11 @@ STORYBOARD_PHASE1_TABLES = {
     "gpu_resource_leases",
 }
 
+PRODUCTION_CONTRACT_TABLES = {
+    "production_phases",
+    "production_phase_versions",
+}
+
 COMFY_JOB_WORKER_COLUMNS = {
     "worker_id",
     "reserved_at",
@@ -127,6 +132,10 @@ def test_storyboard_phase1_tables_exist_in_metadata():
     assert STORYBOARD_PHASE1_TABLES.issubset(set(Base.metadata.tables))
 
 
+def test_seven_phase_production_tables_exist_in_metadata():
+    assert PRODUCTION_CONTRACT_TABLES.issubset(set(Base.metadata.tables))
+
+
 def test_sqlite_connections_enforce_foreign_keys():
     sqlite_engine = create_engine("sqlite://", future=True)
     enable_sqlite_foreign_keys(sqlite_engine)
@@ -177,6 +186,7 @@ def test_alembic_upgrade_creates_required_tables(tmp_path):
         engine.dispose()
     assert REQUIRED_TABLES.issubset(table_names)
     assert STORYBOARD_PHASE1_TABLES.issubset(table_names)
+    assert PRODUCTION_CONTRACT_TABLES.issubset(table_names)
 
 
 def test_alembic_upgrade_includes_worker_ownership_fields(tmp_path):

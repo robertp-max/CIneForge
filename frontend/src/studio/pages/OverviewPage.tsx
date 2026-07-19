@@ -6,6 +6,7 @@ import {
 } from '../../api/client'
 import { useStudio } from '../StudioState'
 import { countScenes, countShots, formatDuration } from '../utils'
+import { ProductionPhases } from '../components/ProductionPhases'
 
 export function OverviewPage() {
   const { data, readiness, approvePlan, busy, backendStatus, navigate } = useStudio()
@@ -62,6 +63,8 @@ export function OverviewPage() {
 
   return (
     <>
+      <ProductionPhases storyId={data.story.id} />
+
       <div className="studio-metrics" aria-label="Planning metrics">
         {metrics.map(([label, value]) => (
           <article key={String(label)}>

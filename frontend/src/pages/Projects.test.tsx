@@ -24,14 +24,14 @@ const workspace = {
 }
 
 function reachFinalStep() {
-  fireEvent.change(screen.getByPlaceholderText('e.g. The Transfiguration'), {
+  fireEvent.change(screen.getByPlaceholderText('Leave blank and CineForge will create the title'), {
     target: { value: 'The Test Film' },
   })
   fireEvent.change(screen.getByPlaceholderText('What are you creating, and what should the audience experience?'), {
     target: { value: 'A test' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Continue →' }))
-  fireEvent.change(screen.getByPlaceholderText('Paste the complete source material here…'), {
+  fireEvent.change(screen.getByPlaceholderText('Describe the complete story, required moments, and creative boundaries in one prompt…'), {
     target: { value: 'The complete source.' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Continue →' }))
@@ -55,7 +55,7 @@ describe('new project workspace', () => {
     fireEvent.change(screen.getByLabelText('Privacy preference'), {
       target: { value: 'Hosted providers allowed' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '✦ Create project' }))
+    fireEvent.click(screen.getByRole('button', { name: '✦ Create project & complete script' }))
 
     await waitFor(() => expect(api.createProjectWorkspace).toHaveBeenCalledTimes(1))
     expect(api.createProjectWorkspace).toHaveBeenCalledWith(expect.objectContaining({
@@ -77,6 +77,7 @@ describe('new project workspace', () => {
       allow_model_download: false,
       allow_rendering: false,
       require_production_plan_approval: true,
+      run_phase_one: true,
     }))
     expect(onOpenProject).toHaveBeenCalledWith('project-1', 'The Test Film')
   })
@@ -88,11 +89,11 @@ describe('new project workspace', () => {
     render(<Projects mode="create" />)
     reachFinalStep()
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ Create project' }))
+    fireEvent.click(screen.getByRole('button', { name: '✦ Create project & complete script' }))
     expect((await screen.findByRole('alert')).textContent).toContain(
       'Workspace creation failed safely; no partial project was kept.',
     )
-    fireEvent.click(screen.getByRole('button', { name: '✦ Create project' }))
+    fireEvent.click(screen.getByRole('button', { name: '✦ Create project & complete script' }))
 
     await waitFor(() => expect(api.createProjectWorkspace).toHaveBeenCalledTimes(2))
     const firstKey = vi.mocked(api.createProjectWorkspace).mock.calls[0][0].idempotency_key

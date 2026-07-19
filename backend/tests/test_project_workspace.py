@@ -206,3 +206,19 @@ def test_workspace_safe_defaults_are_persisted(client: TestClient):
     assert settings["allow_model_download"] is False
     assert settings["allow_rendering"] is False
     assert settings["require_production_plan_approval"] is True
+
+
+def test_workspace_can_derive_title_from_the_single_prompt(client: TestClient):
+    response = client.post(
+        "/projects/workspace",
+        json=_payload(
+            auto_title=True,
+            name="CineForge Production",
+            story_title="CineForge Production",
+            base_story="Create a five-minute cinematic narrative of The Northern Crossing using a grounded style.",
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["project"]["name"] == "The Northern Crossing"
+    assert response.json()["story"]["title"] == "The Northern Crossing"

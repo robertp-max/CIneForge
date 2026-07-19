@@ -15,6 +15,7 @@ export type Project = {
 export type ProjectWorkspaceCreatePayload = {
   idempotency_key: string
   name: string
+  auto_title?: boolean
   description?: string | null
   source_mode: 'story' | 'blank' | 'import'
   story_title: string
@@ -26,6 +27,12 @@ export type ProjectWorkspaceCreatePayload = {
   point_of_view?: string | null
   visual_style?: string | null
   production_notes?: string | null
+  language?: string
+  narration_dialogue_preference?: string | null
+  source_fidelity_constraints?: string | null
+  content_constraints?: string | null
+  run_phase_one?: boolean
+  comparison_baseline?: 'transfiguration_phase_one' | null
   aspect_ratio: string
   preview_width: number
   preview_height: number
@@ -766,6 +773,150 @@ export type ProjectWorkspace = {
   story: Story
   settings: ProjectStoryboardSettings
   idempotent_replay: boolean
+  production_pipeline: ProductionPipeline | null
+}
+
+export type PhaseLifecycleState =
+  | 'not_started'
+  | 'drafting'
+  | 'qa_pending'
+  | 'needs_revision'
+  | 'ready_for_review'
+  | 'approved'
+  | 'blocked'
+
+export type PhaseOneDurationAnalysis = {
+  target_duration_sec: number
+  narration_word_count: number
+  dialogue_word_count: number
+  narration_duration_sec: number
+  dialogue_duration_sec: number
+  planned_silence_visual_duration_sec: number
+  estimated_total_duration_sec: number
+  narration_wpm?: number
+  dialogue_wpm?: number
+}
+
+export type PhaseOnePackage = {
+  schema_name: string
+  schema_version: number
+  project_title: string
+  logline: string
+  short_synopsis: string
+  detailed_treatment: string
+  complete_script: string
+  narration_script: string
+  dialogue_script: string
+  non_dialogue_action: string[]
+  silent_visual_beats: string[]
+  emotional_progression: string[]
+  dramatic_escalation: string[]
+  narrative_structure: Record<'opening' | 'middle' | 'climax' | 'resolution', string>
+  pacing_plan: Array<Record<string, string | number>>
+  duration_analysis: PhaseOneDurationAnalysis
+  script_word_count: number
+  source_fidelity_notes: string[]
+  creative_assumptions: string[]
+  creative_direction: Record<string, string | null>
+  generation_boundary: {
+    phase: 1
+    text_only: true
+    media_generated: false
+    rendering_enabled: false
+    final_scene_or_shot_segmentation_created: false
+  }
+  baseline_comparison?: {
+    baseline_key: string
+    baseline_project_id: string
+    classification: string
+    differences: Array<{ item: string; classification: string; detail: string }>
+    missing_count: number
+    unsafe_count: number
+    review_items: string[]
+    note: string
+  }
+}
+
+export type ProductionQAReport = {
+  id: string
+  entity_type: string
+  entity_id: string
+  created_at: string
+  report_json: {
+    phase_number: number
+    passed: boolean
+    result: 'pass' | 'fail'
+    checks: Array<{ code: string; label: string; passed: boolean; blocking: boolean; detail: string }>
+    blocking_failures: Array<Record<string, unknown>>
+    review_items: string[]
+    baseline_comparison?: PhaseOnePackage['baseline_comparison']
+    phase_boundary: Record<string, boolean>
+  }
+}
+
+export type ProductionPhaseVersion = {
+  id: string
+  version_number: number
+  lifecycle_state: PhaseLifecycleState
+  completed: boolean
+  input_snapshot_json: Record<string, unknown>
+  output_json: PhaseOnePackage | Record<string, unknown>
+  input_hash: string
+  output_hash: string
+  created_by: string | null
+  previous_version_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ProductionPhase = {
+  id: string
+  phase_number: number
+  name: string
+  lifecycle_state: PhaseLifecycleState
+  current_version_number: number | null
+  is_locked: boolean
+  locked_reason: string | null
+  is_stale: boolean
+  stale_reason: string | null
+  generation_completed_at: string | null
+  approved_at: string | null
+  latest_version: ProductionPhaseVersion | null
+  latest_qa_report: ProductionQAReport | null
+}
+
+export type ProductionPipeline = {
+  story_id: string
+  project_id: string
+  exact_phase_count: 7
+  phases: ProductionPhase[]
+  completion_message: string | null
+}
+
+export type PhaseOneRevisionPayload = Pick<
+  PhaseOnePackage,
+  | 'project_title'
+  | 'logline'
+  | 'short_synopsis'
+  | 'detailed_treatment'
+  | 'complete_script'
+  | 'narration_script'
+  | 'dialogue_script'
+  | 'non_dialogue_action'
+  | 'silent_visual_beats'
+  | 'emotional_progression'
+  | 'dramatic_escalation'
+  | 'source_fidelity_notes'
+  | 'creative_assumptions'
+> & {
+  expected_version_number: number
+  requested_by?: string | null
+}
+
+export type PhaseOneMutationResponse = {
+  pipeline: ProductionPipeline
+  phase: ProductionPhase
+  completion_message: string
 }
 
 export type VoiceProfileCreatePayload = {
@@ -1227,6 +1378,13 @@ export const api = {
   createProjectWorkspace: (payload: ProjectWorkspaceCreatePayload) =>
     request<ProjectWorkspace>('/projects/workspace', { method: 'POST', body: JSON.stringify(payload) }),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
+  getProductionPipeline: (storyId: string) =>
+    request<ProductionPipeline>(`/production/stories/${storyId}`),
+  revisePhaseOne: (storyId: string, payload: PhaseOneRevisionPayload) =>
+    request<PhaseOneMutationResponse>(`/production/stories/${storyId}/phases/1`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 
   listCampaigns: (projectId?: string) =>
     request<Campaign[]>(projectId ? `/campaigns?project_id=${projectId}` : '/campaigns'),

@@ -7,6 +7,7 @@ from backend.app.api.routes import (
     jobs,
     orchestration_runs,
     projects,
+    production,
     proposal_review,
     providers,
     runtime_catalog,
@@ -21,6 +22,7 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(storyboard_settings.router)
 api_router.include_router(projects.router)
+api_router.include_router(production.router)
 api_router.include_router(campaigns.router)
 api_router.include_router(jobs.router)
 api_router.include_router(runtime_catalog.router)
@@ -31,4 +33,3 @@ api_router.include_router(orchestration_runs.router)
 api_router.include_router(proposal_review.router)
 api_router.include_router(storyboard_crud.router)
 api_router.include_router(storyboard.router)
-
