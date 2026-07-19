@@ -16,7 +16,7 @@ import { SettingsPage } from './pages/SettingsPage'
 const PAGE_META: Record<PageId, { title: string; description: string }> = {
   overview: {
     title: 'Overview',
-    description: 'Production readiness, hierarchy counts, and approval gates from the backend.',
+    description: 'Seven connected production workspaces with live planning evidence and backend diagnostics.',
   },
   storyboard: {
     title: 'Storyboard',
@@ -28,15 +28,15 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
   },
   characters: {
     title: 'Characters',
-    description: 'Identity references and character profiles as planning records only.',
+    description: 'Identity references, character profiles, continuity rules, and reference-view planning.',
   },
   voices: {
     title: 'Voices',
-    description: 'Eight voice setup modes, consent gates, and explicit provider-safe preview jobs.',
+    description: 'Voice profiles, consent, recipes, mappings, and explicit provider-safe preview jobs.',
   },
   images: {
     title: 'Starting Images',
-    description: 'Plan approved reference assets. Image generation remains disabled in planning.',
+    description: 'Review managed reference assets and clean shot-level starting-image mappings.',
   },
   routing: {
     title: 'Model Routing',
@@ -44,11 +44,11 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
   },
   workflows: {
     title: 'Workflows',
-    description: 'Factual workflow-template catalog; no install, validation, or queue actions.',
+    description: 'Factual workflow-template catalog, admission evidence, and production routing.',
   },
   exports: {
     title: 'Exports',
-    description: 'Planning exports for stored hierarchy. Render packages remain unavailable.',
+    description: 'Planning exports plus the final assembly, manifest, and provenance destination.',
   },
   settings: {
     title: 'Project Settings',

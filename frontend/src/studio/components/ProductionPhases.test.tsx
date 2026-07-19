@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { api, type ProductionPipeline } from '../../api/client'
+import { api, type ProductionPipeline, type StoryboardAggregate } from '../../api/client'
 import { ProductionPhases } from './ProductionPhases'
 
 vi.mock('../../api/client', () => ({
@@ -108,23 +108,147 @@ const pipeline: ProductionPipeline = {
   })),
 }
 
+const aggregate: StoryboardAggregate = {
+  revision: 'workspace-v1',
+  content_hash: 'workspace-hash',
+  planned_duration_sec: 15,
+  discrepancy_sec: -285,
+  story: {
+    id: 'story-1',
+    project_id: 'project-1',
+    title: 'The Test Film',
+    base_story: 'A complete source story.',
+    target_duration_sec: 300,
+    logline: 'A complete test logline.',
+    synopsis: 'A complete synopsis.',
+    audience: 'General audiences',
+    tone: 'Reverent',
+    genre: 'Cinematic narrative',
+    visual_style: 'Grounded cinematic realism',
+    point_of_view: 'Third person',
+    production_notes: null,
+    approval_state: 'draft',
+  },
+  chapters: [{
+    id: 'chapter-1',
+    order_index: 0,
+    title: 'Act I',
+    summary: 'The opening movement.',
+    duration_sec: 15,
+    scenes: [{
+      id: 'scene-1',
+      order_index: 0,
+      title: 'Opening scene',
+      summary: 'The story opens.',
+      duration_sec: 15,
+      shots: [{
+        id: 'shot-1',
+        order_index: 0,
+        display_label: 'A',
+        title: 'Opening image',
+        duration_sec: 8,
+        duration_override_reason: null,
+        visual_description: 'A grounded opening frame.',
+        story_purpose: 'Establish the world.',
+        location: 'Primary location',
+        continuity_source_type: 'none',
+        approval_state: 'draft',
+        production_status: 'planned',
+        blocked_reason: null,
+        continuity_source_shot_id: null,
+        starting_image_required: true,
+        starting_image_asset_id: null,
+        narration: 'The story begins.',
+        narration_voice_profile_id: 'voice-1',
+        prompt_positive: 'Grounded cinematic opening image.',
+        prompt_video: 'A slow, controlled camera move.',
+        prompt_negative: 'flicker, identity drift',
+        prompt_continuity_instructions: 'Preserve geography and screen direction.',
+        prompt_style_lock: 'Grounded cinematic realism.',
+        prompt_approval_state: 'draft',
+        camera_direction: 'Wide establishing shot',
+        motion_direction: 'Slow push in',
+        characters: [{ character_id: 'character-1', role_in_shot: 'lead', order_index: 0, continuity_notes: null }],
+        recommendations: [],
+      }],
+    }],
+  }],
+  characters: [{
+    id: 'character-1',
+    story_id: 'story-1',
+    name: 'Lead Character',
+    role: 'Lead',
+    approval_state: 'draft',
+    age_range: 'Adult',
+    physical_description: 'Distinct, grounded appearance.',
+    personality: 'Reflective and courageous',
+    speaking_style: 'Measured',
+    wardrobe: 'Continuity-locked wardrobe',
+    consistency_prompt: 'Preserve identity and wardrobe.',
+    negative_identity_prompt: 'identity drift',
+    assigned_voice_profile_id: 'voice-1',
+    reference_assets: [],
+  }],
+  voices: [{
+    id: 'voice-1',
+    story_id: 'story-1',
+    character_id: 'character-1',
+    name: 'Lead voice',
+    setup_mode: 'manual',
+    source_type: 'manual',
+    consent_confirmed: false,
+    consent_required: false,
+    approval_state: 'draft',
+    language: 'English',
+    tone: 'Measured and warm',
+  }],
+}
+
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
 })
 
 describe('ProductionPhases', () => {
-  it('shows exactly seven phases, completed Phase 1, QA, and locked later phases', async () => {
+  it('shows exactly seven enabled phase tabs and opens every UI workspace', async () => {
     vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
 
-    render(<ProductionPhases storyId="story-1" />)
+    render(<ProductionPhases storyId="story-1" data={aggregate} />)
 
     expect(await screen.findByText('Your complete script is ready for review.')).toBeTruthy()
-    expect(screen.getByText('7 phases · no eighth phase')).toBeTruthy()
+    expect(screen.getByText('7 complete workspaces')).toBeTruthy()
     expect(screen.getByText('All blocking checks passed')).toBeTruthy()
     expect(screen.getByText('The Test Film')).toBeTruthy()
-    for (const name of phaseNames) expect(screen.getByText(new RegExp(name))).toBeTruthy()
-    expect(screen.getAllByText(/Locked · not started/i)).toHaveLength(6)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(7)
+    tabs.forEach((tab) => expect(tab.hasAttribute('disabled')).toBe(false))
+    expect(screen.queryByText(/Locked ·/i)).toBeNull()
+
+    for (const name of phaseNames.slice(1)) {
+      fireEvent.click(screen.getByRole('tab', { name: new RegExp(name) }))
+      expect(screen.getByRole('heading', { name })).toBeTruthy()
+      expect(screen.getByText('Interactive UI/UX preview')).toBeTruthy()
+    }
+
+    fireEvent.click(screen.getByRole('tab', { name: /Script and Narrative Development/ }))
+    expect(screen.getByText('The Test Film')).toBeTruthy()
+    expect(api.getProductionPipeline).toHaveBeenCalledTimes(1)
+    expect(api.revisePhaseOne).not.toHaveBeenCalled()
+  })
+
+  it('supports keyboard navigation across the seven phase tabs', async () => {
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    render(<ProductionPhases storyId="story-1" data={aggregate} />)
+
+    const first = await screen.findByRole('tab', { name: /Script and Narrative Development/ })
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: /Scene and Shot Segmentation/ }).getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: /Scene and Shot Segmentation/ }), { key: 'End' })
+    expect(screen.getByRole('tab', { name: /Video Generation, Assembly, and Final QA/ }).getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: /Video Generation, Assembly, and Final QA/ }), { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: /Script and Narrative Development/ }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('saves edits as a new version and reruns QA', async () => {
@@ -134,7 +258,7 @@ describe('ProductionPhases', () => {
       phase: pipeline.phases[0],
       completion_message: 'Your complete script is ready for review.',
     })
-    render(<ProductionPhases storyId="story-1" />)
+    render(<ProductionPhases storyId="story-1" data={aggregate} />)
     await screen.findByText('The Test Film')
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit script package' }))

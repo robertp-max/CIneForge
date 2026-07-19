@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import {
   api,
   type PhaseOnePackage,
   type ProductionPipeline,
+  type StoryboardAggregate,
 } from '../../api/client'
+import type { PageId } from '../../components/AppShell'
 import { ErrorNotice } from '../../components/Cards'
+import { ProductionPhasePreview } from './ProductionPhasePreview'
 import { LoadingState } from './StateBlocks'
 import { formatDuration } from '../utils'
 
@@ -46,7 +49,13 @@ function textList(value: string) {
   return value.split('\n').map((item) => item.trim()).filter(Boolean)
 }
 
-export function ProductionPhases({ storyId }: { storyId: string }) {
+type ProductionPhasesProps = {
+  storyId: string
+  data?: StoryboardAggregate | null
+  onNavigate?: (page: PageId) => void
+}
+
+export function ProductionPhases({ storyId, data = null, onNavigate }: ProductionPhasesProps) {
   const [pipeline, setPipeline] = useState<ProductionPipeline | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +63,8 @@ export function ProductionPhases({ storyId }: { storyId: string }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<EditablePhaseOne | null>(null)
+  const [selectedPhaseNumber, setSelectedPhaseNumber] = useState(1)
+  const phaseTabs = useRef<Array<HTMLButtonElement | null>>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -78,6 +89,23 @@ export function ProductionPhases({ storyId }: { storyId: string }) {
     return isPhaseOnePackage(output) ? output : null
   }, [phaseOne])
   const qa = phaseOne?.latest_qa_report?.report_json ?? null
+  const selectedPhase = pipeline?.phases.find((phase) => phase.phase_number === selectedPhaseNumber) ?? null
+
+  const selectPhase = (phaseNumber: number, focus = false) => {
+    setSelectedPhaseNumber(phaseNumber)
+    if (focus) window.requestAnimationFrame(() => phaseTabs.current[phaseNumber - 1]?.focus())
+  }
+
+  const handlePhaseKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % 7
+    else if (event.key === 'ArrowLeft') nextIndex = (index + 6) % 7
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = 6
+    else return
+    event.preventDefault()
+    selectPhase(nextIndex + 1, true)
+  }
 
   const beginEdit = () => {
     if (!packageData) return
@@ -130,33 +158,58 @@ export function ProductionPhases({ storyId }: { storyId: string }) {
         <div>
           <span className="eyebrow">EXACT SEVEN-PHASE PRODUCTION</span>
           <h2 id="production-contract-title">From one prompt to a controlled film production</h2>
-          <p>QA is a gate inside every phase. Completion never means approval, and later phases stay locked until the prior phase is approved.</p>
+          <p>All seven UI workspaces are available for review. Existing backend state remains visible, while design navigation never launches media generation or rendering.</p>
         </div>
-        <span className="phase-count-pill">7 phases · no eighth phase</span>
+        <span className="phase-count-pill">7 complete workspaces</span>
       </div>
 
-      <ol className="production-phase-rail">
-        {pipeline.phases.map((phase) => (
-          <li key={phase.id} className={phase.phase_number === 1 ? 'current' : phase.is_locked ? 'locked' : ''}>
-            <span>{phase.is_locked ? '⌑' : phase.lifecycle_state === 'ready_for_review' ? '✓' : phase.phase_number}</span>
-            <div><b>{phase.phase_number}. {phase.name}</b><small>{phase.is_locked ? 'Locked · ' : ''}{stateLabel(phase.lifecycle_state)}</small></div>
-          </li>
+      <div className="production-phase-rail" role="tablist" aria-label="Seven production phases">
+        {pipeline.phases.map((phase, index) => (
+          <button
+            key={phase.id}
+            ref={(node) => { phaseTabs.current[index] = node }}
+            id={`production-phase-tab-${phase.phase_number}`}
+            type="button"
+            role="tab"
+            aria-selected={selectedPhaseNumber === phase.phase_number}
+            aria-controls={`production-phase-panel-${phase.phase_number}`}
+            tabIndex={selectedPhaseNumber === phase.phase_number ? 0 : -1}
+            className={selectedPhaseNumber === phase.phase_number ? 'current' : ''}
+            onClick={() => selectPhase(phase.phase_number)}
+            onKeyDown={(event) => handlePhaseKeyDown(event, index)}
+          >
+            <span>{phase.lifecycle_state === 'ready_for_review' ? '✓' : phase.phase_number}</span>
+            <div>
+              <b>{phase.phase_number}. {phase.name}</b>
+              <small>{phase.phase_number === 1 ? stateLabel(phase.lifecycle_state) : 'Design available'}</small>
+            </div>
+          </button>
         ))}
-      </ol>
+      </div>
 
-      {pipeline.completion_message || notice ? (
-        <div className="phase-one-complete-message" role="status">
-          <span>✓</span><div><b>{notice || pipeline.completion_message}</b><p>Version {phaseOne?.current_version_number ?? 1} passed Phase 1 QA and remains unapproved until human review.</p></div>
-        </div>
-      ) : null}
       {error ? <ErrorNotice message={error} /> : null}
 
-      {!packageData ? (
-        <div className="panel phase-one-empty">
-          <span>1</span><div><h3>Phase 1 has not started</h3><p>Add an original creative prompt and target duration before script generation. No downstream phase can begin.</p></div>
-        </div>
-      ) : (
-        <>
+      <div
+        id={`production-phase-panel-${selectedPhaseNumber}`}
+        className="production-phase-panel"
+        role="tabpanel"
+        aria-labelledby={`production-phase-tab-${selectedPhaseNumber}`}
+        tabIndex={0}
+      >
+        {selectedPhaseNumber === 1 ? (
+          <>
+            {pipeline.completion_message || notice ? (
+              <div className="phase-one-complete-message" role="status">
+                <span>✓</span><div><b>{notice || pipeline.completion_message}</b><p>Version {phaseOne?.current_version_number ?? 1} passed Phase 1 QA and remains unapproved until human review.</p></div>
+              </div>
+            ) : null}
+
+            {!packageData ? (
+              <div className="panel phase-one-empty">
+                <span>1</span><div><h3>Phase 1 has not started</h3><p>Add an original creative prompt and target duration to create the first script package.</p></div>
+              </div>
+            ) : (
+              <>
           <div className="phase-one-metrics" aria-label="Phase 1 script metrics">
             <article><span>Script words</span><b>{packageData.script_word_count.toLocaleString()}</b></article>
             <article><span>Narration</span><b>{formatDuration(packageData.duration_analysis.narration_duration_sec)}</b></article>
@@ -213,8 +266,13 @@ export function ProductionPhases({ storyId }: { storyId: string }) {
               {packageData.baseline_comparison ? <div className="baseline-result"><span>TRANSFIGURATION BASELINE</span><b>{stateLabel(packageData.baseline_comparison.classification)}</b><p>{packageData.baseline_comparison.note}</p><small>{packageData.baseline_comparison.missing_count} missing · {packageData.baseline_comparison.unsafe_count} unsafe · human review still required</small></div> : null}
             </div>
           </div>
-        </>
-      )}
+              </>
+            )}
+          </>
+        ) : selectedPhase ? (
+          <ProductionPhasePreview phase={selectedPhase} data={data} onNavigate={onNavigate} />
+        ) : null}
+      </div>
     </section>
   )
 }

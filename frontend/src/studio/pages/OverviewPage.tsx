@@ -63,8 +63,14 @@ export function OverviewPage() {
 
   return (
     <>
-      <ProductionPhases storyId={data.story.id} />
+      <ProductionPhases storyId={data.story.id} data={data} onNavigate={navigate} />
 
+      <details className="backend-diagnostics">
+        <summary>
+          <div><span className="eyebrow">LIVE BACKEND</span><b>Planning diagnostics and approval controls</b><small>Expand to inspect readiness, orchestration, and immutable storyboard approval.</small></div>
+          <span className={`truth-pill ${backendStatus === 'ok' ? 'verified' : 'unknown'}`}>{backendStatus}</span>
+        </summary>
+        <div className="backend-diagnostics-content">
       <div className="studio-metrics" aria-label="Planning metrics">
         {metrics.map(([label, value]) => (
           <article key={String(label)}>
@@ -232,6 +238,8 @@ export function OverviewPage() {
           ) : null}
         </div>
       </div>
+        </div>
+      </details>
     </>
   )
 }

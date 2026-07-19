@@ -23,7 +23,7 @@ const navItems: {
   badge?: string
 }[] = [
   { id: 'overview', label: 'Overview', short: 'Overview', icon: '▦' },
-  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: '▤', badge: '27' },
+  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: '▤' },
   { id: 'story', label: 'Story & chapters', short: 'Story', icon: '▱' },
   { id: 'characters', label: 'Characters', short: 'Cast', icon: '♙' },
   { id: 'voices', label: 'Voices', short: 'Voices', icon: '♬' },
