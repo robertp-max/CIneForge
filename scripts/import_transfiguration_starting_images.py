@@ -59,7 +59,7 @@ def _write_resolved_manifests(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Preflight and import only the reviewed 56-file Transfiguration allowlist."
+        description="Preflight and import only the reviewed 73-file Transfiguration allowlist."
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")

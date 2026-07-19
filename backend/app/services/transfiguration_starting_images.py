@@ -76,6 +76,23 @@ EXPECTED_ALLOWLIST = (
     "grok-2969ac64-6401-423e-8e0f-025013430b79.jpg",
     "grok-4116cf3a-e7b8-4f02-a46e-d33e4fb5f722.jpg",
     "grok-4527ea0d-e104-4c32-9b02-e4242566032a.png",
+    "grok-aefa2dc0-bb28-4701-b9e4-5730a4c9e0ca.jpg",
+    "grok-d704a547-4232-41fa-bf12-6ac7448ae276.jpg",
+    "grok-57640e1c-4201-4f41-bf8a-57a05c244306.jpg",
+    "grok-ab7b235a-b938-4f39-846a-5dd69eb6fb32.jpg",
+    "grok-21637943-b036-4c72-8a74-62583b00bcee.jpg",
+    "grok-6394c8ff-f097-4113-ab5e-6d5ff2a320be.jpg",
+    "grok-85304069-1f22-4670-b7a5-0de6810dbf90.jpg",
+    "grok-abb96fb4-4245-41f0-a2b6-46d31d0f7a00.jpg",
+    "grok-ad59bcd1-6c9c-478a-b6de-60f71b73389c.jpg",
+    "grok-b36eae8c-451d-46ac-bd03-533c1b86cf22.jpg",
+    "grok-bbbe850f-6f5e-4e15-9069-1332fd8118ea.jpg",
+    "grok-ca37af90-00cc-418f-9d52-03ddd2dc1166.jpg",
+    "grok-cda78770-bbf6-4c4e-b94c-34d233d439fa.jpg",
+    "grok-dc71b278-9e3b-4728-a1ad-9a7d84958c55.jpg",
+    "grok-e3d85b32-3900-4e6f-b85b-9de91cc3405b.jpg",
+    "grok-e868e6e7-b3dd-491b-ba24-0e903c1d1086.jpg",
+    "grok-f89418c5-38eb-4c85-85a3-178f20ab5ed3.jpg",
 )
 KNOWN_REFERENCE_KINDS = {
     "grok-57ed3ff4-3d1e-4f52-a76e-e399310464a6.png": "character_reference",
@@ -114,6 +131,7 @@ class PreflightRecord:
     confidence: float
     rationale: str
     existing_asset_id: UUID | None
+    display_filename: str | None = None
 
 
 def _mime_for(path: Path) -> str:
@@ -176,6 +194,15 @@ def preflight_inventory(
             )
         seen_hashes.setdefault(digest, filename)
         raw_asset_id = row.get("existing_or_reused_asset_id") or None
+        display_filename = row.get("display_filename") or filename
+        if (
+            Path(display_filename).name != display_filename
+            or Path(display_filename).suffix.lower() != path.suffix.lower()
+            or not all(character.isalnum() or character in "._-" for character in display_filename)
+        ):
+            raise StartingImageImportError(
+                f"Display filename is not filesystem-safe or changes extension: {display_filename}"
+            )
         records.append(
             PreflightRecord(
                 filename=filename,
@@ -190,6 +217,7 @@ def preflight_inventory(
                 confidence=float(row["confidence"]),
                 rationale=row["visual_rationale"],
                 existing_asset_id=UUID(raw_asset_id) if raw_asset_id else None,
+                display_filename=display_filename,
             )
         )
     return records
@@ -266,7 +294,14 @@ def validate_mapping(
 def _operation_id(records: list[PreflightRecord], mapping: dict) -> str:
     stable = {
         "sources": [
-            [r.filename, r.sha256, r.classification, r.suggested_shot_code, r.confidence]
+            [
+                r.filename,
+                r.display_filename or r.filename,
+                r.sha256,
+                r.classification,
+                r.suggested_shot_code,
+                r.confidence,
+            ]
             for r in records
         ],
         "mapping": [
@@ -395,7 +430,7 @@ def run_import(
                 project_id=project_id,
                 kind="starting_image",
                 data=record.data,
-                original_filename=record.filename,
+                original_filename=record.display_filename or record.filename,
                 content_type=record.mime_type,
                 source_type="imported",
                 approval_state="draft",
@@ -403,6 +438,7 @@ def run_import(
                     "operation": "transfiguration_starting_image_assignment",
                     "operation_id": operation_id,
                     "source_filename": record.filename,
+                    "display_filename": record.display_filename or record.filename,
                     "classification": record.classification,
                     "suggested_shot_code": record.suggested_shot_code,
                     "confidence": record.confidence,

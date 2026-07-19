@@ -3,65 +3,73 @@
   "project_id": "1823e5da-e926-5b61-9d45-4bf9bea10c94",
   "story_id": "6db487e3-76f5-5ac8-86a6-e2816536e8b8",
   "source_root": "C:\\Users\\razer\\Documents\\transfiguration",
-  "allowlist_count": 56,
+  "allowlist_count": 73,
   "inventory_file": "starting_image_inventory.csv",
   "entries": [
     {
       "shot_id": "c5c6e049-4b76-4e56-97ae-e3227100e14c",
       "shot_code": "S01A",
       "shot_title": "S01A — Mountain before the climb",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "Only the excluded S01 board contains the required mountain overview; no clean landscape frame includes four small grounded figures.",
+      "selected_source_filename": "grok-aefa2dc0-bb28-4701-b9e4-5730a4c9e0ca.jpg",
+      "display_filename": "S01A_Mountain_Before_The_Climb.jpg",
+      "selected_sha256": "a96e8800d30a5c5e4648fba595eafca1b92d195f589b9120ba4057b75149840d",
+      "asset_id": "335a9b4e-b9bf-4ea3-b46e-9065145c89b9",
+      "confidence": 1.0,
+      "rationale": "Exact clean source for the Scene 1 mountain-overview board panel.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve none continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "9ae0bc6f-bf30-4351-94d3-4d6f02a179ed",
       "shot_code": "S01B",
       "shot_title": "S01B — Jesus leads the climb",
       "selected_source_filename": "grok-827bfded-2410-481b-9b2b-ca6fc88663f1.jpg",
+      "display_filename": "S01B_Jesus_Leads_The_Climb.jpg",
       "selected_sha256": "1a44825e3e66988c0eed4e14232bcc331292c3550c5cc242d333e788a8b9f934",
       "asset_id": "24bbc778-34b7-4964-a82b-685f47cb31ae",
-      "confidence": 0.93,
-      "rationale": "Rear medium-wide shows Jesus leading the three disciples uphill with feet on rock.",
+      "confidence": 1.0,
+      "rationale": "Exact clean source for the Scene 1 rear-climb board panel.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "d7476230-c670-4b23-8ad9-d2389a15a704",
       "shot_code": "S01C",
       "shot_title": "S01C — Physical details of ascent",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "The hand/rock ascent detail exists only inside the excluded S01 board, not as a clean frame.",
+      "selected_source_filename": "grok-d704a547-4232-41fa-bf12-6ac7448ae276.jpg",
+      "display_filename": "S01C_Hand_And_Rock_Ascent_Detail.jpg",
+      "selected_sha256": "ddaa2ccd4f6d818e4fc40284e72242ef5865d0e2f563bdadaf85f3952f7d051d",
+      "asset_id": "11503680-e0b1-420a-a5fb-2da5528fe529",
+      "confidence": 1.0,
+      "rationale": "Exact clean source for the Scene 1 hand-and-sandal ascent-detail board panel.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "c98da120-d208-4df2-b2fb-2a059f7f8e96",
       "shot_code": "S01D",
       "shot_title": "S01D — Peter looks toward the summit",
-      "selected_source_filename": "grok-2cde8c25-0ef4-44cf-adfa-9f0605ff5b7d.jpg",
-      "selected_sha256": "5070fbdea2f30cac630e00032d96c437b0d23f546c0904859cd9593ac95bc922",
-      "asset_id": "a760bab4-3a65-4d85-9be5-b241121f9ca7",
-      "confidence": 0.91,
-      "rationale": "Dusty close portrait of Peter looking upward matches loyal exhaustion on the climb.",
+      "selected_source_filename": "grok-710b46d4-4ff2-41fb-bcf1-cc44fb916b1f.jpg",
+      "display_filename": "S01D_Peter_Looks_Toward_The_Summit.jpg",
+      "selected_sha256": "c4000163df86d03a3c1813f275f1d7de5f32e0bead3f17739602a2733dcfa05a",
+      "asset_id": "9a8974b8-2a02-46a6-85c2-6f257ce36aeb",
+      "confidence": 1.0,
+      "rationale": "Exact clean source for the Scene 1 board panel showing Peter looking toward the summit.",
       "alternate_candidate_filenames": [
+        "grok-2cde8c25-0ef4-44cf-adfa-9f0605ff5b7d.jpg",
         "grok-56da7230-10fb-4112-ad3e-84b76dd8e394.jpg",
-        "grok-58a5dc2a-f007-48fe-b770-bc03035e6bba.jpg",
-        "grok-710b46d4-4ff2-41fb-bcf1-cc44fb916b1f.jpg"
+        "grok-58a5dc2a-f007-48fe-b770-bc03035e6bba.jpg"
+      ],
+      "alternate_candidate_display_filenames": [
+        "S01D_ALT_1_Frontal_Peter_Upward_Look.jpg",
+        "S01D_ALT_2_Peter_Close_Alternate_With_Direct_Rather_Than_Upward.jpg",
+        "S01D_ALT_3_Peter_Close_Alternate_With_Direct_Rather_Than_Upward.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
       "validation_warnings": []
@@ -70,61 +78,61 @@
       "shot_id": "00c8d162-9263-4fac-b040-c009a07427bc",
       "shot_code": "S01E",
       "shot_title": "S01E — Four figures cross the ridge",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean lateral four-figure ridge silhouette exists; the rear ascent master is reserved for S01B.",
+      "selected_source_filename": "grok-57640e1c-4201-4f41-bf8a-57a05c244306.jpg",
+      "display_filename": "S01E_Four_Figures_Cross_The_Ridge.jpg",
+      "selected_sha256": "3d503df471f8ed6fe9412f1ddbe2fd31d66ca4c9344d04720b0966d6a17b26d7",
+      "asset_id": "a6656409-4d92-4ad3-9054-400a58bb2c73",
+      "confidence": 1.0,
+      "rationale": "Exact clean source for the Scene 1 four-figure ridge-crossing board panel.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "44829c6b-1846-4b62-974b-132a0804f1d5",
       "shot_code": "S01F",
       "shot_title": "S01F — Arrival on the summit",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean frame establishes the full group arriving on the recognizable summit plateau.",
+      "selected_source_filename": "grok-ab7b235a-b938-4f39-846a-5dd69eb6fb32.jpg",
+      "display_filename": "S01F_Arrival_On_The_Summit.jpg",
+      "selected_sha256": "10e2b765fc5a1b422bbafa9fdc6c9b66c090eb3ea7151961e3b23602d4a6d464",
+      "asset_id": "665bb462-fc09-4422-a768-fb2cbdf31289",
+      "confidence": 1.0,
+      "rationale": "Exact clean source for the Scene 1 summit-arrival board panel.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "a5b16885-8662-4fbf-aaa6-3f93d37109ee",
       "shot_code": "S02A",
       "shot_title": "S02A — Jesus separates to pray",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean frame shows Jesus separating toward the outcrop while all three disciples settle.",
+      "selected_source_filename": "grok-b36eae8c-451d-46ac-bd03-533c1b86cf22.jpg",
+      "selected_sha256": "0828ed8993bad97f35cb3ba96a5188e9cb6c196d10aa24c002d72b74217b4c85",
+      "asset_id": "80bfae46-397a-4417-bfb6-364f5c73e38c",
+      "confidence": 1.0,
+      "rationale": "Jesus separates toward the established outcrop while all three disciples settle in the cool foreground.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S02A_Jesus_Separates_To_Pray.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "8c3545aa-6ff3-4911-bec5-1e25eba581ab",
       "shot_code": "S02B",
       "shot_title": "S02B — Jesus kneels",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean frame shows Jesus kneeling in profile with physically grounded weight.",
+      "selected_source_filename": "grok-abb96fb4-4245-41f0-a2b6-46d31d0f7a00.jpg",
+      "selected_sha256": "0b36e4964773fe4dd824437d5ea48b82a7aca0e775121fd5400e7105d67e8cb6",
+      "asset_id": "a50c8e41-4282-4f02-b868-32888dfe43f4",
+      "confidence": 1.0,
+      "rationale": "Exact cool profile frame of Jesus kneeling on real stone with head bowed.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S02B_Jesus_Kneels.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "37a0ede3-632d-43fd-adce-389b05cbfa93",
@@ -140,22 +148,26 @@
         "grok-2969ac64-6401-423e-8e0f-025013430b79.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S02C_Intimate_Prayer_Close_Up.jpg",
+      "alternate_candidate_display_filenames": [
+        "S02C_ALT_1_Jesus_Prayer_Alternate.jpg"
+      ]
     },
     {
       "shot_id": "6a595c57-9b74-4e76-9897-c389ecd3f7be",
       "shot_code": "S02D",
       "shot_title": "S02D — Disciples become heavy with sleep",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean ensemble frame shows all three disciples becoming heavy with sleep.",
+      "selected_source_filename": "grok-21637943-b036-4c72-8a74-62583b00bcee.jpg",
+      "selected_sha256": "50d9f37cbad19b5fce2f37756e0bb8cdbaba68a3cecfe5310420b1aa92a05ab1",
+      "asset_id": "c742496e-1f46-4cf3-98ef-d0f29aaa6ecb",
+      "confidence": 1.0,
+      "rationale": "Exact cool ensemble of Peter, James and John seated as fatigue overtakes them.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S02D_Disciples_Become_Heavy_With_Sleep.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "73a1d963-23b8-4d12-a1a3-548c6524b6e7",
@@ -170,7 +182,9 @@
         "grok-643ed305-d93e-4ed4-a91c-e72c4480e9b0.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S03A_Sacred_Stillness.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "4abf72b6-1803-4b76-ac22-ec2c12293530",
@@ -183,7 +197,9 @@
       "rationale": "Warm natural light subtly enters Jesus’ three-quarter face without supernatural eye effects.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S03B_Warmth_Appears_In_The_Face.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "ebaa38db-256e-43d6-8779-c828304d9f57",
@@ -198,52 +214,54 @@
         "grok-364f88e2-3421-48c5-b6c2-adf58ebd9144.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S03C_Eyes_Open_In_Peace.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "60fddd18-a1ea-4083-9f04-84798925deab",
       "shot_code": "S03D",
       "shot_title": "S03D — Garments brighten",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No summit frame shows the robe weave brightening; the neutral full-body identity plate is excluded.",
+      "selected_source_filename": "grok-e3d85b32-3900-4e6f-b85b-9de91cc3405b.jpg",
+      "selected_sha256": "a0bd3078621eb606adfaba3edb208eade8acee62c7b2eaa525b257683d4cb985",
+      "asset_id": "78228632-e588-4e4c-b044-002fb3cd1126",
+      "confidence": 1.0,
+      "rationale": "Full grounded Jesus with the white robe, belt, folds and body weight visibly preserved in radiance.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S03D_Garments_Brighten.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "265d864e-f327-447f-9dbb-048493c5fead",
       "shot_code": "S03E",
       "shot_title": "S03E — The summit receives the light",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No unique clean wide shows early light reaching both the outcrop and sleeping disciples.",
+      "selected_source_filename": "grok-6394c8ff-f097-4113-ab5e-6d5ff2a320be.jpg",
+      "selected_sha256": "838cdbe87599ac1a1e3eb18b88673012b1bc91cecb0c6036b51a27ebd1d22110",
+      "asset_id": "0b6b2a6f-e889-43ac-bf86-ab4829081562",
+      "confidence": 1.0,
+      "rationale": "Wide summit geography with Jesus grounded in light and all three disciples retained in the foreground.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S03E_The_Summit_Receives_The_Light.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "0977e496-692e-4a5c-8067-830160c0e740",
       "shot_code": "S04A",
       "shot_title": "S04A — Disciples awaken into radiance",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean low disciple POV includes opening eyes or raised hands against grounded Jesus.",
+      "selected_source_filename": "grok-e868e6e7-b3dd-491b-ba24-0e903c1d1086.jpg",
+      "selected_sha256": "0b0c465ddfe7170bdb0f10d18b0fcc35304da86ec992bc8969b198e9de6af939",
+      "asset_id": "513fb06d-9d1b-4b81-9f95-87afd0d4e2da",
+      "confidence": 1.0,
+      "rationale": "Exact low disciple POV with a raised hand silhouetted against grounded Jesus and controlled radiance.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S04A_Disciples_Awaken_Into_Radiance.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "6a47b021-7fc3-492c-a9ed-a3eed1da2191",
@@ -256,7 +274,9 @@
       "rationale": "Grounded full-body Jesus in a white robe on real rock matches the no-levitation hero reveal.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S04B_Full_Grounded_Reveal_Of_Jesus.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "ffedfbc3-749e-4ce4-a709-de1ee6aa30c3",
@@ -271,22 +291,24 @@
         "grok-4116cf3a-e7b8-4f02-a46e-d33e4fb5f722.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S04C_Face_Shines_Like_The_Sun.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "94ce68af-7f10-4b6a-b5f5-eb61121b0c36",
       "shot_code": "S04D",
       "shot_title": "S04D — Controlled orbit",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean medium combines planted Jesus, a three-quarter view and established summit geography.",
+      "selected_source_filename": "grok-ad59bcd1-6c9c-478a-b6de-60f71b73389c.jpg",
+      "selected_sha256": "aabcc0be10b3f0378ec4ae0d2f0b0f35e7f38aee43bf8e5785b086289a6eda2a",
+      "asset_id": "c67e005b-305b-47e1-992d-63cff39e3576",
+      "confidence": 1.0,
+      "rationale": "Three-quarter medium view of Jesus in white-gold backlight for the controlled orbit beat.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S04D_Controlled_Orbit.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "7b09d37e-d560-419d-9ce8-84f467aec12f",
@@ -299,22 +321,24 @@
       "rationale": "Wide grounded summit master shows the disciples shielding their eyes from Jesus’ glory.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S04E_Summit_Transformed_By_Glory.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "84557200-a1e8-446b-9f05-27f853baa922",
       "shot_code": "S04F",
       "shot_title": "S04F — Reverent hold",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No unique near-still medium tableau holds Jesus in controlled glory.",
+      "selected_source_filename": "grok-bbbe850f-6f5e-4e15-9069-1332fd8118ea.jpg",
+      "selected_sha256": "ce2b58e397dfedea12fe1534d4e5eb2d0d1138032f472ac9a081870fad73fd35",
+      "asset_id": "b610860f-b046-4e25-9029-15dc024911a3",
+      "confidence": 1.0,
+      "rationale": "Composed near-still tableau of Jesus standing in steady glory with visible cloth detail.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S04F_Reverent_Hold.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "57502cf7-17a1-4c8b-9c14-9015d332d36f",
@@ -329,7 +353,9 @@
         "grok-173ad0e9-4b71-441a-9745-009471ad40ca.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S05A_Two_Human_Forms_Resolve_Beside_Jesus.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "e83621f2-7b94-4709-b8db-17f20ba79adb",
@@ -349,7 +375,16 @@
         "grok-762bcb3e-1f39-4af9-8e37-0b7ae095eca4.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S05B_Moses_Revealed.jpg",
+      "alternate_candidate_display_filenames": [
+        "S05B_ALT_1_Noble_Moses_Portrait.jpg",
+        "S05B_ALT_2_Moses_Portrait_With_Direct_Rather_Than_Jesus_Facing.jpg",
+        "S05B_ALT_3_Moses_Portrait_Alternate.jpg",
+        "S05B_ALT_4_Moses_Portrait_Alternate.jpg",
+        "S05B_ALT_5_Full_Body_Moses_Alternate_With_Grounded_Mountain_Context.jpg",
+        "S05B_ALT_6_Moses_Alternate_With_Staff_And_Three_Quarter_Eyeline.jpg"
+      ]
     },
     {
       "shot_id": "0b402c71-b255-42e6-a186-e82600cea986",
@@ -368,7 +403,15 @@
         "grok-973bb141-c42a-400a-aa56-36f5ee54a379.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S05C_Elijah_Revealed.jpg",
+      "alternate_candidate_display_filenames": [
+        "S05C_ALT_1_Direct_Elijah_Portrait.jpg",
+        "S05C_ALT_2_Elijah_Portrait_In_Soft_Neutral_Light.jpg",
+        "S05C_ALT_3_Elijah_Identity_Portrait.jpg",
+        "S05C_ALT_4_Elijah_Alternate_With_Neutral_Direct_Eyeline.jpg",
+        "S05C_ALT_5_Elijah_Three_Quarter_Portrait_Alternate.jpg"
+      ]
     },
     {
       "shot_id": "db849cc8-0358-46ab-8b22-51768c74cbe8",
@@ -383,7 +426,9 @@
         "grok-173ad0e9-4b71-441a-9745-009471ad40ca.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S05D_Sacred_Conversation.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "56cbc6fe-38b0-408c-9e29-2e1b4b156253",
@@ -396,7 +441,9 @@
       "rationale": "Three grounded disciples are fully awake and looking toward the holy trio.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S05E_Disciples_Fully_Awake.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "f8a9e363-ba24-4aee-a59b-98357a9d37ad",
@@ -412,7 +459,12 @@
         "grok-7ef8857a-33bc-4f33-b287-23ee5a60c5e5.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S06A_Peter_Speaks_Impulsively.jpg",
+      "alternate_candidate_display_filenames": [
+        "S06A_ALT_1_Peter_Reaction_Alternate_Without_The_Required_Raised_Hand.jpg",
+        "S06A_ALT_2_Peter_Speech_Alternate_Without_A_Visible_Gesture.jpg"
+      ]
     },
     {
       "shot_id": "2d5b78c4-2081-49fc-bbe3-d34be8af13f4",
@@ -435,8 +487,18 @@
         "grok-0095bd26-001b-46c2-8989-82905e946080.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "The selected frame establishes James; John remains later editorial coverage."
+      "validation_warnings": [],
+      "display_filename": "S06B_James_And_John_React.jpg",
+      "alternate_candidate_display_filenames": [
+        "S06B_ALT_1_Serious_Disciple_Portrait.jpg",
+        "S06B_ALT_2_Young_Disciple_Reaction_Portrait.jpg",
+        "S06B_ALT_3_John_Reaction_Portrait.jpg",
+        "S06B_ALT_4_John_Wonder_Reaction_Alternate_For_The_Second_Editorial.jpg",
+        "S06B_ALT_5_Disciple_Reaction_Alternate.jpg",
+        "S06B_ALT_6_Young_Disciple_Reaction_Alternate.jpg",
+        "S06B_ALT_7_Young_John_Reaction_Alternate.jpg",
+        "S06B_ALT_8_James_Reaction_Alternate_With_Serious_Expression.jpg",
+        "S06B_ALT_9_John_Reaction_Alternate.jpg"
       ]
     },
     {
@@ -450,22 +512,24 @@
       "rationale": "Reverse wide places all three disciples foreground and the grounded holy trio beyond.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S06C_Reverse_Master_Toward_The_Three_Figures.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "04a5dcc7-684b-4381-964d-bc855de5f59e",
       "shot_code": "S06D",
       "shot_title": "S06D — Awe becomes fear",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No unused clean ensemble shows the three disciples shifting from awe into fear.",
+      "selected_source_filename": "grok-f89418c5-38eb-4c85-85a3-178f20ab5ed3.jpg",
+      "selected_sha256": "21f7fb8627dec501ef2f134feb7fe40fc8305d74563df9f79706638de475f923",
+      "asset_id": "c7cf96c7-4278-4be4-a9fc-6c74d96c498e",
+      "confidence": 1.0,
+      "rationale": "Peter's raised gesture stalls while James and John look up as awe turns toward fear.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S06D_Awe_Becomes_Fear.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "90f738d4-a18a-454b-b0f2-36427ccb5151",
@@ -480,84 +544,84 @@
         "grok-56e3d79c-00ff-41b8-afcc-5d70cd93a76a.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "The cloud and holy trio are visible; disciples are outside this composition."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S07A_Cloud_Gathers_Above_The_Summit.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "c45f6932-aa07-4738-9fb2-1ae61eee55f9",
       "shot_code": "S07B",
       "shot_title": "S07B — The cloud overshadows them",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean wide shows all six people grounded as the bright cloud descends.",
+      "selected_source_filename": "grok-cda78770-bbf6-4c4e-b94c-34d233d439fa.jpg",
+      "selected_sha256": "440c7f72de655ba7b1b9dbcefe3317c5f3dd2e8646ce018513c54d689828a15e",
+      "asset_id": "92ed2a92-f14d-483f-885d-9742ff498088",
+      "confidence": 1.0,
+      "rationale": "Wide ground-level summit master engulfed by a bright cloud with multiple figures tied to the rocks.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S07B_The_Cloud_Overshadows_Them.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "9e2c4efc-b733-4a46-80e9-a6e10bb110c2",
       "shot_code": "S07C",
       "shot_title": "S07C — Disciples fall facedown",
-      "selected_source_filename": "grok-881ba075-d5e7-4ba9-b41c-02f32250133d.jpg",
-      "selected_sha256": "baffc344b5744192d040ba583a7c368ed7316d565df4b1168a4248835aa04f8b",
-      "asset_id": "2547d37d-696c-46ec-be1e-2e37cb451639",
-      "confidence": 0.88,
-      "rationale": "All three disciples are physically face-down on rock beneath diffuse brightness; prophets are obscured.",
+      "selected_source_filename": "grok-ca37af90-00cc-418f-9d52-03ddd2dc1166.jpg",
+      "selected_sha256": "014bed66b69e14b1828e9fb7468df7b62661033276075bf5f3bd7e4be12008eb",
+      "asset_id": "7a3fc16b-bffe-4bc6-b8aa-bdc9dd329a71",
+      "confidence": 1.0,
+      "rationale": "Exact ensemble of all three disciples collapsing facedown and covering themselves on the rock.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "The prophets are cloud-obscured; the face-down disciple action is exact."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S07C_Disciples_Fall_Facedown.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "45a419cf-6ef1-4acd-83ee-15f4a35e3b9d",
       "shot_code": "S07D",
       "shot_title": "S07D — The voice from the cloud",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean frame shows every person still within featureless cloud brightness.",
+      "selected_source_filename": "grok-173ad0e9-4b71-441a-9745-009471ad40ca.jpg",
+      "selected_sha256": "21206e58b207c6370c8a5b1f7fccdc816c39b41b5d0e4a350086f421eea7b810",
+      "asset_id": "f6626f56-3659-4294-beeb-bd14147be11a",
+      "confidence": 1.0,
+      "rationale": "All revealed figures stand still beneath a dense white-gold cloud with no face or symbol in it.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S07D_The_Voice_From_The_Cloud.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "5832a277-399c-4ff3-9b00-951e1ccc6537",
       "shot_code": "S07E",
       "shot_title": "S07E — Fear in physical detail",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean detail frame shows hands, shut eyes, dust and fabric pressed to rock.",
+      "selected_source_filename": "grok-85304069-1f22-4670-b7a5-0de6810dbf90.jpg",
+      "selected_sha256": "d13845d882302949b40cf1363da3da797b4b18567827b60007fcb25165d2b6f3",
+      "asset_id": "c8567a18-f615-4c8b-94e6-73f643ef04ee",
+      "confidence": 1.0,
+      "rationale": "Exact tight fear detail: hand, face, fabric and rock remain readable under diffuse cloud light.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S07E_Fear_In_Physical_Detail.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "41f383db-791e-4180-af74-d72dfc3121bb",
       "shot_code": "S07F",
       "shot_title": "S07F — Cloud withdraws and prophets vanish",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean frame uniquely shows the cloud withdrawing, prophets absent and Jesus standing.",
+      "selected_source_filename": "grok-881ba075-d5e7-4ba9-b41c-02f32250133d.jpg",
+      "selected_sha256": "baffc344b5744192d040ba583a7c368ed7316d565df4b1168a4248835aa04f8b",
+      "asset_id": "2547d37d-696c-46ec-be1e-2e37cb451639",
+      "confidence": 1.0,
+      "rationale": "The prophets are gone; Jesus alone remains grounded as the cloud recedes over facedown disciples.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S07F_Cloud_Withdraws_And_Prophets_Vanish.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "bd828a03-4041-4baa-9d4b-d6c2fc393739",
@@ -570,22 +634,24 @@
       "rationale": "Jesus stands alone in ordinary dawn light while all three disciples remain face-down.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S08A_Jesus_Alone.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "735a7947-26e5-4735-9ee1-6f567a82e4f5",
       "shot_code": "S08B",
       "shot_title": "S08B — Jesus approaches the disciples",
-      "selected_source_filename": null,
-      "selected_sha256": null,
-      "asset_id": null,
-      "confidence": 0.0,
-      "rationale": "No clean ordinary-dawn frame shows Jesus physically approaching the fallen disciples.",
+      "selected_source_filename": "grok-dc71b278-9e3b-4728-a1ad-9a7d84958c55.jpg",
+      "selected_sha256": "99e6e7e063dc7bc9c1135543923ab67e863fb22ee63ba708253dea6dae5748b6",
+      "asset_id": "63917cca-5c69-41bf-a1b8-9ca08204583f",
+      "confidence": 1.0,
+      "rationale": "Exact natural-dawn frame of Jesus walking toward the fallen disciples with no supernatural aura.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": [
-        "Unresolved: leave starting_image_asset_id null rather than force a weak match."
-      ]
+      "validation_warnings": [],
+      "display_filename": "S08B_Jesus_Approaches_The_Disciples.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "042c0e49-957e-4d48-a085-5a614ecd87b5",
@@ -600,7 +666,9 @@
         "grok-710b46d4-4ff2-41fb-bcf1-cc44fb916b1f.jpg"
       ],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S08C_Arise_And_Do_Not_Be_Afraid.jpg",
+      "alternate_candidate_display_filenames": []
     },
     {
       "shot_id": "d1bc8aa9-3bf8-495c-969e-9da42bab1961",
@@ -613,7 +681,9 @@
       "rationale": "At natural dawn the three disciples look up toward Jesus alone on the summit.",
       "alternate_candidate_filenames": [],
       "continuity_notes": "Preserve shot_ref continuity, summit geography, cast identity, wardrobe and grounded feet.",
-      "validation_warnings": []
+      "validation_warnings": [],
+      "display_filename": "S08D_They_See_Jesus_Only.jpg",
+      "alternate_candidate_display_filenames": []
     }
   ]
 }
