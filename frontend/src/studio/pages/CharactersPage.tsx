@@ -191,7 +191,7 @@ export function CharactersPage() {
     try {
       const result = await api.deleteCharacter(
         selectedCharacter.id,
-        'Archived from Character bible.',
+        'Archived from character profile.',
       )
       if (result === null) {
         setMessage('Character archive API is unavailable; no changes were persisted.')
@@ -340,13 +340,13 @@ export function CharactersPage() {
       <section className="panel">
         <div className="panel-title">
           <div>
-            <h2>Character bible</h2>
+            <h2>Characters</h2>
             <p>Persist identity, managed references, voice associations, and linked-shot readiness.</p>
           </div>
         </div>
 
         {!data.characters.length ? (
-          <EmptyState title="No characters yet" detail="Add a character to begin the production bible." />
+          <EmptyState title="No characters yet" detail="Add a character to begin building a character profile." />
         ) : (
           <div className="people-grid">
             {data.characters.map((character) => {
@@ -370,8 +370,8 @@ export function CharactersPage() {
                   type="button"
                   aria-label={
                     character.id === selectedCharacter?.id
-                      ? `${character.name} selected`
-                      : `Open ${character.name} bible`
+                      ? `Open character: ${character.name} (selected)`
+                      : `Open character: ${character.name}`
                   }
                   className={character.id === selectedCharacter?.id ? 'primary-button touch-target' : 'secondary-button touch-target'}
                   onClick={() => {
@@ -379,7 +379,7 @@ export function CharactersPage() {
                     setSelectedVoiceId('')
                   }}
                 >
-                  {character.id === selectedCharacter?.id ? 'Selected' : 'Open bible'}
+                  Open character
                 </button>
               </article>
               )
@@ -422,7 +422,7 @@ export function CharactersPage() {
             <label>Consistency prompt<textarea name="consistency_prompt" defaultValue={selectedCharacter.consistency_prompt ?? ''} disabled={busy || saving} /></label>
             <label>Negative identity prompt<textarea name="negative_identity_prompt" defaultValue={selectedCharacter.negative_identity_prompt ?? ''} disabled={busy || saving} /></label>
             <div className="inline-actions">
-              <button type="submit" className="primary-button touch-target" disabled={busy || saving}>{saving ? 'Saving…' : 'Save character bible'}</button>
+              <button type="submit" className="primary-button touch-target" disabled={busy || saving}>{saving ? 'Saving…' : 'Save character profile'}</button>
               <button
                 type="button"
                 className="ghost-button touch-target"

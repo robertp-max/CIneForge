@@ -28,7 +28,7 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
   },
   characters: {
     title: 'Characters',
-    description: 'Identity references and character bibles as planning records only.',
+    description: 'Identity references and character profiles as planning records only.',
   },
   voices: {
     title: 'Voices',

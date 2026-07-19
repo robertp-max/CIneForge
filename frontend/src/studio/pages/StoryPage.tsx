@@ -28,7 +28,7 @@ const PLANNING_TASKS: Array<{
   logicalModel: LogicalModel
 }> = [
   { task: 'story_structure', label: 'Story adaptation', logicalModel: 'sol' },
-  { task: 'character_bible', label: 'Character bible', logicalModel: 'terra' },
+  { task: 'character_bible', label: 'Character profile', logicalModel: 'terra' },
   { task: 'chapter_outline', label: 'Chapter outline', logicalModel: 'terra' },
   { task: 'scene_breakdown', label: 'Scene breakdown', logicalModel: 'terra' },
   { task: 'shot_list', label: 'Shot list', logicalModel: 'luna' },
