@@ -736,7 +736,7 @@
 .phase-one-evidence .panel { padding: 18px; }
 .phase-qa-checks { display: grid; gap: 8px; margin: 13px 0 0; padding: 0; list-style: none; }
 .phase-qa-checks li { display: flex; gap: 9px; border: 1px solid #30353a; border-radius: 8px; padding: 9px; }
-.phase-qa-checks li > span { display: grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #27302c; color: #80b899; font-size: 0.7rem; }
+.phase-qa-checks li > span { display: grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #1e2a3c; color: #a8c7fa; font-size: 0.7rem; }
 .phase-qa-checks li.failed > span { background: #3b2627; color: #e99894; }
 .phase-qa-checks b { color: #c8cdcf; font-size: 0.72rem; }
 .phase-qa-checks p { margin: 3px 0 0; color: #7f878c; font-size: 0.67rem; line-height: 1.45; }

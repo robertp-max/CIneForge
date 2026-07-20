@@ -494,3 +494,37 @@ input[type="radio"] {
 [data-variant="success"] {
   color: #a8c7fa !important;
 }
+
+/* QA pass checks were hard-coded mint #80b899 / #27302c — force blue */
+.phase-qa-checks li > span,
+.phase-qa-checks li.passed > span,
+.phase-qa-checks .passed > span,
+.phase-qa-grid article > span,
+li.passed > span,
+.production-phase-rail > button span:has(+ *),
+.production-phase-rail > button > span {
+  /* keep numbers/check circles blue when ready */
+}
+.phase-qa-checks li > span {
+  background: #1e2a3c !important;
+  color: #a8c7fa !important;
+  border-color: #4a5f7d !important;
+}
+.phase-qa-checks li.passed > span,
+.phase-qa-checks li.passed {
+  color: #a8c7fa !important;
+}
+.phase-qa-checks li.passed > span {
+  background: #1e2a3c !important;
+  color: #a8c7fa !important;
+}
+/* Phase rail ready check glyph */
+.production-phase-rail > button > span {
+  /* only override if it was green success wash */
+}
+.production-phase-rail > button.current > span,
+.production-phase-rail > button[data-state="ready"] > span {
+  border-color: #6b8fc4 !important;
+  background: #24344f !important;
+  color: #a8c7fa !important;
+}
