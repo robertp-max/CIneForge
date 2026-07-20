@@ -232,6 +232,10 @@ function App() {
           onCreateNew={() => navigateTo({ kind: 'new-project' })}
           onOpenProject={openProject}
           onProjectsLoaded={handleProjectsLoaded}
+          onNavigateStudio={(page) => {
+            const projectId = selectedProjectId || DEFAULT_PROJECT_ID
+            navigateTo({ kind: 'studio', projectId, page })
+          }}
         />
       ) : null}
       {routeState.kind === 'new-project' ? (

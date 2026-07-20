@@ -8,6 +8,8 @@ import {
 } from '../api/client'
 import { EmptyState, ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
+import { StudioHomeHero } from '../components/StudioHomeHero'
+import type { PageId } from '../components/AppShell'
 
 type ProjectsProps = {
   mode?: 'list' | 'create'
@@ -15,6 +17,7 @@ type ProjectsProps = {
   onBackToProjects?: () => void
   onOpenProject?: (projectId: string, projectName?: string) => void
   onProjectsLoaded?: (projects: Project[]) => void
+  onNavigateStudio?: (page: PageId) => void
 }
 
 type ProjectSummary = {
@@ -149,7 +152,8 @@ function ProjectList({
   onCreateNew,
   onOpenProject,
   onProjectsLoaded,
-}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onProjectsLoaded'>) {
+  onNavigateStudio,
+}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onProjectsLoaded' | 'onNavigateStudio'>) {
   const [summaries, setSummaries] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -208,16 +212,27 @@ function ProjectList({
 
   return (
     <div className="page projects-page">
-      <div className="page-title projects-heading">
-        <div>
-          <span className="eyebrow">CINEFORGE WORKSPACE</span>
-          <h1>Projects</h1>
-          <p>Create, organize, and continue every production plan from one workspace.</p>
+      {onNavigateStudio ? (
+        <StudioHomeHero
+          onNavigateStudio={(page) => {
+            // Open first loaded project into studio page when available
+            const first = summaries[0]?.project
+            if (first) onOpenProject?.(first.id, first.name)
+            onNavigateStudio(page)
+          }}
+        />
+      ) : (
+        <div className="page-title projects-heading">
+          <div>
+            <span className="eyebrow">CINEFORGE WORKSPACE</span>
+            <h1>Projects</h1>
+            <p>Create, organize, and continue every production plan from one workspace.</p>
+          </div>
+          <div className="page-actions">
+            <button type="button" className="btn primary" onClick={onCreateNew}>＋ New project</button>
+          </div>
         </div>
-        <div className="page-actions">
-          <button type="button" className="btn primary" onClick={onCreateNew}>＋ New project</button>
-        </div>
-      </div>
+      )}
 
       {error ? <ErrorNotice message={error} /> : null}
 
