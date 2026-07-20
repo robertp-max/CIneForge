@@ -8,8 +8,8 @@ import {
   type SnapshotShot,
   type SnapshotWorkspace,
 } from '../snapshotWorkspace'
+import { characterPortraitUrl, startingFrameUrl } from '../mediaUrls'
 import { formatDuration, initials } from '../utils'
-import { ManagedAssetImage } from './ManagedAssetImage'
 
 type PreviewProps = {
   phase: ProductionPhase
@@ -379,9 +379,14 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
 
           <section className="phase-character-profile">
             <div className="phase-character-hero">
-              <div className="phase-character-avatar">
-                {references[0]?.asset_id ? (
-                  <ManagedAssetImage assetId={references[0].asset_id} alt={`${selected.name} reference`} fit="cover" errorLabel="Reference unavailable" />
+              <div className={`phase-character-avatar${characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id }) ? ' has-image' : ''}`}>
+                {characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id }) ? (
+                  <img
+                    src={characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id })!}
+                    alt={`${selected.name} reference`}
+                    loading="lazy"
+                    decoding="async"
+                  />
                 ) : <span>{initials(selected.name)}</span>}
               </div>
               <div>
@@ -415,11 +420,22 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
             <div className="phase-nine-panel-grid">
               {NINE_PANEL_LABELS.map((label, index) => {
                 const reference = references[index]
+                const portraitUrl =
+                  index === 0
+                    ? characterPortraitUrl({ name: selected.name, assetId: reference?.asset_id })
+                    : reference?.asset_id
+                      ? characterPortraitUrl({ name: selected.name, assetId: reference.asset_id })
+                      : null
                 return (
                   <article key={label}>
-                    <div>
-                      {reference?.asset_id ? (
-                        <ManagedAssetImage assetId={reference.asset_id} alt={`${selected.name} ${label}`} fit="cover" errorLabel="Reference unavailable" />
+                    <div className={portraitUrl ? 'has-reference' : undefined}>
+                      {portraitUrl ? (
+                        <img
+                          src={portraitUrl}
+                          alt={`${selected.name} ${label}`}
+                          loading="lazy"
+                          decoding="async"
+                        />
                       ) : <span>{index + 1}</span>}
                     </div>
                     <b>{label}</b>
@@ -740,18 +756,33 @@ function PhaseSixPreview({ phase, workspace, historical, onNavigate }: PreviewPr
               <b>{mappedFrames.length}/{requiredFrames.length || 0} mapped</b>
             </div>
             {requiredFrames.length ? (
-              <div className="phase-start-frame-grid">
-                {requiredFrames.slice(0, 12).map((row) => (
+              <div className="phase-frame-grid phase-start-frame-grid">
+                {requiredFrames.slice(0, 12).map((row, index) => {
+                  const frameUrl = startingFrameUrl({
+                    title: row.shot.title,
+                    code: row.code,
+                    assetId: row.shot.starting_image_asset_id,
+                  })
+                  return (
                   <article key={row.shot.id}>
-                    <div>
-                      {row.shot.starting_image_asset_id ? (
-                        <ManagedAssetImage assetId={row.shot.starting_image_asset_id} alt={`${row.code} starting frame`} fit="cover" errorLabel="Starting frame unavailable" />
-                      ) : <span>{row.code}</span>}
+                    <div
+                      className={`frame-art frame-${index % 8}${frameUrl ? ' has-image' : ''}`}
+                    >
+                      {frameUrl ? (
+                        <img
+                          src={frameUrl}
+                          alt={`${row.code} starting frame`}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : null}
+                      <span>{row.code}</span>
                     </div>
                     <b>{row.code} · {row.shot.title}</b>
-                    <small>{row.shot.starting_image_asset_id ? 'Managed asset mapped' : 'Starting frame planned'}</small>
+                    <small>{frameUrl ? 'Frame attached' : 'Starting frame planned'}</small>
                   </article>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <EmptyDesignState

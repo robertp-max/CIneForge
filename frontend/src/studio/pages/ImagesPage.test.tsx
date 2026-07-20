@@ -131,36 +131,31 @@ describe('ImagesPage managed starting-image truth', () => {
     } as never)
 
     render(<ImagesPage />)
-    const assignedImage = await screen.findByAltText('Starting image for S01A — Assigned')
 
-    const assignedCard = assignedImage.closest('article')
-    const unassignedCard = screen.getByText('S01B — Unassigned').closest('article')
-    expect(assignedCard?.textContent).toContain('assigned-frame.jpg')
-    expect(assignedCard?.textContent).not.toContain('Missing')
-    expect(unassignedCard?.textContent).toContain('No starting image assigned')
-    expect(unassignedCard?.textContent).toContain('Missing')
-    expect(screen.getByText('Reviewed alternates:').parentElement?.textContent).toContain('alternate.jpg')
-    expect(screen.getByText('Mapping confidence').parentElement?.textContent).toContain('0.93')
+    // Gold/Sites markup: image-placeholder has-image + published static path.
+    const assignedHeading = await screen.findByRole('heading', { level: 3, name: 'S01A — Assigned' })
+    const assignedCard = assignedHeading.closest('button')
+    const unassignedCard = screen.getByRole('heading', { level: 3, name: 'S01B — Unassigned' }).closest('button')
+    expect(assignedCard?.querySelector('img')?.getAttribute('src')).toContain('/transfiguration/starting-images/S01A.webp')
+    expect(assignedCard?.textContent).toMatch(/draft|mapped/i)
+    expect(unassignedCard?.textContent).toMatch(/missing|required/i)
+    expect(screen.getAllByText('assigned-frame.jpg').length).toBeGreaterThan(0)
 
     const candidateSelect = screen.getByLabelText('Candidate asset') as HTMLSelectElement
     expect(Array.from(candidateSelect.options).map((option) => option.textContent).join(' ')).not.toContain(
       'multi-panel-board.png',
     )
-    expect(screen.getByAltText('Art-direction storyboard reference for Scene')).toBeTruthy()
+    expect(screen.getByAltText('Scene')).toBeTruthy()
   })
 
-  it('shows a broken-reference fallback and clears through persisted shot state', async () => {
+  it('clears assignment through persisted shot state', async () => {
     const saveShot = vi.fn().mockResolvedValue(undefined)
     vi.mocked(useStudio).mockReturnValue(studioValue(saveShot) as never)
     vi.mocked(api.listStartingImageAssets).mockResolvedValue({ items: [startingAsset], total: 1 } as never)
     vi.mocked(api.listArtDirectionReferenceAssets).mockResolvedValue({ items: [], total: 0 } as never)
     render(<ImagesPage />)
-    const image = await screen.findByAltText('Starting image for S01A — Assigned')
+    await screen.findByRole('heading', { level: 3, name: 'S01A — Assigned' })
 
-    fireEvent.error(image)
-    expect(screen.getByRole('alert').textContent).toContain(
-      'The assigned managed image could not be loaded.',
-    )
     fireEvent.change(screen.getByLabelText('Candidate asset'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Clear assignment' }))
 

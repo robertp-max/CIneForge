@@ -274,3 +274,389 @@
   padding: 30px;
   color: #6f757d;
 }
+
+/* =============================================================================
+   Managed media thumbs (were in styles.css; dropped when Gold CSS became primary)
+   ============================================================================= */
+
+.people-grid,
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.people-grid article,
+.card-grid article {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #16191b;
+  padding: 14px;
+}
+
+.people-grid b,
+.people-grid small,
+.card-grid b,
+.card-grid small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.people-grid small,
+.card-grid small {
+  color: var(--muted);
+}
+
+.people-grid p,
+.card-grid p {
+  margin-bottom: 0;
+  font-size: 0.84rem;
+}
+
+.managed-asset-frame {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0f1214;
+  color: var(--muted);
+}
+
+.managed-asset-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: block;
+}
+
+.managed-asset-image--cover {
+  object-fit: cover;
+}
+
+.managed-asset-image--contain {
+  object-fit: contain;
+}
+
+.managed-asset-loading,
+.managed-asset-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  gap: 6px;
+  place-content: center;
+  padding: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.managed-asset-loading {
+  color: var(--dim, #6f757d);
+  font-size: 0.8rem;
+}
+
+.managed-asset-fallback {
+  background: linear-gradient(145deg, #15191d, #111315);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.managed-asset-fallback--error {
+  color: #ff9da0;
+  pointer-events: auto;
+}
+
+.managed-asset-fallback small {
+  color: inherit;
+}
+
+.character-card-portrait,
+.selected-character-portrait {
+  aspect-ratio: 4 / 3;
+}
+
+.selected-character-portrait {
+  max-height: 360px;
+}
+
+.managed-asset-frame .avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 1rem;
+}
+
+.reference-strip .reference-thumbnail,
+.shot-starting-image,
+.candidate-comparison-image,
+.selected-shot-review-image,
+.art-direction-image {
+  aspect-ratio: 16 / 9;
+}
+
+.selected-shot-review-image {
+  max-height: 520px;
+}
+
+.art-direction-references {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 18px;
+}
+
+.art-direction-grid article p {
+  color: var(--mint);
+}
+
+/* Phase media galleries (CineForge class names not present in Gold CSS) */
+.phase-media-layout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  gap: 12px;
+}
+
+.phase-media-layout > section,
+.phase-media-summary {
+  min-width: 0;
+  border: 1px solid #303539;
+  border-radius: 11px;
+  background: #191b1d;
+  padding: 15px;
+}
+
+.phase-start-frame-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.phase-start-frame-grid article {
+  min-width: 0;
+  border: 1px solid #30363a;
+  border-radius: 8px;
+  background: #16181a;
+  padding: 6px;
+}
+
+.phase-start-frame-grid article > div {
+  display: grid;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #29312d, #202426);
+  color: #7c8781;
+  font: 800 0.68rem ui-monospace, monospace;
+}
+
+.phase-start-frame-grid .managed-asset-frame {
+  border: 0;
+  border-radius: 6px;
+  min-height: 0;
+}
+
+.phase-start-frame-grid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.phase-start-frame-grid b,
+.phase-start-frame-grid small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phase-start-frame-grid b {
+  margin-top: 6px;
+  color: #bbc3bf;
+  font-size: 0.61rem;
+}
+
+.phase-start-frame-grid small {
+  margin-top: 2px;
+  color: #646d69;
+  font-size: 0.54rem;
+}
+
+.phase-nine-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(85px, 1fr));
+  gap: 7px;
+  overflow-x: auto;
+  margin-top: 13px;
+  padding-bottom: 4px;
+}
+
+.phase-nine-panel-grid article {
+  min-width: 85px;
+  border: 1px solid #30373a;
+  border-radius: 8px;
+  background: #17191b;
+  padding: 6px;
+}
+
+.phase-nine-panel-grid article > div {
+  display: grid;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #29312d, #202426);
+  color: #68736d;
+}
+
+.phase-nine-panel-grid .managed-asset-frame {
+  border: 0;
+  border-radius: 6px;
+  min-height: 0;
+  aspect-ratio: 4 / 5;
+}
+
+.phase-nine-panel-grid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.phase-nine-panel-grid b,
+.phase-nine-panel-grid small {
+  display: block;
+}
+
+.phase-nine-panel-grid b {
+  margin-top: 6px;
+  color: #b8c0bc;
+  font-size: 0.59rem;
+}
+
+.phase-nine-panel-grid small {
+  margin-top: 2px;
+  color: #626b67;
+  font-size: 0.53rem;
+}
+
+.phase-character-avatar {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #3b4c43;
+  border-radius: 12px;
+  background: #26352e;
+  color: #abd0bb;
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+
+.phase-character-avatar .managed-asset-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 12px;
+}
+
+.phase-character-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-title h2,
+.panel-title h3 {
+  margin: 0 0 4px;
+}
+
+.panel-title p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.kv-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kv-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 6px 0;
+  font-size: 0.78rem;
+}
+
+.kv-list li:first-child {
+  border-top: 0;
+}
+
+.kv-list strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.status-pill {
+  align-self: start;
+  border: 1px solid #365646;
+  border-radius: 999px;
+  background: #19261f;
+  color: var(--mint);
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+  .phase-media-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-start-frame-grid {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .phase-start-frame-grid,
+  .people-grid,
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-nine-panel-grid {
+    grid-template-columns: repeat(9, minmax(108px, 1fr));
+  }
+}

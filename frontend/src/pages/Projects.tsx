@@ -6,6 +6,7 @@ import {
   type Project,
   type Story,
 } from '../api/client'
+import { projectCoverUrl } from '../studio/mediaUrls'
 import { EmptyState, ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
 import { StudioHomeHero } from '../components/StudioHomeHero'
@@ -272,10 +273,19 @@ function ProjectList({
             const scenes = chapters.flatMap((chapter) => chapter.scenes)
             const shots = scenes.flatMap((scene) => scene.shots)
             const characters = snapshot?.characters ?? []
+            const coverUrl = projectCoverUrl({
+              projectName: project.name,
+              shotTitles: shots.map((shot) => shot.title),
+              firstAssetId:
+                shots.find((shot) => Boolean(shot.starting_image_asset_id))?.starting_image_asset_id ?? null,
+            })
             const open = () => onOpenProject?.(project.id, project.name)
             return (
               <article className="project-card" key={project.id}>
                 <button type="button" className={`project-cover project-cover-${index % 6}`} onClick={open} aria-label={`Open ${project.name}`}>
+                  {coverUrl ? (
+                    <img className="project-cover-image" src={coverUrl} alt="" loading="lazy" decoding="async" />
+                  ) : null}
                   <span className="cover-grid" /><span className="cover-orb orb-a" /><span className="cover-orb orb-b" />
                   <span className="cover-initials">{projectInitials(project.name)}</span>
                   <span className="status-pill" data-status={status.toLowerCase().replace(' ', '-')}>{status}</span>

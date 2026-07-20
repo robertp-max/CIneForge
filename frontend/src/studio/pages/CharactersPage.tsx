@@ -7,6 +7,7 @@ import {
 import { useStudio } from '../StudioState'
 import { selectCharacterHeroReference } from '../characterReferences'
 import { ManagedAssetImage } from '../components/ManagedAssetImage'
+import { characterPortraitUrl } from '../mediaUrls'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 import { initials } from '../utils'
 
@@ -348,21 +349,41 @@ export function CharactersPage() {
         {!data.characters.length ? (
           <EmptyState title="No characters yet" detail="Add a character to begin building a character profile." />
         ) : (
-          <div className="people-grid">
+          <div className="people-grid character-grid">
             {data.characters.map((character) => {
               const displayReference = selectDisplayReference(
                 referencesByCharacter[character.id] ?? [],
               )
+              const portraitUrl = characterPortraitUrl({
+                name: character.name,
+                assetId: displayReference?.asset_id,
+              })
               return (
               <article key={character.id}>
-                <ManagedAssetImage
-                  assetId={displayReference?.asset_id}
-                  alt={`${character.name} character reference`}
-                  fit="cover"
-                  className="character-card-portrait"
-                  fallback={<span className="avatar" aria-hidden="true">{initials(character.name)}</span>}
-                  errorLabel={`The linked reference for ${character.name} is unavailable.`}
-                />
+                <div
+                  className={`portrait${portraitUrl ? ' has-image' : ''}`}
+                  style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', borderRadius: 10, background: '#151719' }}
+                >
+                  {portraitUrl ? (
+                    <img
+                      src={portraitUrl}
+                      alt={`${character.name} character reference`}
+                      loading="lazy"
+                      decoding="async"
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : (
+                    <ManagedAssetImage
+                      assetId={displayReference?.asset_id}
+                      alt={`${character.name} character reference`}
+                      fit="cover"
+                      className="character-card-portrait"
+                      fallback={<span className="avatar" aria-hidden="true">{initials(character.name)}</span>}
+                      errorLabel={`The linked reference for ${character.name} is unavailable.`}
+                    />
+                  )}
+                  <span style={{ position: 'absolute', zIndex: 2, left: 8, bottom: 8 }}>{initials(character.name)}</span>
+                </div>
                 <b>{character.name}</b>
                 <small>{character.role ?? 'Role not specified'} · {character.approval_state}</small>
                 <p>{character.physical_description || 'Physical description not recorded.'}</p>
@@ -402,6 +423,28 @@ export function CharactersPage() {
             <div className="panel-title">
               <div><h2>{selectedCharacter.name}</h2><p>Persisted identity fields · {selectedCharacter.approval_state}</p></div>
             </div>
+            {(() => {
+              const selectedPortraitUrl = characterPortraitUrl({
+                name: selectedCharacter.name,
+                assetId: selectedDisplayReference?.asset_id,
+              })
+              if (selectedPortraitUrl) {
+                return (
+                  <div
+                    className="portrait has-image large"
+                    style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', borderRadius: 10, background: '#151719', maxHeight: 360 }}
+                  >
+                    <img
+                      src={selectedPortraitUrl}
+                      alt={`${selectedCharacter.name} selected character reference`}
+                      loading="lazy"
+                      decoding="async"
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  </div>
+                )
+              }
+              return (
             <ManagedAssetImage
               assetId={selectedDisplayReference?.asset_id}
               alt={`${selectedCharacter.name} selected character reference`}
@@ -410,6 +453,8 @@ export function CharactersPage() {
               fallback={<span className="avatar" aria-hidden="true">{initials(selectedCharacter.name)}</span>}
               errorLabel={`The selected reference for ${selectedCharacter.name} is unavailable.`}
             />
+              )
+            })()}
             {error ? <ErrorState detail={error} /> : null}
             <label>Name<input name="name" required defaultValue={selectedCharacter.name} disabled={busy || saving} /></label>
             <label>Role<input name="role" defaultValue={selectedCharacter.role ?? ''} disabled={busy || saving} /></label>
