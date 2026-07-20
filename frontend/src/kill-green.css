@@ -528,3 +528,36 @@ li.passed > span,
   background: #24344f !important;
   color: #a8c7fa !important;
 }
+
+/* ABSOLUTE last: every pass/check glyph blue — no green remaining */
+.phase-qa-checks li > span,
+.phase-qa-checks li.passed > span,
+.phase-qa-checks li > span *,
+.phase-one-metrics .qa-pass,
+.qa-pass,
+li.passed > span,
+.phase-qa-checks .passed span {
+  background: #1e2a3c !important;
+  background-color: #1e2a3c !important;
+  color: #a8c7fa !important;
+  border-color: #5b7aa8 !important;
+  border-top-color: #5b7aa8 !important;
+  border-right-color: #5b7aa8 !important;
+  border-bottom-color: #5b7aa8 !important;
+  border-left-color: #5b7aa8 !important;
+  outline-color: #a8c7fa !important;
+  box-shadow: none !important;
+}
+.phase-qa-checks li.passed {
+  border-color: #3d4f6a !important;
+  color: #d5d8db !important;
+}
+.production-phase-rail > button > span {
+  /* override any green check glyph color */
+}
+.production-phase-rail > button[class*="ready"] > span,
+.production-phase-rail > button.current > span {
+  color: #a8c7fa !important;
+  border-color: #6b8fc4 !important;
+  background: #24344f !important;
+}
