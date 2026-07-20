@@ -2763,7 +2763,7 @@ tbody tr {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #54d99b, #76e3ca);
+  background: linear-gradient(90deg, #7baaf7, #76e3ca);
 }
 
 .project-readiness small {
@@ -3018,7 +3018,7 @@ tbody tr {
 .production-phase-rail > button b { min-height: 38px; color: #aeb4b8; font-size: 0.66rem; line-height: 1.35; }
 .production-phase-rail > button small { margin-top: 4px; color: #6f777c; font-size: 0.59rem; text-transform: capitalize; }
 .production-phase-rail > button.current { border-color: #4b8769; background: linear-gradient(145deg, #1b2b23, #19211d); box-shadow: inset 0 0 0 1px rgba(88, 221, 161, 0.08); }
-.production-phase-rail > button.current > span { border-color: #4d9a70; background: #214733; color: var(--mint); }
+.production-phase-rail > button.current > span { border-color: #5b7aa8; background: #24344f; color: var(--mint); }
 .production-phase-rail > button.current b { color: #e0ebe5; }
 .production-phase-rail > button.current small { color: #8ab0e8; }
 .production-phase-panel { min-width: 0; outline: none; }

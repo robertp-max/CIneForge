@@ -495,7 +495,7 @@ input[type="radio"] {
   color: #a8c7fa !important;
 }
 
-/* QA pass checks were hard-coded mint #80b899 / #27302c — force blue */
+/* QA pass checks were hard-coded mint #a8c7fa / #1e2a3c — force blue */
 .phase-qa-checks li > span,
 .phase-qa-checks li.passed > span,
 .phase-qa-checks .passed > span,

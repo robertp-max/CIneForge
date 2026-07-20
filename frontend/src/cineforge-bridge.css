@@ -2619,7 +2619,7 @@
 }
 .studio .production-phase-rail > button.current > span,
 .studio .production-phase-rail > button[aria-selected="true"] > span {
-  border-color: #4d9a70 !important;
+  border-color: #5b7aa8 !important;
   background: #24344f !important;
   color: #a8c7fa !important;
 }
