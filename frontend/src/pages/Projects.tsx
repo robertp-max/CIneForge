@@ -533,8 +533,22 @@ function NewProject({ onBackToProjects, onOpenProject }: Pick<ProjectsProps, 'on
   )
 }
 
-export function Projects({ mode = 'list', onCreateNew, onBackToProjects, onOpenProject, onProjectsLoaded }: ProjectsProps) {
+export function Projects({
+  mode = 'list',
+  onCreateNew,
+  onBackToProjects,
+  onOpenProject,
+  onProjectsLoaded,
+  onNavigateStudio,
+}: ProjectsProps) {
   return mode === 'create'
     ? <NewProject onBackToProjects={onBackToProjects} onOpenProject={onOpenProject} />
-    : <ProjectList onCreateNew={onCreateNew} onOpenProject={onOpenProject} onProjectsLoaded={onProjectsLoaded} />
+    : (
+      <ProjectList
+        onCreateNew={onCreateNew}
+        onOpenProject={onOpenProject}
+        onProjectsLoaded={onProjectsLoaded}
+        onNavigateStudio={onNavigateStudio}
+      />
+    )
 }
