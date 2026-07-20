@@ -1548,19 +1548,20 @@ a.btn.primary {
 }
 .phase-location-list b,
 .phase-location-cards b {
-  color: #c7ceca;
-  font-size: 11px;
+  color: #d4d9d7;
+  font-size: 8px;
+  font-weight: 650;
 }
 .phase-location-list small,
 .phase-location-cards small {
   margin-top: 2px;
   color: #67706c;
-  font-size: 10px;
+  font-size: 7px;
 }
 .phase-location-list i,
 .phase-location-cards i {
   color: #65706a;
-  font-size: 10px;
+  font-size: 7px;
   font-style: normal;
 }
 .phase-location-profile {
@@ -1622,25 +1623,25 @@ a.btn.primary {
   border-radius: 5px;
   background: #28242f;
   color: #aa9cbc;
-  font-size: 10px;
+  font-size: 6px;
 }
 .phase-key-assets article b,
 .phase-key-asset-grid b {
   color: #c2c9c5;
-  font-size: 11px;
+  font-size: 7px;
 }
 .phase-key-assets article p,
 .phase-key-asset-grid p {
   margin: 3px 0 0;
   color: #68716d;
-  font-size: 10px;
+  font-size: 6px;
   line-height: 1.4;
 }
 .phase-key-assets article small,
 .phase-key-asset-grid small {
   grid-column: 1 / -1;
   color: #685f74;
-  font-size: 9px;
+  font-size: 6px;
   text-transform: uppercase;
 }
 
@@ -1653,7 +1654,8 @@ a.btn.primary {
 .phase-prompt-inspector { display: grid; align-content: start; gap: 13px; }
 .phase-inline-tabs { display: flex; max-width: 100%; overflow-x: auto; gap: 5px; border-bottom: 1px solid #30363a; padding-bottom: 8px; }
 .phase-inline-tabs button { min-height: 35px; flex: 0 0 auto; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #7f8884; padding: 7px 11px; font-size: 0.65rem; font-weight: 800; text-transform: capitalize; }
-.phase-inline-tabs button:hover, .phase-inline-tabs button.active { border-color: #3d5a4b; background: #202a25; color: #b9d5c5; }
+/* Active tabs: blue AI studio (not forest green) — matches gold-ai-studio-theme */
+.phase-inline-tabs button:hover, .phase-inline-tabs button.active { border-color: #4b6389; background: #223047; color: #d9e6fa; }
 .phase-inline-tabs button:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
 .phase-prompt-copy { min-height: 145px; border: 1px solid #30363a; border-radius: 8px; background: #151719; padding: 13px; }
 .phase-prompt-copy > span { color: #74ad8e; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.09em; }
@@ -3650,10 +3652,10 @@ a.btn.primary {
   font-size: 6px !important;
 }
 
-/* === PIXEL: .production-contract-heading (ProductionPhases → Sites gold-globals)
+/* === PIXEL: .production-contract-heading (ProductionPhases → Sites density)
    gold-ai-studio-theme enlarges the title (24px), forces body copy to 11px !important,
-   widens gap to 16px, and recolors .phase-count-pill blue. Restore Sites density:
-   flex-end row, 20px gap, 20px title, 9px copy, mint count pill. */
+   and widens gap to 16px. Restore Sites density: flex-end row, 20px gap, 20px title,
+   9px copy. Keep AI-studio blue count pill (no forest-green wash). */
 .production-contract {
   display: grid;
   gap: 12px;
@@ -3691,12 +3693,13 @@ a.btn.primary {
   color: var(--mint);
   font-weight: 750;
 }
+/* Blue AI-studio count pill (Sites density; kills gold-globals / residual green). */
 .phase-count-pill {
   flex: 0 0 auto;
-  border: 1px solid #385e4a;
+  border: 1px solid #3b4f6e;
   border-radius: 999px;
-  background: #1b3227;
-  color: #8bd9ae;
+  background: #1d2b42;
+  color: #a8c7fa;
   padding: 6px 9px;
   font-size: 8px;
   font-weight: 750;
@@ -5842,7 +5845,8 @@ select:focus-visible {
 }
 .phase-workspace-meta > span,
 .phase-workspace-meta-pill,
-.design-available-pill {
+.design-available-pill,
+.phase-count-pill {
   border-color: #4a5f7d !important;
   background: #1e2a3c !important;
   color: #a8c7fa !important;

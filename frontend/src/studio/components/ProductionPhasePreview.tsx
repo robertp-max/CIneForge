@@ -213,11 +213,6 @@ function characterCompleteness(character: SnapshotCharacter): number {
   return Math.round((fields.filter(Boolean).length / fields.length) * 100)
 }
 
-function characterIsApprovedHero(character: SnapshotCharacter): boolean {
-  if ((character.approval_state || '').toLowerCase() === 'approved') return true
-  return (character.reference_links ?? []).some((link) => link.approved)
-}
-
 function statusToken(value: string | null | undefined): string {
   return (value || 'draft').toLowerCase().replaceAll('_', ' ').trim() || 'draft'
 }
@@ -463,6 +458,10 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
       {selected ? (
         <div className="phase-character-layout">
           <aside className="phase-list character-list" aria-label="Character profiles">
+            <header>
+              <span>CAST</span>
+              <b>{characters.length} profiles</b>
+            </header>
             {characters.map((character) => (
               <button
                 key={character.id}

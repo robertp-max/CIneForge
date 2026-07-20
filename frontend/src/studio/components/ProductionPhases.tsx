@@ -81,7 +81,7 @@ export function ProductionPhases({
   const [pipeline, setPipeline] = useState<ProductionPipeline | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<EditablePhaseOne | null>(null)
@@ -358,7 +358,6 @@ export function ProductionPhases({
       source_fidelity_notes: packageData.source_fidelity_notes,
       creative_assumptions: packageData.creative_assumptions,
     })
-    setNotice(null)
     setEditing(true)
   }
 
@@ -373,7 +372,6 @@ export function ProductionPhases({
         requested_by: 'CineForge UI reviewer',
       })
       setPipeline(result.pipeline)
-      setNotice(result.completion_message)
       setEditing(false)
       setDraft(null)
       await loadPhaseHistory(1)
@@ -429,7 +427,6 @@ export function ProductionPhases({
       setIterationLabel('')
       setIterationNotes('')
       setCreateOpen(false)
-      setNotice(`Phase ${selectedPhaseNumber} iteration v${created.version.version_number} retained in SQLite.`)
     } catch (caught) {
       setHistoryError(
         caught instanceof Error ? caught.message : 'Unable to retain the current draft iteration.',
@@ -445,9 +442,6 @@ export function ProductionPhases({
       downloadText(
         `story-${storyId}-phase-history.cineforge.json`,
         JSON.stringify(exported, null, 2),
-      )
-      setNotice(
-        `Exported ${exported.integrity.iteration_count} verified iterations (integrity.verified=${exported.integrity.verified}).`,
       )
     } catch (caught) {
       setHistoryError(
@@ -651,18 +645,6 @@ export function ProductionPhases({
           <LoadingState title="Loading retained iteration…" />
         ) : selectedPhaseNumber === 1 ? (
           <>
-            {pipeline.completion_message || notice ? (
-              <div className="phase-one-complete-message" role="status">
-                <span>✓</span>
-                <div>
-                  <b>{notice || pipeline.completion_message}</b>
-                  <p>
-                    Version {phaseOne?.current_version_number ?? 1} is retained in SQLite and remains unapproved until human review.
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
             {historical && incompleteReason ? (
               <div className="phase-history-error phase-legacy-incomplete" role="alert">
                 <div>
@@ -705,7 +687,7 @@ export function ProductionPhases({
                   </article>
                 </div>
 
-                <div className="panel phase-one-review-panel phase-workspace">
+                <div className="panel phase-one-review-panel">
                   <div className="panel-title">
                     <div>
                       <span className="eyebrow">
@@ -744,30 +726,81 @@ export function ProductionPhases({
                       </div>
                     </div>
                   ) : (
-                    <div className="phase-one-document phase-document">
-                      <section><span>WORKING TITLE</span><h3>{packageData.project_title}</h3></section>
-                      <section><span>LOGLINE</span><p>{packageData.logline}</p></section>
-                      <section><span>SHORT SYNOPSIS</span><p>{packageData.short_synopsis}</p></section>
-                      <details open><summary>Detailed treatment</summary><div className="phase-one-prose">{packageData.detailed_treatment}</div></details>
-                      <details open><summary>Complete expanded script</summary><pre>{packageData.complete_script}</pre></details>
+                    <section className="phase-document" aria-label="Phase 1 script document">
+                      <div>
+                        <span>WORKING TITLE</span>
+                        <h4>{packageData.project_title}</h4>
+                      </div>
+                      <div>
+                        <span>LOGLINE</span>
+                        <p>{packageData.logline || 'No logline has been recorded.'}</p>
+                      </div>
+                      <div>
+                        <span>SHORT SYNOPSIS</span>
+                        <p>{packageData.short_synopsis || 'No synopsis has been recorded.'}</p>
+                      </div>
+                      <details open>
+                        <summary>Source story and treatment</summary>
+                        <p>{packageData.detailed_treatment || 'Add the original story, script, narration, or treatment in Story & Chapters.'}</p>
+                      </details>
+                      <details open>
+                        <summary>Complete expanded script</summary>
+                        <p>{packageData.complete_script || 'No complete script has been recorded.'}</p>
+                      </details>
                       <details>
                         <summary>Narration and dialogue</summary>
-                        <div className="phase-one-speech">
-                          <div><b>Narration</b><p>{packageData.narration_script}</p></div>
-                          <div><b>Dialogue</b><p>{packageData.dialogue_script}</p></div>
+                        <div className="phase-document-grid">
+                          <article>
+                            <span>NARRATION</span>
+                            <p>{packageData.narration_script || 'No narration script has been recorded.'}</p>
+                          </article>
+                          <article>
+                            <span>DIALOGUE</span>
+                            <p>{packageData.dialogue_script || 'No dialogue script has been recorded.'}</p>
+                          </article>
                         </div>
                       </details>
-                      <div className="split-2 phase-one-lists">
-                        <section>
+                      <div className="phase-document-grid">
+                        <article>
                           <span>EMOTIONAL PROGRESSION</span>
-                          <ol>{packageData.emotional_progression.map((item) => <li key={item}>{item}</li>)}</ol>
-                        </section>
-                        <section>
+                          <p>
+                            {packageData.emotional_progression.length
+                              ? packageData.emotional_progression.join(' · ')
+                              : 'Not recorded'}
+                          </p>
+                        </article>
+                        <article>
                           <span>CREATIVE ASSUMPTIONS</span>
-                          <ul>{packageData.creative_assumptions.map((item) => <li key={item}>{item}</li>)}</ul>
-                        </section>
+                          <p>
+                            {packageData.creative_assumptions.length
+                              ? packageData.creative_assumptions.join(' · ')
+                              : 'Not recorded'}
+                          </p>
+                        </article>
+                        <article>
+                          <span>CREATIVE DIRECTION</span>
+                          <p>
+                            {[
+                              typeof packageData.creative_direction?.language === 'string'
+                                ? packageData.creative_direction.language
+                                : null,
+                              typeof packageData.creative_direction?.genre === 'string'
+                                ? packageData.creative_direction.genre
+                                : null,
+                              typeof packageData.creative_direction?.tone === 'string'
+                                ? packageData.creative_direction.tone
+                                : null,
+                            ].filter(Boolean).join(' · ') || 'Planning text only.'}
+                          </p>
+                        </article>
+                        <article>
+                          <span>PRODUCTION BOUNDARY</span>
+                          <p>
+                            Planning text only. No scene media, voices, videos, render jobs, or final outputs are created here.
+                          </p>
+                        </article>
                       </div>
-                    </div>
+                    </section>
                   )}
                 </div>
 

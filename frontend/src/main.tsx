@@ -6,6 +6,8 @@ import './gold-globals.css'
 import './gold-ai-studio-theme.css'
 /* Minimal bridges for remaining CineForge-only class names not in Gold CSS. */
 import './cineforge-bridge.css'
+/* Last: kill forest-green boxes; AI Studio blue mint accents. */
+import './kill-green.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
