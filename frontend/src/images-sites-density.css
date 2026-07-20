@@ -1,0 +1,486 @@
+/*
+ * PIXEL ImagesPage — Gold Sites image-grid density (gold-globals)
+ *
+ * Loaded last in main.tsx so gold-ai-studio-theme and cineforge-bridge
+ * cannot re-inflate starting-image cards / review chrome.
+ *
+ * Sites contract (gold-globals):
+ *   .image-layout → 1fr + 365px
+ *   .image-grid → 4 cols / gap 8
+ *   .image-placeholder → 98px + frame-N silhouette
+ *   .review-canvas → 191px + has-image gradient
+ *   card type → code 6px, h3 9px, p 7px, footer small 6px
+ */
+
+/* --- Layout --- */
+.image-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 365px;
+  gap: 12px;
+}
+
+.image-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Segmented filter chips — Sites 8px / 26px (theme uses 11px pill) */
+.image-toolbar .segmented {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line, #2b2e32);
+  background: #181a1c;
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.image-toolbar .segmented button {
+  border: 0 !important;
+  background: none !important;
+  color: #7e838b !important;
+  border-radius: 5px !important;
+  height: 26px !important;
+  min-height: 0 !important;
+  padding: 0 9px !important;
+  font-size: 8px !important;
+  box-shadow: none !important;
+}
+
+.image-toolbar .segmented button.active {
+  background: #2a2d31 !important;
+  color: #f0f2f3 !important;
+}
+
+.image-toolbar .segmented span {
+  margin-left: 5px;
+  color: #62676e;
+  font-size: 8px !important;
+}
+
+.image-toolbar select,
+.image-toolbar input:not([type='checkbox']):not([type='radio']):not([type='file']) {
+  width: 115px;
+  min-width: 0;
+  margin: 0 !important;
+  height: 33px !important;
+  min-height: 0 !important;
+  border: 1px solid #30343a !important;
+  border-radius: 6px !important;
+  background: #1d2022 !important;
+  color: #d5d8db !important;
+  padding: 8px !important;
+  font-size: 9px !important;
+}
+
+.image-toolbar input:not([type='checkbox']):not([type='radio']):not([type='file']) {
+  width: auto;
+  min-width: 140px;
+  flex: 1 1 140px;
+  max-width: 280px;
+}
+
+/* --- Grid --- */
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Candidate inventory in the review column: denser 2-up */
+.image-grid.image-grid-compact,
+.image-review .image-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.image-grid > button {
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  border: 1px solid var(--line, #2b2e32);
+  background: var(--panel, #17191b);
+  border-radius: 8px;
+  overflow: hidden;
+  text-align: left;
+  padding: 0;
+  color: inherit;
+  display: block;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.image-grid > button:hover,
+.image-grid > button.selected {
+  border-color: #5b7aa8;
+  background: var(--panel, #17191b);
+}
+
+/* Non-interactive cards (art boards / inventory) */
+.image-grid > button.image-grid-static {
+  cursor: default;
+  pointer-events: none;
+}
+
+/*
+ * Sites card chrome — only inside .image-grid so ManagedAssetImage
+ * (also uses .image-placeholder) is not forced to 98px.
+ */
+.image-grid .image-placeholder {
+  height: 98px !important;
+  min-height: 0 !important;
+  max-height: 98px;
+  aspect-ratio: auto !important;
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.image-grid .image-placeholder:before {
+  content: "";
+  position: absolute;
+  width: 38%;
+  height: 60%;
+  bottom: -12%;
+  left: 31%;
+  border-radius: 48% 48% 15% 15%;
+  background: #1b2023;
+  box-shadow: 0 -18px 0 -8px #3b4448;
+}
+
+.image-grid .image-placeholder > span {
+  position: absolute;
+  z-index: 2;
+  left: 7px;
+  top: 7px;
+  font-size: 6px !important;
+  line-height: 1.2;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 3px 4px;
+  border-radius: 0;
+  font-weight: 500;
+}
+
+.image-grid .image-placeholder > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+}
+
+.image-grid .image-placeholder.has-image:before {
+  display: none;
+}
+
+.image-grid .image-placeholder.has-image > span {
+  z-index: 3;
+}
+
+.image-grid > button > div:last-child {
+  padding: 8px;
+}
+
+.image-grid code {
+  font-size: 6px !important;
+  color: #777d84;
+}
+
+.image-grid > button > div:last-child > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.image-grid > button > div:last-child > span > b {
+  font-size: 7px !important;
+  color: var(--muted, #858a92);
+  font-weight: 650;
+}
+
+/* Beat any studio type-scale h3 inflation */
+.studio .image-grid h3,
+.image-grid h3 {
+  font-size: 9px !important;
+  margin: 5px 0 3px !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0 !important;
+  font-weight: 650;
+  color: var(--text, #eef0f2);
+}
+
+.studio .image-grid p,
+.image-grid p {
+  font-size: 7px !important;
+  color: var(--muted, #858a92) !important;
+  margin: 0 !important;
+  line-height: 1.35 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-grid footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 7px;
+  gap: 6px;
+}
+
+.image-grid footer small {
+  font-size: 6px !important;
+  color: #767c83;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-grid footer .status-pill {
+  font-size: 7px !important;
+  padding: 3px 6px;
+}
+
+/* --- Review column --- */
+.image-review {
+  border: 1px solid var(--line, #2b2e32);
+  background: var(--panel, #17191b);
+  border-radius: 9px;
+  padding: 13px;
+  height: max-content;
+  max-height: calc(100dvh - 118px);
+  overflow: auto;
+  position: sticky;
+  top: 0;
+}
+
+.image-review > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.image-review > header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.studio .image-review h2,
+.image-review h2 {
+  font-size: 13px !important;
+  margin: 3px 0 0 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.2px;
+}
+
+.image-review .review-canvas {
+  height: 191px !important;
+  min-height: 0 !important;
+  max-height: 191px;
+  aspect-ratio: auto !important;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: 11px;
+  border: 0;
+}
+
+.image-review .review-canvas:before {
+  content: "";
+  position: absolute;
+  width: 38%;
+  height: 60%;
+  bottom: -12%;
+  left: 31%;
+  border-radius: 48% 48% 15% 15%;
+  background: #1b2023;
+  box-shadow: 0 -18px 0 -8px #3b4448;
+}
+
+.image-review .review-canvas > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+}
+
+.image-review .review-canvas > span {
+  position: relative;
+  z-index: 2;
+  left: auto;
+  top: auto;
+  font-size: 12px !important;
+  font-weight: 600;
+  background: none;
+  padding: 0;
+  line-height: 1.25;
+}
+
+.image-review .review-canvas > small {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.58);
+  font-size: 6px !important;
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.2;
+}
+
+.image-review .review-canvas.has-image:before {
+  display: none;
+}
+
+.image-review .review-canvas.has-image:after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 50%, rgba(5, 6, 7, 0.72));
+  pointer-events: none;
+}
+
+.image-review .review-canvas.has-image > span,
+.image-review .review-canvas.has-image > small {
+  z-index: 3;
+}
+
+.image-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin: 8px 0;
+}
+
+.image-meta div {
+  background: #1c1e20;
+  border: 1px solid #2c2f33;
+  border-radius: 6px;
+  padding: 7px;
+}
+
+.image-meta span,
+.image-meta b {
+  display: block;
+}
+
+.image-meta span {
+  font-size: 6px !important;
+  color: var(--muted, #858a92);
+}
+
+.image-meta b {
+  font-size: 7px !important;
+  margin-top: 2px;
+  color: var(--text, #eef0f2);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+/* Review form controls — theme sets 42px / 13px / 12px radius */
+.image-review .form-stack input,
+.image-review .form-stack select,
+.image-review .form-stack textarea {
+  min-height: 0 !important;
+  border: 1px solid #30343a !important;
+  border-radius: 6px !important;
+  background: #1d2022 !important;
+  color: #d5d8db !important;
+  padding: 8px !important;
+  font-size: 9px !important;
+}
+
+.image-review .form-stack input,
+.image-review .form-stack select {
+  height: 33px !important;
+}
+
+.image-review .form-stack textarea {
+  height: auto !important;
+  min-height: 58px !important;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.image-review .form-stack textarea.tall,
+.image-review .form-stack textarea.prompt.tall {
+  min-height: 83px !important;
+}
+
+.image-review .form-stack textarea.prompt {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace !important;
+  font-size: 8px !important;
+  color: #c7d2cc !important;
+}
+
+.image-review .form-hint {
+  font-size: 7px !important;
+  color: var(--muted, #858a92);
+  line-height: 1.4;
+}
+
+/* Art-direction strip above the main layout uses the same card system */
+.page > .panel > .image-grid {
+  margin-top: 4px;
+}
+
+/* --- Breakpoints (Sites) --- */
+@media (max-width: 1500px) {
+  .image-grid:not(.image-grid-compact) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1050px) {
+  .image-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .image-review {
+    position: relative;
+    max-height: none;
+  }
+
+  .image-grid:not(.image-grid-compact) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .image-grid,
+  .image-grid.image-grid-compact,
+  .image-review .image-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .image-toolbar {
+    align-items: stretch;
+  }
+
+  .image-toolbar select,
+  .image-toolbar input:not([type='checkbox']):not([type='radio']):not([type='file']) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 100%;
+  }
+}

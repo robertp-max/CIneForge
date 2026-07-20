@@ -55,9 +55,9 @@
 .primary-button {
   height: 32px;
   border-radius: 7px;
-  border: 1px solid #e0f5e9;
-  background: #e0f5e9;
-  color: #152019;
+  border: 1px solid #d3e3fd;
+  background: #d3e3fd;
+  color: #041e49;
   font-weight: 650;
   font-size: 9px;
   display: inline-flex;
@@ -503,7 +503,7 @@
 .phase-nine-panel-grid b { margin-top: 5px; font-size: 7px; }
 .phase-nine-panel-grid small {
   margin-top: 2px;
-  color: #646d69;
+  color: #6f757d;
   font-size: 6px;
 }
 
@@ -515,8 +515,8 @@
   overflow: hidden;
   place-items: center;
   border-radius: 10px;
-  background: linear-gradient(145deg, #315a46, #283b32);
-  color: #c1ddcd;
+  background: linear-gradient(145deg, #2a3b59, #24344f);
+  color: #b8c9e6;
   font-weight: 800;
 }
 .phase-character-avatar .managed-asset-frame {
@@ -1095,7 +1095,7 @@
 }
 .phase-location-profile > header span:not(.status-pill) {
   display: block;
-  color: #8ab0e8;
+  color: #6fac8a;
   font-size: 7px;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -1286,7 +1286,7 @@
 .studio .phase-frame-grid article > small,
 .studio .phase-start-frame-grid article > small {
   margin-top: 2px;
-  color: #646d69 !important;
+  color: #6f757d !important;
   font-size: 6px !important;
   line-height: 1.35 !important;
 }
@@ -1956,7 +1956,7 @@
    KILL phase-footer green accents — Gold live (Sites + AI studio theme)
    gold-globals hardcodes .phase-footer > div > span { color:#8ab0e8 } (mint green).
    Gold published site + gold-ai-studio-theme use #a8c7fa. Force here (bridge loads last).
-   Primary CTA: #a8c7fa / #10233e — never gold-globals green #e0f5e9 fill.
+   Primary CTA: #a8c7fa / #10233e — never gold-globals green #d3e3fd fill.
    ============================================================================= */
 .phase-footer,
 .studio .phase-footer,
@@ -2017,7 +2017,7 @@
   padding: 0 16px;
 }
 
-/* Gold live primary — kill green #e0f5e9 and pale #d3e3fd on footer CTAs */
+/* Gold live primary — kill green #d3e3fd and pale #d3e3fd on footer CTAs */
 .phase-footer .btn.primary,
 .phase-footer button.btn.primary,
 .phase-footer .primary-button,
@@ -2093,8 +2093,8 @@
 /* Kill residual projects-page mint-green progress / current-card wash */
 .project-progress > i,
 .projects-page .project-progress > i {
-  background: linear-gradient(90deg, #7baaf7, #a8c7fa 62%, #81c995) !important;
-  background-image: linear-gradient(90deg, #7baaf7, #a8c7fa 62%, #81c995) !important;
+  background: linear-gradient(90deg, #7baaf7, #a8c7fa 62%, #a8c7fa) !important;
+  background-image: linear-gradient(90deg, #7baaf7, #a8c7fa 62%, #a8c7fa) !important;
 }
 .project-card.current {
   border-color: #5b7aa8 !important;
@@ -2238,7 +2238,7 @@
 .phase-footer .btn.primary,
 .phase-footer button.btn.primary,
 .phase-footer .primary-button {
-  /* Kill green #e0f5e9 and any residual mint fill — Gold live blue CTA */
+  /* Kill green #d3e3fd and any residual mint fill — Gold live blue CTA */
   background: #a8c7fa !important;
   background-color: #a8c7fa !important;
   background-image: none !important;
@@ -2666,7 +2666,7 @@
   color: #67706c;
 }
 .phase-location-profile > header span:not(.status-pill) {
-  color: #8ab0e8 !important;
+  color: #6fac8a !important;
   font-size: 7px !important;
 }
 .phase-location-profile > header h4 {
@@ -2827,7 +2827,6 @@
 .phase-workspace-meta-pill,
 .design-available-pill,
 .phase-count-pill,
-.phase-source-pill,
 .phase-preview-header-meta > span,
 .studio .phase-workspace-meta > span,
 .studio .phase-workspace-meta-pill,
@@ -2838,3 +2837,6 @@
   background-color: #1e2a3c !important;
   color: #a8c7fa !important;
 }
+
+/* stack-form alias (pages use stack-form not form-stack) */
+.stack-form{display:grid;gap:12px}.stack-form label{display:grid;gap:5px;font-size:8px;color:var(--soft)}.stack-form input,.stack-form textarea,.stack-form select{width:100%;border:1px solid var(--line);border-radius:7px;background:#191c1e;color:var(--text);padding:9px 10px}.split-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}

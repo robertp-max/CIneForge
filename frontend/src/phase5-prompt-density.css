@@ -1,0 +1,554 @@
+/*
+ * PIXEL Phase 5 — prompt package layout density (Gold Sites gold-globals)
+ *
+ * Markup: ProductionPhasePreview PhaseFivePreview
+ *   .phase-prompt-layout
+ *     > aside.phase-list.prompt-list
+ *     > section.phase-prompt-inspector
+ *         header / .phase-inline-tabs / .phase-prompt-copy / .phase-fact-grid
+ *   + section.phase-workflow-evidence
+ *
+ * Loaded last in main.tsx so residual cineforge-bridge + gold-ai-studio-theme
+ * cannot re-inflate the prompt workspace. Layout metrics match gold-globals:
+ *   260px list | 10px gap | 7/8/12px type | 120px prompt min-height | 5-up states.
+ * Active accents use AI Studio blue (consistent with kill-green).
+ */
+
+/* --- Two-column shell ---------------------------------------------------- */
+
+.phase-prompt-layout {
+  display: grid !important;
+  min-width: 0;
+  grid-template-columns: 260px minmax(0, 1fr) !important;
+  gap: 10px !important;
+}
+
+/* --- Shot package list (Sites .phase-list + .prompt-list) ---------------- */
+
+.phase-prompt-layout .phase-list,
+.phase-prompt-layout .prompt-list {
+  min-width: 0 !important;
+  max-height: 430px !important;
+  overflow: auto !important;
+  border: 1px solid #2e3336 !important;
+  border-radius: 8px !important;
+  background: #17191b !important;
+  padding: 7px !important;
+  scrollbar-width: thin;
+  scrollbar-color: #393e42 transparent;
+}
+
+.phase-prompt-layout .phase-list > header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 5px 5px 8px !important;
+}
+
+.studio .phase-prompt-layout .phase-list > header span,
+.phase-prompt-layout .phase-list > header span {
+  color: #8ab0e8 !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.7px !important;
+}
+
+.studio .phase-prompt-layout .phase-list > header b,
+.phase-prompt-layout .phase-list > header b {
+  font-size: 7px !important;
+  color: #7e8782 !important;
+  font-weight: 650 !important;
+}
+
+.phase-prompt-layout .phase-list > button,
+.phase-prompt-layout .prompt-list > button {
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: none !important;
+  display: grid !important;
+  grid-template-columns: 29px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 7px !important;
+  text-align: left !important;
+  color: inherit !important;
+  box-shadow: none !important;
+}
+
+.phase-prompt-layout .phase-list > button:hover,
+.phase-prompt-layout .phase-list > button.active,
+.phase-prompt-layout .prompt-list > button:hover,
+.phase-prompt-layout .prompt-list > button.active {
+  background: #292b2e !important;
+}
+
+/* Mono code badge — Sites .prompt-list>button>span */
+.phase-prompt-layout .prompt-list > button > span,
+.phase-prompt-layout .phase-list.prompt-list > button > span {
+  width: 27px !important;
+  height: 27px !important;
+  border-radius: 6px !important;
+  background: #262b2d !important;
+  display: grid !important;
+  place-items: center !important;
+  color: #8ab0e8 !important;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace !important;
+  font-size: 7px !important;
+  font-weight: 700 !important;
+}
+
+.phase-prompt-layout .prompt-list > button.active > span,
+.phase-prompt-layout .phase-list.prompt-list > button.active > span {
+  background: #24344f !important;
+  color: #a8c7fa !important;
+}
+
+.studio .phase-prompt-layout .phase-list b,
+.phase-prompt-layout .phase-list b {
+  display: block !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: 8px !important;
+  color: #d4d9d7 !important;
+  font-weight: 650 !important;
+}
+
+.studio .phase-prompt-layout .phase-list small,
+.phase-prompt-layout .phase-list small {
+  display: block !important;
+  margin-top: 2px !important;
+  color: #67706c !important;
+  font-size: 7px !important;
+  line-height: 1.45 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.phase-prompt-layout .phase-list i {
+  color: #65706a !important;
+  font-size: 7px !important;
+  font-style: normal !important;
+}
+
+.phase-prompt-layout .phase-list i.has-record {
+  color: #a8c7fa !important;
+}
+
+/* --- Prompt inspector ---------------------------------------------------- */
+
+.phase-prompt-layout .phase-prompt-inspector,
+.phase-prompt-inspector {
+  display: grid !important;
+  align-content: start !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  border: 1px solid #2e3336 !important;
+  border-radius: 8px !important;
+  background: #181a1c !important;
+  padding: 12px !important;
+}
+
+.phase-prompt-inspector > header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.studio .phase-prompt-inspector > header span,
+.phase-prompt-inspector > header span {
+  color: #8ab0e8 !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.7px !important;
+}
+
+.studio .phase-prompt-inspector > header h4,
+.phase-prompt-inspector > header h4 {
+  margin: 4px 0 3px !important;
+  font-size: 12px !important;
+  color: #e8ecea !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+}
+
+.studio .phase-prompt-inspector > header p,
+.studio .phase-prompt-inspector > header > div > p,
+.phase-prompt-inspector > header p {
+  margin: 0 !important;
+  color: #747d78 !important;
+  font-size: 7px !important;
+  line-height: 1.45 !important;
+}
+
+/* --- Image / video / negative tabs --------------------------------------- */
+
+.phase-prompt-layout .phase-inline-tabs,
+.phase-prompt-inspector .phase-inline-tabs {
+  display: flex !important;
+  gap: 4px !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  border-bottom: 1px solid #2e3336 !important;
+  padding-bottom: 7px !important;
+}
+
+.studio .phase-prompt-layout .phase-inline-tabs button,
+.studio .phase-prompt-inspector .phase-inline-tabs button,
+.phase-prompt-layout .phase-inline-tabs button,
+.phase-prompt-inspector .phase-inline-tabs button {
+  min-height: 34px !important;
+  height: auto !important;
+  flex: 0 0 auto !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
+  background: none !important;
+  color: #7b837f !important;
+  padding: 0 10px !important;
+  font-size: 7px !important;
+  font-weight: 750 !important;
+  text-transform: capitalize !important;
+  box-shadow: none !important;
+}
+
+.studio .phase-prompt-layout .phase-inline-tabs button:hover,
+.studio .phase-prompt-layout .phase-inline-tabs button.active,
+.studio .phase-prompt-inspector .phase-inline-tabs button:hover,
+.studio .phase-prompt-inspector .phase-inline-tabs button.active,
+.phase-prompt-layout .phase-inline-tabs button:hover,
+.phase-prompt-layout .phase-inline-tabs button.active,
+.phase-prompt-inspector .phase-inline-tabs button:hover,
+.phase-prompt-inspector .phase-inline-tabs button.active {
+  border-color: #4b6389 !important;
+  background: #223047 !important;
+  color: #d9e6fa !important;
+}
+
+/* --- Prompt body --------------------------------------------------------- */
+
+.phase-prompt-layout .phase-prompt-copy,
+.phase-prompt-inspector .phase-prompt-copy {
+  min-height: 120px !important;
+  border: 1px solid #2e3336 !important;
+  border-radius: 7px !important;
+  background: #141618 !important;
+  padding: 11px !important;
+}
+
+.studio .phase-prompt-copy > span,
+.phase-prompt-copy > span {
+  color: #8ab0e8 !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.7px !important;
+}
+
+.studio .phase-prompt-copy p,
+.phase-prompt-copy p {
+  margin: 7px 0 0 !important;
+  color: #b1b8b4 !important;
+  font: 8px / 1.65 ui-monospace, SFMono-Regular, Consolas, monospace !important;
+  white-space: pre-wrap !important;
+}
+
+/* --- Support fact grid --------------------------------------------------- */
+
+.phase-prompt-inspector .phase-fact-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  overflow: hidden !important;
+  border: 1px solid #2d3235 !important;
+  border-radius: 7px !important;
+  margin-top: 0 !important;
+}
+
+.phase-prompt-inspector .phase-fact-grid article {
+  min-width: 0 !important;
+  border-top: 1px solid #2d3235 !important;
+  border-left: 1px solid #2d3235 !important;
+  padding: 9px !important;
+}
+
+.phase-prompt-inspector .phase-fact-grid article:nth-child(-n + 2) {
+  border-top: 0 !important;
+}
+
+.phase-prompt-inspector .phase-fact-grid article:nth-child(odd) {
+  border-left: 0 !important;
+}
+
+.studio .phase-prompt-inspector .phase-fact-grid span,
+.phase-prompt-inspector .phase-fact-grid span {
+  color: #8ab0e8 !important;
+  font-size: 7px !important;
+  font-weight: 750 !important;
+}
+
+.studio .phase-prompt-inspector .phase-fact-grid p,
+.phase-prompt-inspector .phase-fact-grid p {
+  margin: 4px 0 0 !important;
+  color: #858e89 !important;
+  font-size: 7px !important;
+  line-height: 1.5 !important;
+}
+
+/* --- Workflow evidence board --------------------------------------------- */
+
+.phase-workspace:has(.phase-prompt-layout) .phase-workflow-evidence,
+.phase-workflow-evidence {
+  border: 1px solid #2e3336 !important;
+  border-radius: 8px !important;
+  background: #181a1c !important;
+  padding: 12px !important;
+}
+
+.studio .phase-workflow-evidence > header span,
+.studio .phase-workflow-evidence .phase-subheading span,
+.phase-workflow-evidence > header span,
+.phase-workflow-evidence .phase-subheading span {
+  color: #8ab0e8 !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.7px !important;
+}
+
+.studio .phase-workflow-evidence > header h4,
+.studio .phase-workflow-evidence .phase-subheading h4,
+.phase-workflow-evidence > header h4,
+.phase-workflow-evidence .phase-subheading h4 {
+  margin: 4px 0 3px !important;
+  font-size: 12px !important;
+  color: #e8ecea !important;
+  font-weight: 650 !important;
+}
+
+.studio .phase-workflow-evidence > header p,
+.studio .phase-workflow-evidence .phase-subheading p,
+.phase-workflow-evidence > header p,
+.phase-workflow-evidence .phase-subheading p {
+  margin: 0 !important;
+  color: #747d78 !important;
+  font-size: 7px !important;
+  line-height: 1.45 !important;
+}
+
+.phase-workflow-evidence > div:not(.phase-footer-actions) {
+  display: grid !important;
+  grid-template-columns: repeat(5, 1fr) !important;
+  gap: 7px !important;
+  margin-top: 10px !important;
+}
+
+.phase-workflow-evidence > div:not(.phase-footer-actions) article {
+  display: flex !important;
+  gap: 7px !important;
+  border: 1px solid #2f3538 !important;
+  border-radius: 7px !important;
+  background: #151719 !important;
+  padding: 8px !important;
+}
+
+.phase-workflow-evidence article > i {
+  width: 8px !important;
+  height: 8px !important;
+  flex: 0 0 auto !important;
+  border-radius: 50% !important;
+  background: #6e7772 !important;
+  margin-top: 3px !important;
+  font-style: normal !important;
+}
+
+.phase-workflow-evidence article > i[data-state='available'] {
+  background: #8ab0e8 !important;
+}
+
+.phase-workflow-evidence article > i[data-state='admitted'] {
+  background: #a8c7fa !important;
+}
+
+.phase-workflow-evidence article > i[data-state='benchmark-required'] {
+  background: #d2a865 !important;
+}
+
+.phase-workflow-evidence article > i[data-state='blocked'] {
+  background: #c27b71 !important;
+}
+
+.phase-workflow-evidence article > i[data-state='unavailable'] {
+  background: #875f63 !important;
+}
+
+.studio .phase-workflow-evidence article b,
+.phase-workflow-evidence article b {
+  font-size: 7px !important;
+  color: #c6ceca !important;
+  font-weight: 650 !important;
+}
+
+.studio .phase-workflow-evidence article p,
+.phase-workflow-evidence article p {
+  margin: 3px 0 0 !important;
+  color: #68716d !important;
+  font-size: 6px !important;
+  line-height: 1.4 !important;
+}
+
+.phase-workflow-evidence > .phase-footer-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
+}
+
+.phase-workflow-evidence > .phase-footer-actions .btn {
+  min-height: 30px !important;
+  height: 30px !important;
+  font-size: 10px !important;
+}
+
+/* Residual alias: old .phase-package-list → Sites list density */
+.phase-package-list {
+  min-width: 0 !important;
+  max-height: 430px !important;
+  overflow: auto !important;
+  border: 1px solid #2e3336 !important;
+  border-radius: 8px !important;
+  background: #17191b !important;
+  padding: 7px !important;
+}
+
+/* --- Workspace metrics strip when Phase 5 is active ---------------------- */
+
+.phase-workspace:has(.phase-prompt-layout) {
+  gap: 12px !important;
+  padding: 14px !important;
+}
+
+.phase-workspace:has(.phase-prompt-layout) .phase-metrics {
+  border-radius: 8px !important;
+  border: 1px solid #2d3235 !important;
+  background: #17191b !important;
+}
+
+.phase-workspace:has(.phase-prompt-layout) .phase-metric {
+  min-height: 0 !important;
+  padding: 10px !important;
+}
+
+.studio .phase-workspace:has(.phase-prompt-layout) .phase-metric > span,
+.phase-workspace:has(.phase-prompt-layout) .phase-metric > span {
+  color: #737b77 !important;
+  font-size: 7px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.studio .phase-workspace:has(.phase-prompt-layout) .phase-metric > strong,
+.phase-workspace:has(.phase-prompt-layout) .phase-metric > strong {
+  margin-top: 5px !important;
+  color: #d9dddb !important;
+  font-size: 15px !important;
+}
+
+.studio .phase-workspace:has(.phase-prompt-layout) .phase-metric > small,
+.phase-workspace:has(.phase-prompt-layout) .phase-metric > small {
+  margin-top: 3px !important;
+  color: #606965 !important;
+  font-size: 6px !important;
+}
+
+/* --- Breakpoints (gold-globals) ------------------------------------------ */
+
+@media (max-width: 1500px) {
+  .phase-workflow-evidence > div:not(.phase-footer-actions) {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (max-width: 1050px) {
+  .phase-prompt-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .phase-prompt-layout .phase-list,
+  .phase-prompt-layout .prompt-list {
+    max-height: 300px !important;
+  }
+
+  .phase-workflow-evidence > div:not(.phase-footer-actions) {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .studio .phase-prompt-layout .phase-inline-tabs button,
+  .studio .phase-prompt-inspector .phase-inline-tabs button,
+  .phase-prompt-layout .phase-inline-tabs button,
+  .phase-prompt-inspector .phase-inline-tabs button {
+    min-height: 44px !important;
+  }
+
+  .phase-prompt-inspector .phase-fact-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .phase-prompt-inspector .phase-fact-grid article {
+    border-left: 0 !important;
+    border-top: 1px solid #2d3235 !important;
+  }
+
+  .phase-prompt-inspector .phase-fact-grid article:first-child {
+    border-top: 0 !important;
+  }
+
+  .phase-workflow-evidence > div:not(.phase-footer-actions) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .phase-workspace:has(.phase-prompt-layout) .phase-metrics.five {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* === FINAL type ladder wins over .studio p/button 9–11px inflation === */
+.studio .phase-prompt-layout .phase-list > button,
+.studio .phase-prompt-layout .prompt-list > button {
+  min-height: 0 !important;
+  font-size: inherit !important;
+}
+.studio .phase-prompt-layout .prompt-list > button > span,
+.studio .phase-prompt-layout .phase-list.prompt-list > button > span {
+  font-size: 7px !important;
+}
+.studio .phase-prompt-inspector > header p,
+.studio .phase-prompt-inspector > header > div > p {
+  font-size: 7px !important;
+  line-height: 1.45 !important;
+  color: #747d78 !important;
+}
+.studio .phase-prompt-layout .phase-inline-tabs button,
+.studio .phase-prompt-inspector .phase-inline-tabs button {
+  min-height: 34px !important;
+  font-size: 7px !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
+}
+.studio .phase-prompt-copy p {
+  font: 8px / 1.65 ui-monospace, SFMono-Regular, Consolas, monospace !important;
+  color: #b1b8b4 !important;
+  margin: 7px 0 0 !important;
+}
+.studio .phase-prompt-copy > span {
+  font-size: 7px !important;
+}
+.studio .phase-workflow-evidence article b {
+  font-size: 7px !important;
+}
+.studio .phase-workflow-evidence article p {
+  font-size: 6px !important;
+}

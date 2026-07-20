@@ -1,22 +1,368 @@
-:root{--mint:#a8c7fa!important;--mint-dark:#233348!important;--blue:#a8c7fa!important;--success:#81c995}
-/* force cool blue accents; never forest green panels */
-.production-phase-rail>button.current,
-.production-phase-rail>button[aria-current=step]{border-color:#5b7aa8!important;background:#1a2434!important;background-image:none!important;box-shadow:inset 0 0 0 1px rgba(168,199,250,.12)!important}
-.production-phase-rail>button.current>span{border-color:#6b8fc4!important;background:#24344f!important;color:#a8c7fa!important}
-.production-phase-rail>button.current b{color:#e8eef8!important}
-.production-phase-rail>button.current small{color:#9bb6df!important}
-.summary-icon.mint,.phase-count-pill,.phase-workspace-meta>span,.design-available-pill,.phase-workspace-meta-pill,.phase,.status-pill[data-status=ready],.status-pill[data-status="in-progress"]{border-color:#4a5f7d!important;background:#1e2a3c!important;color:#a8c7fa!important}
-.phase-list button.active,.phase-inline-tabs button.active,.phase-list button:hover{border-color:#5b7aa8!important;background:#1a2434!important;color:#e4eaf4!important}
-.assembly-track>div span,.phase-mini-timeline span{background:#2a3a52!important;color:#b8c9e6!important}
-.primary-button,.btn.primary{background:#d3e3fd!important;border-color:#d3e3fd!important;color:#041e49!important}
-.eyebrow,.phase-workspace-header .eyebrow,.phase-subheading span,.phase-subheading>div>span,.phase-one-document>section>span,.phase-one-document summary,.phase-document span{color:#8ab0e8!important}
-.qa-pass,.phase-one-metrics .qa-pass{color:#a8c7fa!important}
-.phase-one-complete-message{border-color:#3d4f6a!important;background:#1a2434!important}
-.phase-one-complete-message span,.phase-one-complete-message b{color:#a8c7fa!important}
-button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{box-shadow:0 0 0 2px #131314,0 0 0 4px rgba(168,199,250,.72)!important}
-/* density: Sites-like compact type in studio */
-.production-phase-panel,.phase-workspace,.production-contract{font-size:13px}
-.production-phase-rail>button b{font-size:8px!important;line-height:1.3!important;min-height:0!important}
-.production-phase-rail>button small{font-size:7px!important}
-.phase-metric span,.phase-one-metrics span{font-size:7px!important}
-.phase-metric strong,.phase-metric b,.phase-one-metrics b,.phase-one-metrics strong{font-size:15px!important}
+/* LAST LAYER: AI Studio blue only. No forest/mint green panels, pills, CTAs, progress. */
+:root {
+  --mint: #a8c7fa !important;
+  --mint-dark: #233348 !important;
+  --blue: #a8c7fa !important;
+  --success: #a8c7fa !important;
+}
+
+/* Primary CTAs — never pale green fill */
+.primary-button,
+.btn.primary,
+.phase-footer .btn.primary,
+.phase-footer .primary-button,
+button.primary,
+.top-actions .btn.primary {
+  background: #d3e3fd !important;
+  border-color: #d3e3fd !important;
+  color: #041e49 !important;
+  background-image: none !important;
+}
+
+/* Phase rail current — solid cool blue, no green wash */
+.production-phase-rail > button.current,
+.production-phase-rail > button[aria-current="step"],
+.production-phase-rail > button[aria-current="true"] {
+  border-color: #5b7aa8 !important;
+  background: #1a2434 !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.12) !important;
+}
+.production-phase-rail > button.current > span,
+.production-phase-rail > button[aria-current="step"] > span {
+  border-color: #6b8fc4 !important;
+  background: #24344f !important;
+  color: #a8c7fa !important;
+}
+.production-phase-rail > button.current b,
+.production-phase-rail > button[aria-current="step"] b {
+  color: #e8eef8 !important;
+}
+.production-phase-rail > button.current small,
+.production-phase-rail > button[aria-current="step"] small {
+  color: #9bb6df !important;
+}
+
+/* Pills / meta chips that used to be mint-green */
+.summary-icon.mint,
+.phase-count-pill,
+.phase-workspace-meta > span,
+.design-available-pill,
+.phase-workspace-meta-pill,
+.phase,
+.workspace-chip,
+.status-pill[data-status="ready"],
+.status-pill[data-status="in-progress"],
+.status-pill[data-status="approved"],
+.status-pill[data-status="complete"],
+.status-pill[data-status="installed"],
+.status-pill[data-status="connected"] {
+  border-color: #4a5f7d !important;
+  background: #1e2a3c !important;
+  color: #a8c7fa !important;
+  background-image: none !important;
+}
+
+/* Active lists / tabs */
+.phase-list button.active,
+.phase-inline-tabs button.active,
+.phase-list button:hover,
+.phase-location-list > button.active {
+  border-color: #5b7aa8 !important;
+  background: #1a2434 !important;
+  color: #e4eaf4 !important;
+}
+
+/* Progress bars / assembly ticks — blue not mint */
+.project-progress > i,
+.projects-page .project-progress > i,
+.assembly-track > div span,
+.phase-mini-timeline span {
+  background: linear-gradient(90deg, #7baaf7, #a8c7fa) !important;
+  background-image: linear-gradient(90deg, #7baaf7, #a8c7fa) !important;
+  color: #b8c9e6 !important;
+}
+.project-card.current {
+  border-color: #5b7aa8 !important;
+  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.1) !important;
+}
+
+/* Eyebrows / labels */
+.eyebrow,
+.phase-workspace-header .eyebrow,
+.phase-subheading span,
+.phase-subheading > div > span,
+.phase-one-document > section > span,
+.phase-one-document summary,
+.phase-document span,
+.phase-document > div > span,
+.qa-pass,
+.phase-one-metrics .qa-pass {
+  color: #8ab0e8 !important;
+}
+
+/* Complete / success callouts */
+.phase-one-complete-message,
+.success-notice,
+.SuccessNotice,
+[class*="success-notice"],
+[class*="SuccessNotice"] {
+  border-color: #3d4f6a !important;
+  background: #1a2434 !important;
+  color: #a8c7fa !important;
+  background-image: none !important;
+}
+.phase-one-complete-message span,
+.phase-one-complete-message b {
+  color: #a8c7fa !important;
+}
+
+/* Export / workflow evidence dots that used material green */
+.phase-workflow-evidence article > i[data-state="available"],
+.phase-workflow-evidence article > i[data-state="admitted"],
+.pipeline-node[data-complete="true"],
+.runtime-card > div > i,
+.workflow-summary p i,
+.has-dot > i {
+  background: #a8c7fa !important;
+  border-color: #5b7aa8 !important;
+  color: #041e49 !important;
+  box-shadow: 0 0 9px rgba(168, 199, 250, 0.35) !important;
+}
+
+/* Character / avatar forest gradients */
+.phase-character-profile > header > span:not(.has-reference),
+.phase-nine-panel article > span:not(.has-reference) {
+  background: linear-gradient(145deg, #2a3b59, #24344f) !important;
+  color: #b8c9e6 !important;
+}
+
+/* Brand / sidebar accents */
+.sidebar nav button.active {
+  box-shadow: inset 2px 0 #a8c7fa !important;
+}
+.brand-mark {
+  background: linear-gradient(135deg, #7cb8ea, #a8c7fa) !important;
+}
+
+/* Focus rings */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  box-shadow: 0 0 0 2px #131314, 0 0 0 4px rgba(168, 199, 250, 0.72) !important;
+}
+
+/* Density sheets that re-green icons / badges after theme */
+.summary-icon.mint,
+.projects-summary .summary-icon.mint {
+  background: #21324b !important;
+  color: #a8c7fa !important;
+}
+
+/* Phase 5 evidence / status chips that hard-coded Material green */
+.phase-prompt-density [style*="81c995"],
+.phase5-status-ok,
+.prompt-status-ready,
+[data-tone="success"],
+[data-variant="success"] {
+  color: #a8c7fa !important;
+  background: #1e2a3c !important;
+  border-color: #4a5f7d !important;
+}
+
+/* Compact Sites-like type (keep from prior kill-green) */
+.production-phase-panel,
+.phase-workspace,
+.production-contract {
+  font-size: 13px;
+}
+.production-phase-rail > button b {
+  font-size: 8px !important;
+  line-height: 1.3 !important;
+  min-height: 0 !important;
+}
+.production-phase-rail > button small {
+  font-size: 7px !important;
+}
+.phase-metric span,
+.phase-one-metrics span {
+  font-size: 7px !important;
+}
+.phase-metric strong,
+.phase-metric b,
+.phase-one-metrics b,
+.phase-one-metrics strong {
+  font-size: 15px !important;
+}
+
+/* =============================================================================
+   MISSING LEGACY UTILS (were only in styles.css which is NOT imported)
+   Fixes white browser-default inputs on Story / Settings / Routing / etc.
+   ============================================================================= */
+html { color-scheme: dark; }
+
+.stack-form,
+.form-stack {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+}
+.stack-form.compact,
+.form-stack.compact { gap: 8px; }
+.stack-form { max-width: 100%; }
+
+.stack-form label,
+.form-stack label,
+.wizard-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: #a9aaad;
+  font-weight: 600;
+}
+
+/* ALL text controls dark — never white browser chrome */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+textarea,
+select,
+.stack-form input,
+.stack-form textarea,
+.stack-form select,
+.form-stack input,
+.form-stack textarea,
+.form-stack select,
+.wizard-form input,
+.wizard-form textarea,
+.wizard-form select,
+.form-grid input,
+.form-grid textarea,
+.form-grid select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #30343a !important;
+  border-radius: 7px !important;
+  background: #1d2022 !important;
+  color: #e8eaed !important;
+  padding: 9px 10px !important;
+  font: inherit;
+  min-height: 36px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.5;
+}
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.72;
+  background: #191b1d !important;
+  color: #b0b4b8 !important;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  accent-color: #a8c7fa;
+}
+
+.split-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .split-2 { grid-template-columns: 1fr; }
+}
+
+.touch-target {
+  min-height: 36px;
+  min-width: 36px;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.92em;
+}
+.form-hint {
+  margin: 0;
+  color: #858a92;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* Primary / ghost buttons used by stack-form pages */
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid #d3e3fd !important;
+  background: #d3e3fd !important;
+  color: #041e49 !important;
+  font-weight: 650;
+  padding: 0 14px;
+  cursor: pointer;
+}
+.primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid #34383d;
+  background: #202225;
+  color: #d0d3d6;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+/* Kill green status dots (Local backend ok) */
+.gpu > i,
+.sidebar-bottom .gpu > i {
+  background: #a8c7fa !important;
+  box-shadow: 0 0 10px rgba(168, 199, 250, 0.45) !important;
+}
+.truth-pill.verified,
+.truth-pill.ok,
+.truth-pill.ready {
+  border-color: rgba(168, 199, 250, 0.35) !important;
+  color: #a8c7fa !important;
+  background: #1e2a3c !important;
+}
+
+/* Layout safety: never collapse main workspace to empty black */
+.app-shell {
+  grid-template-columns: 220px minmax(0, 1fr) !important;
+  width: 100%;
+  min-width: 0;
+}
+.workspace,
+.page-scroll,
+.page {
+  min-width: 0;
+  width: 100%;
+}
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 74px minmax(0, 1fr) !important;
+  }
+}
