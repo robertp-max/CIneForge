@@ -19,6 +19,8 @@ type ProjectsProps = {
   onOpenProject?: (projectId: string, projectName?: string) => void
   onProjectsLoaded?: (projects: Project[]) => void
   onNavigateStudio?: (page: PageId) => void
+  /** Currently selected workspace project — used for the Gold "Current project" cover chip. */
+  currentProjectId?: string | null
 }
 
 type ProjectSummary = {
@@ -149,12 +151,25 @@ async function enrichProject(project: Project): Promise<ProjectSummary> {
 }
 
 
+function statusSlug(status: ProjectSummary['status']) {
+  // Keep space form for gold-globals (`in progress`) and hyphen form for bridges.
+  return status.toLowerCase()
+}
+
+function phaseLabel(story: Story | null, snapshot: PhaseASnapshot | null) {
+  if (!story) return 'Project Setup'
+  // Gold Sites labels multi-phase plans this way; single-story Phase A falls back.
+  if (snapshot) return 'Seven-phase production plan'
+  return 'Storyboard Phase A'
+}
+
 function ProjectList({
   onCreateNew,
   onOpenProject,
   onProjectsLoaded,
   onNavigateStudio,
-}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onProjectsLoaded' | 'onNavigateStudio'>) {
+  currentProjectId,
+}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onProjectsLoaded' | 'onNavigateStudio' | 'currentProjectId'>) {
   const [summaries, setSummaries] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -282,15 +297,17 @@ function ProjectList({
                 shots.find((shot) => Boolean(shot.starting_image_asset_id))?.starting_image_asset_id ?? null,
             })
             const open = () => onOpenProject?.(project.id, project.name)
+            const isCurrent = Boolean(currentProjectId) && currentProjectId === project.id
             return (
-              <article className="project-card" key={project.id}>
+              <article className={isCurrent ? 'project-card current' : 'project-card'} key={project.id}>
                 <button type="button" className={`project-cover project-cover-${index % 6}`} onClick={open} aria-label={`Open ${project.name}`}>
                   {coverUrl ? (
                     <img className="project-cover-image" src={coverUrl} alt="" loading="lazy" decoding="async" />
                   ) : null}
                   <span className="cover-grid" /><span className="cover-orb orb-a" /><span className="cover-orb orb-b" />
                   <span className="cover-initials">{projectInitials(project.name)}</span>
-                  <span className="status-pill" data-status={status.toLowerCase().replace(' ', '-')}>{status}</span>
+                  {isCurrent ? <em><i />Current project</em> : null}
+                  <span className="status-pill" data-status={statusSlug(status)}>{status}</span>
                 </button>
                 <div className="project-card-body">
                   <div className="project-card-title">
@@ -298,11 +315,20 @@ function ProjectList({
                     <button type="button" className="icon-button" aria-label={`More actions for ${project.name}`}>•••</button>
                   </div>
                   <div className="project-meta">
-                    <span>{story ? 'Storyboard Phase A' : 'Project Setup'}</span><i /><span>{formatRuntime(snapshot?.target_duration_sec ?? story?.target_duration_sec ?? 300)} target</span><i /><span>16:9</span>
+                    <span>{phaseLabel(story, snapshot)}</span><i /><span>{formatRuntime(snapshot?.target_duration_sec ?? story?.target_duration_sec ?? 300)} target</span><i /><span>16:9</span>
                   </div>
                   <div className="project-readiness">
                     <span><b>{readiness}%</b> plan readiness</span>
-                    <div className="project-progress" aria-label={`${readiness}% complete`}><i style={{ width: `${readiness}%` }} /></div>
+                    <div
+                      className="project-progress"
+                      role="progressbar"
+                      aria-valuenow={readiness}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${readiness}% plan readiness`}
+                    >
+                      <i style={{ width: `${readiness}%` }} />
+                    </div>
                     <small>{openGates} gates open</small>
                   </div>
                   <dl className="project-counts">
@@ -552,6 +578,7 @@ export function Projects({
   onOpenProject,
   onProjectsLoaded,
   onNavigateStudio,
+  currentProjectId,
 }: ProjectsProps) {
   return mode === 'create'
     ? <NewProject onBackToProjects={onBackToProjects} onOpenProject={onOpenProject} />
@@ -561,6 +588,7 @@ export function Projects({
         onOpenProject={onOpenProject}
         onProjectsLoaded={onProjectsLoaded}
         onNavigateStudio={onNavigateStudio}
+        currentProjectId={currentProjectId}
       />
     )
 }

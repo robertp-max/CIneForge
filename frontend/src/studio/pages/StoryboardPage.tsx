@@ -722,13 +722,13 @@ export function StoryboardPage() {
         <div className="toolbar">
           <span>Ordered hierarchy · display labels are cosmetic; UUIDs remain identity.</span>
           <div>
-            <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('chapter')}>
+            <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('chapter')}>
               + Chapter
             </button>
-            <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('scene')}>
+            <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('scene')}>
               + Scene
             </button>
-            <button type="button" className="touch-target" disabled={busy} onClick={() => void addHierarchy('shot')}>
+            <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('shot')}>
               + Shot
             </button>
           </div>
@@ -750,13 +750,21 @@ export function StoryboardPage() {
               <header>
                 <span>CH{String(index + 1).padStart(2, '0')}</span>
                 <b>{chapter.title}</b>
-                <small>{formatDuration(chapter.duration_sec)}</small>
+                <small>
+                  {formatDuration(chapter.duration_sec)} · {chapter.scenes.length} scene
+                  {chapter.scenes.length === 1 ? '' : 's'}
+                </small>
               </header>
               {chapter.scenes.map((scene, sceneIndex) => (
                 <section key={scene.id} aria-label={`Scene ${scene.title}`}>
                   <div className="scene-name">
-                    <span>SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}</span>
-                    <small>{formatDuration(scene.duration_sec)}</small>
+                    <span>
+                      SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}
+                    </span>
+                    <small>
+                      {formatDuration(scene.duration_sec)} · {scene.shots.length} shot
+                      {scene.shots.length === 1 ? '' : 's'}
+                    </small>
                   </div>
                   <div className="shot-row" role="list">
                     {scene.shots.map((shot) => (
@@ -768,19 +776,31 @@ export function StoryboardPage() {
                         aria-pressed={selectedShot?.id === shot.id}
                         onClick={() => setSelectedShot(shot)}
                       >
-                        <span>SH{String(shot.order_index + 1).padStart(2, '0')} · {shot.display_label}</span>
+                        <span>
+                          SH{String(shot.order_index + 1).padStart(2, '0')}
+                          {shot.display_label ? ` · ${shot.display_label}` : ''}
+                        </span>
                         <b>{shot.title}</b>
                         <small>
                           {shot.duration_sec}s · {shot.approval_state}
+                          {shot.production_status ? ` · ${shot.production_status}` : ''}
                           {shot.blocked_reason ? ` · ${shot.blocked_reason}` : ''}
                         </small>
                       </button>
                     ))}
-                    {!scene.shots.length ? <p className="form-hint" style={{ margin: 0 }}>No shots in this scene.</p> : null}
+                    {!scene.shots.length ? (
+                      <p className="form-hint" style={{ margin: 0 }}>
+                        No shots in this scene.
+                      </p>
+                    ) : null}
                   </div>
                 </section>
               ))}
-              {!chapter.scenes.length ? <section><p className="form-hint">No scenes in this chapter yet.</p></section> : null}
+              {!chapter.scenes.length ? (
+                <section>
+                  <p className="form-hint">No scenes in this chapter yet.</p>
+                </section>
+              ) : null}
             </article>
           ))
         )}
@@ -803,7 +823,9 @@ export function StoryboardPage() {
             onMessage={setMessage}
           />
         ) : (
-          <p>Select a shot to inspect persisted details, prompts, and technical planning information.</p>
+          <p className="form-hint">
+            Select a shot to inspect persisted details, prompts, and technical planning information.
+          </p>
         )}
       </aside>
     </div>

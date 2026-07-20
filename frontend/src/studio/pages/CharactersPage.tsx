@@ -360,8 +360,9 @@ export function CharactersPage() {
                 projectId: data.story.project_id,
                 storyTitle: data.story.title,
               })
+              const isSelected = character.id === selectedCharacter?.id
               return (
-              <article key={character.id}>
+              <article key={character.id} className={isSelected ? 'selected-card' : undefined}>
                 <div
                   className={`portrait${portraitUrl ? ' has-image' : ''}`}
                   style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', borderRadius: 10, background: '#151719' }}
@@ -392,17 +393,17 @@ export function CharactersPage() {
                 <button
                   type="button"
                   aria-label={
-                    character.id === selectedCharacter?.id
+                    isSelected
                       ? `Open character: ${character.name} (selected)`
                       : `Open character: ${character.name}`
                   }
-                  className={character.id === selectedCharacter?.id ? 'primary-button touch-target' : 'secondary-button touch-target'}
+                  className={isSelected ? 'primary-button touch-target' : 'secondary-button touch-target'}
                   onClick={() => {
                     setSelectedId(character.id)
                     setSelectedVoiceId('')
                   }}
                 >
-                  Open character
+                  {isSelected ? 'Selected' : 'Open character'}
                 </button>
               </article>
               )
@@ -410,18 +411,31 @@ export function CharactersPage() {
           </div>
         )}
 
-        <form className="stack-form" onSubmit={(event) => void onAddCharacter(event)}>
+        <form className="stack-form form-stack" onSubmit={(event) => void onAddCharacter(event)}>
           <h3>Add character</h3>
-          <label>Name<input required value={newName} onChange={(event) => setNewName(event.target.value)} disabled={busy || saving} /></label>
-          <label>Role<input value={newRole} onChange={(event) => setNewRole(event.target.value)} disabled={busy || saving} /></label>
-          <label>Description<textarea value={newDescription} onChange={(event) => setNewDescription(event.target.value)} disabled={busy || saving} /></label>
-          <button type="submit" className="primary-button touch-target" disabled={busy || saving || !newName.trim()}>Add character</button>
+          <div className="form-grid">
+            <label>
+              Name
+              <input required value={newName} onChange={(event) => setNewName(event.target.value)} disabled={busy || saving} />
+            </label>
+            <label>
+              Role
+              <input value={newRole} onChange={(event) => setNewRole(event.target.value)} disabled={busy || saving} />
+            </label>
+          </div>
+          <label>
+            Description
+            <textarea value={newDescription} onChange={(event) => setNewDescription(event.target.value)} disabled={busy || saving} />
+          </label>
+          <button type="submit" className="primary-button touch-target" disabled={busy || saving || !newName.trim()}>
+            Add character
+          </button>
         </form>
       </section>
 
       {selectedCharacter ? (
         <div className="stack-form">
-          <form key={selectedCharacter.id} className="panel stack-form" onSubmit={(event) => void onSaveCharacter(event)}>
+          <form key={selectedCharacter.id} className="panel stack-form form-stack" onSubmit={(event) => void onSaveCharacter(event)}>
             <div className="panel-title">
               <div><h2>{selectedCharacter.name}</h2><p>Persisted identity fields · {selectedCharacter.approval_state}</p></div>
             </div>
@@ -460,16 +474,50 @@ export function CharactersPage() {
               )
             })()}
             {error ? <ErrorState detail={error} /> : null}
-            <label>Name<input name="name" required defaultValue={selectedCharacter.name} disabled={busy || saving} /></label>
-            <label>Role<input name="role" defaultValue={selectedCharacter.role ?? ''} disabled={busy || saving} /></label>
-            <label>Age range<input name="age_range" defaultValue={selectedCharacter.age_range ?? ''} disabled={busy || saving} /></label>
-            <label>Physical description<textarea name="physical_description" defaultValue={selectedCharacter.physical_description ?? ''} disabled={busy || saving} /></label>
-            <label>Personality<textarea name="personality" defaultValue={selectedCharacter.personality ?? ''} disabled={busy || saving} /></label>
-            <label>Speaking style<input name="speaking_style" defaultValue={selectedCharacter.speaking_style ?? ''} disabled={busy || saving} /></label>
-            <label>Wardrobe<textarea name="wardrobe" defaultValue={selectedCharacter.wardrobe ?? ''} disabled={busy || saving} /></label>
-            <label>Identity method<input name="identity_method" defaultValue={selectedCharacter.identity_method ?? ''} disabled={busy || saving} /></label>
-            <label>Consistency prompt<textarea name="consistency_prompt" defaultValue={selectedCharacter.consistency_prompt ?? ''} disabled={busy || saving} /></label>
-            <label>Negative identity prompt<textarea name="negative_identity_prompt" defaultValue={selectedCharacter.negative_identity_prompt ?? ''} disabled={busy || saving} /></label>
+            <div className="form-grid">
+              <label>
+                Name
+                <input name="name" required defaultValue={selectedCharacter.name} disabled={busy || saving} />
+              </label>
+              <label>
+                Role
+                <input name="role" defaultValue={selectedCharacter.role ?? ''} disabled={busy || saving} />
+              </label>
+            </div>
+            <div className="form-grid">
+              <label>
+                Age range
+                <input name="age_range" defaultValue={selectedCharacter.age_range ?? ''} disabled={busy || saving} />
+              </label>
+              <label>
+                Speaking style
+                <input name="speaking_style" defaultValue={selectedCharacter.speaking_style ?? ''} disabled={busy || saving} />
+              </label>
+            </div>
+            <label>
+              Physical description
+              <textarea name="physical_description" defaultValue={selectedCharacter.physical_description ?? ''} disabled={busy || saving} />
+            </label>
+            <label>
+              Personality
+              <textarea name="personality" defaultValue={selectedCharacter.personality ?? ''} disabled={busy || saving} />
+            </label>
+            <label>
+              Wardrobe
+              <textarea name="wardrobe" defaultValue={selectedCharacter.wardrobe ?? ''} disabled={busy || saving} />
+            </label>
+            <label>
+              Identity method
+              <input name="identity_method" defaultValue={selectedCharacter.identity_method ?? ''} disabled={busy || saving} />
+            </label>
+            <label>
+              Consistency prompt
+              <textarea name="consistency_prompt" defaultValue={selectedCharacter.consistency_prompt ?? ''} disabled={busy || saving} />
+            </label>
+            <label>
+              Negative identity prompt
+              <textarea name="negative_identity_prompt" defaultValue={selectedCharacter.negative_identity_prompt ?? ''} disabled={busy || saving} />
+            </label>
             <div className="inline-actions">
               <button type="submit" className="primary-button touch-target" disabled={busy || saving}>{saving ? 'Saving…' : 'Save character profile'}</button>
               <button

@@ -57,6 +57,7 @@ from backend.app.schemas.production import (
 )
 
 SNAPSHOT_SCHEMA_VERSION = 1
+PHASE_ONE_PACKAGE_SCHEMA = "cineforge.phase_one_script_package"
 SUPPORTED_SOURCES = frozenset(
     {"baseline", "manual", "generated", "revision", "imported"}
 )
@@ -380,7 +381,7 @@ def _build_phase_one_package(story: Story, payload: PhaseOneGenerationInput) -> 
     first_fact = _shorten(facts[0], 26).rstrip(".")
     last_fact = _shorten(facts[-1], 22).rstrip(".")
     package = {
-        "schema_name": "cineforge.phase_one_script_package",
+        "schema_name": PHASE_ONE_PACKAGE_SCHEMA,
         "schema_version": 1,
         "project_title": story.title,
         "logline": f"{first_fact}, building toward {last_fact}.",
@@ -732,6 +733,31 @@ def _latest_version(db: Session, phase_id: UUID) -> ProductionPhaseVersion | Non
     )
 
 
+def _is_phase_one_package(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("schema_name") == PHASE_ONE_PACKAGE_SCHEMA
+
+
+def _latest_phase_one_package(
+    db: Session, phase_id: UUID
+) -> ProductionPhaseVersion | None:
+    """Most recent Phase 1 script package version (generated or revised).
+
+    Manual retains and baselines may sit on top as narrative snapshots; the UI
+    and revision path must still resolve the last real script package.
+    """
+    rows = list(
+        db.scalars(
+            select(ProductionPhaseVersion)
+            .where(ProductionPhaseVersion.production_phase_id == phase_id)
+            .order_by(ProductionPhaseVersion.version_number.desc())
+        )
+    )
+    for row in rows:
+        if _is_phase_one_package(row.output_json):
+            return row
+    return None
+
+
 def _latest_qa(db: Session, version_id: UUID) -> QAReport | None:
     return db.scalar(
         select(QAReport)
@@ -968,8 +994,13 @@ def revise_phase_one(
         raise ProductionPhaseConflictError(
             f"Phase 1 is now version {current.version_number}; reload before saving your revision."
         )
-    generation_input = PhaseOneGenerationInput.model_validate(current.input_snapshot_json)
-    package = dict(current.output_json)
+    # Prefer the most recent script package even when a later manual retain
+    # snapshot is the ledger head (concurrency still uses current_version_number).
+    package_row = _latest_phase_one_package(db, phase.id)
+    if package_row is None:
+        raise ProductionPhaseError("Phase 1 has no generated version to revise.")
+    generation_input = PhaseOneGenerationInput.model_validate(package_row.input_snapshot_json)
+    package = dict(package_row.output_json)
     package.update(
         payload.model_dump(
             mode="json",
@@ -1573,23 +1604,46 @@ def create_phase_version(
     phases = ensure_contract(db, story, commit=False)
     phase = _require_phase(db, story, phase_number)
     ensure_phase_baselines(db, story, phases=phases, commit=False)
-    snapshot = build_phase_snapshot(db, story, phase_number)
+    # Phase 1 retains the generated script package when present so the pipeline
+    # head (and ProductionPhases packageData) stay aligned with the package schema.
+    retained_package = (
+        _latest_phase_one_package(db, phase.id) if phase_number == 1 else None
+    )
+    if retained_package is not None and _is_phase_one_package(retained_package.output_json):
+        snapshot = dict(retained_package.output_json)
+        # Preserve the original generation input so revise_phase_one can validate
+        # PhaseOneGenerationInput from this retained head (no retain metadata keys).
+        prior_input = retained_package.input_snapshot_json
+        if isinstance(prior_input, dict) and "original_prompt" in prior_input:
+            input_snapshot = dict(prior_input)
+        else:
+            input_snapshot = {
+                "reason": "manual_retain",
+                "phase_number": phase_number,
+                "requested_by": payload.requested_by,
+                "retained_from_version_id": str(retained_package.id),
+            }
+        completed = bool(retained_package.completed)
+    else:
+        snapshot = build_phase_snapshot(db, story, phase_number)
+        input_snapshot = {
+            "reason": "manual_retain",
+            "phase_number": phase_number,
+            "requested_by": payload.requested_by,
+        }
+        completed = False
     version = _append_version(
         db,
         phase=phase,
         label=payload.label,
         notes=payload.notes,
         source="manual",
-        input_snapshot={
-            "reason": "manual_retain",
-            "phase_number": phase_number,
-            "requested_by": payload.requested_by,
-        },
+        input_snapshot=input_snapshot,
         output_json=snapshot,
         lifecycle_state=phase.lifecycle_state
         if phase.lifecycle_state != "not_started"
         else "drafting",
-        completed=False,
+        completed=completed,
         created_by=payload.requested_by,
         commit=True,
     )

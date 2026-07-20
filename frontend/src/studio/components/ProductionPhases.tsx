@@ -97,6 +97,8 @@ export function ProductionPhases({
   const [iterationLabel, setIterationLabel] = useState('')
   const [iterationNotes, setIterationNotes] = useState('')
   const [savingIteration, setSavingIteration] = useState(false)
+  /** When the pipeline head is a non-package snapshot, hold the last script package from history. */
+  const [packageFallback, setPackageFallback] = useState<PhaseOnePackage | null>(null)
   const phaseTabs = useRef<Array<HTMLButtonElement | null>>([])
   const scopeKey = `${projectId ?? 'project'}:${storyId}:${selectedPhaseNumber}`
 
@@ -251,13 +253,53 @@ export function ProductionPhases({
       return null
     }
     if (historical) return null
-    // Prefer latest if it is a script package; otherwise scan pipeline history fields.
+    // Prefer latest if it is a script package; otherwise use history fallback.
     const latest = phaseOne?.latest_version?.output_json
     if (isPhaseOnePackage(latest)) return latest
-    // Some imports only seed a baseline snapshot first; a later generated package may
-    // still be present as the "latest" after regenerate — already handled above.
-    return null
-  }, [historical, loadedDetail, phaseOne, selectedPhaseNumber])
+    // Baselines / older manual retains may sit on the pipeline head while a prior
+    // generated or revised script package remains in SQLite history.
+    return packageFallback
+  }, [historical, loadedDetail, packageFallback, phaseOne, selectedPhaseNumber])
+
+  useEffect(() => {
+    let active = true
+    if (historical || selectedPhaseNumber !== 1) {
+      setPackageFallback(null)
+      return () => {
+        active = false
+      }
+    }
+    const latest = phaseOne?.latest_version?.output_json
+    if (isPhaseOnePackage(latest)) {
+      setPackageFallback(null)
+      return () => {
+        active = false
+      }
+    }
+    const history = versionsByPhase[1] ?? []
+    // Prefer generated/revision rows (package sources); also accept completed manual
+    // retains that may carry a preserved package after the backend retain fix.
+    const candidates = [...history]
+      .reverse()
+      .filter((item) => item.source === 'generated' || item.source === 'revision' || item.completed)
+    const candidate = candidates[0]
+    if (!candidate) {
+      setPackageFallback(null)
+      return () => {
+        active = false
+      }
+    }
+    void api.getPhaseVersion(storyId, 1, candidate.id).then((detail) => {
+      if (!active) return
+      const output = detail.output_json
+      setPackageFallback(isPhaseOnePackage(output) ? output : null)
+    }).catch(() => {
+      if (active) setPackageFallback(null)
+    })
+    return () => {
+      active = false
+    }
+  }, [historical, phaseOne?.latest_version?.output_json, selectedPhaseNumber, storyId, versionsByPhase])
   const qa = (!historical ? phaseOne?.latest_qa_report?.report_json : null) ?? null
   const selectedPhase = pipeline?.phases.find((phase) => phase.phase_number === selectedPhaseNumber) ?? null
   const displayPhase = selectedPhase && historical && loadedDetail
@@ -650,17 +692,17 @@ export function ProductionPhases({
               </div>
             ) : (
               <>
-                <div className="phase-one-metrics" aria-label="Phase 1 script metrics">
-                  <article><span>Script words</span><b>{packageData.script_word_count.toLocaleString()}</b></article>
-                  <article><span>Narration</span><b>{formatDuration(packageData.duration_analysis.narration_duration_sec)}</b></article>
-                  <article><span>Dialogue</span><b>{formatDuration(packageData.duration_analysis.dialogue_duration_sec)}</b></article>
-                  <article><span>Visual / silence</span><b>{formatDuration(packageData.duration_analysis.planned_silence_visual_duration_sec)}</b></article>
-                  <article><span>Estimated total</span><b>{formatDuration(packageData.duration_analysis.estimated_total_duration_sec)}</b></article>
-                  <article>
+                <div className="phase-metrics six phase-one-metrics" aria-label="Phase 1 script metrics">
+                  <article className="phase-metric"><span>Script words</span><strong>{packageData.script_word_count.toLocaleString()}</strong></article>
+                  <article className="phase-metric"><span>Narration</span><strong>{formatDuration(packageData.duration_analysis.narration_duration_sec)}</strong></article>
+                  <article className="phase-metric"><span>Dialogue</span><strong>{formatDuration(packageData.duration_analysis.dialogue_duration_sec)}</strong></article>
+                  <article className="phase-metric"><span>Visual / silence</span><strong>{formatDuration(packageData.duration_analysis.planned_silence_visual_duration_sec)}</strong></article>
+                  <article className="phase-metric"><span>Estimated total</span><strong>{formatDuration(packageData.duration_analysis.estimated_total_duration_sec)}</strong></article>
+                  <article className="phase-metric">
                     <span>QA</span>
-                    <b className={qa?.passed ? 'qa-pass' : 'qa-fail'}>
+                    <strong className={qa?.passed ? 'qa-pass' : 'qa-fail'}>
                       {historical ? 'Historical' : qa?.passed ? 'Passed' : qa ? 'Needs revision' : '—'}
-                    </b>
+                    </strong>
                   </article>
                 </div>
 

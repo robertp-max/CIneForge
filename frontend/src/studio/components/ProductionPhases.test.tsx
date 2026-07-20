@@ -322,6 +322,40 @@ describe('ProductionPhases', () => {
     expect(screen.getByRole('tab', { name: /Script and Narrative Development/ }).getAttribute('aria-selected')).toBe('true')
   })
 
+  it('renders Phase 2 segmentation workspace from live planning records', async () => {
+    const onNavigate = vi.fn()
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    mockHistoryApis()
+    render(
+      <ProductionPhases
+        storyId="story-1"
+        projectId="project-1"
+        data={aggregate}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Scene and Shot Segmentation/ }))
+
+    expect(screen.getByRole('heading', { name: 'Scene and Shot Segmentation' })).toBeTruthy()
+    expect(screen.getByText('Interactive UI/UX preview')).toBeTruthy()
+    expect(screen.getByText('Chapters / acts')).toBeTruthy()
+    expect(screen.getByText('STRUCTURE')).toBeTruthy()
+    expect(screen.getByLabelText('Scene browser')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Opening scene/i })).toBeTruthy()
+    expect(screen.getByLabelText('Selected scene shot timing')).toBeTruthy()
+    expect(screen.getAllByText('S01A').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Establish the world.')).toBeTruthy()
+    expect(screen.getByText('Primary location')).toBeTruthy()
+    expect(screen.getByText('8.0s')).toBeTruthy()
+    expect(screen.getAllByText(/draft|none/i).length).toBeGreaterThan(0)
+    expect(screen.getByText('QA PREVIEW')).toBeTruthy()
+    expect(screen.getByText(/1\/1 shots in 6–10s/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Storyboard' }))
+    expect(onNavigate).toHaveBeenCalledWith('storyboard')
+    expect(screen.queryByText(/Locked ·/i)).toBeNull()
+  })
+
   it('saves edits as a new version and reruns QA', async () => {
     vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
     mockHistoryApis()
@@ -361,5 +395,121 @@ describe('ProductionPhases', () => {
       expect.objectContaining({ label: 'Director review' }),
     )
     expect(api.listPhaseVersions).toHaveBeenCalled()
+  })
+
+  it('resolves packageData from history when the pipeline head is a non-package snapshot', async () => {
+    const buriedPipeline: ProductionPipeline = {
+      ...pipeline,
+      phases: pipeline.phases.map((phase, index) => (
+        index === 0
+          ? {
+              ...phase,
+              current_version_number: 2,
+              version_count: 2,
+              latest_version: {
+                id: 'snapshot-head',
+                version_number: 2,
+                lifecycle_state: 'ready_for_review',
+                completed: false,
+                input_snapshot_json: { reason: 'manual_retain' },
+                output_json: {
+                  schema_name: 'cineforge.production_phase_snapshot',
+                  phase_number: 1,
+                  narrative: { title: 'Not the package' },
+                },
+                input_hash: 'f'.repeat(64),
+                output_hash: '0'.repeat(64),
+                created_by: 'tester',
+                previous_version_id: 'version-1',
+                created_at: '2026-07-19T01:00:00Z',
+                updated_at: '2026-07-19T01:00:00Z',
+              },
+            }
+          : phase
+      )),
+    }
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(buriedPipeline)
+    vi.mocked(api.listPhaseVersions).mockImplementation(async (_storyId, phaseNumber) => {
+      if (phaseNumber !== 1) return baselineVersions(phaseNumber)
+      return [
+        {
+          id: 'version-1',
+          version_number: 1,
+          label: 'Generated package',
+          notes: '',
+          source: 'generated' as const,
+          lifecycle_state: 'ready_for_review' as const,
+          completed: true,
+          snapshot_schema_version: 1,
+          input_hash: 'a'.repeat(64),
+          output_hash: 'b'.repeat(64),
+          created_by: 'test',
+          previous_version_id: null,
+          created_at: '2026-07-19T00:00:00Z',
+          updated_at: '2026-07-19T00:00:00Z',
+        },
+        {
+          id: 'snapshot-head',
+          version_number: 2,
+          label: 'Director review',
+          notes: '',
+          source: 'manual' as const,
+          lifecycle_state: 'ready_for_review' as const,
+          completed: false,
+          snapshot_schema_version: 1,
+          input_hash: 'f'.repeat(64),
+          output_hash: '0'.repeat(64),
+          created_by: 'tester',
+          previous_version_id: 'version-1',
+          created_at: '2026-07-19T01:00:00Z',
+          updated_at: '2026-07-19T01:00:00Z',
+        },
+      ]
+    })
+    vi.mocked(api.getPhaseVersion).mockImplementation(async (storyId, phaseNumber, versionId) => {
+      if (versionId === 'version-1') {
+        return {
+          id: 'version-1',
+          version_number: 1,
+          label: 'Generated package',
+          notes: '',
+          source: 'generated',
+          lifecycle_state: 'ready_for_review',
+          completed: true,
+          snapshot_schema_version: 1,
+          input_hash: 'a'.repeat(64),
+          output_hash: 'b'.repeat(64),
+          created_by: 'test',
+          previous_version_id: null,
+          created_at: '2026-07-19T00:00:00Z',
+          updated_at: '2026-07-19T00:00:00Z',
+          story_id: storyId,
+          project_id: 'project-1',
+          phase_number: phaseNumber,
+          phase_name: phaseNames[0],
+          input_snapshot_json: {},
+          output_json: packageData,
+          verified: true,
+        }
+      }
+      return {
+        ...baselineVersions(phaseNumber)[0],
+        id: versionId,
+        story_id: storyId,
+        project_id: 'project-1',
+        phase_number: phaseNumber,
+        phase_name: phaseNames[phaseNumber - 1],
+        input_snapshot_json: {},
+        output_json: { schema_name: 'cineforge.production_phase_snapshot', phase_number: phaseNumber },
+        verified: true,
+      }
+    })
+
+    render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
+
+    expect(await screen.findByText('The Test Film')).toBeTruthy()
+    expect(screen.getByText('Complete script package')).toBeTruthy()
+    expect(screen.getByText('A complete test logline.')).toBeTruthy()
+    expect(screen.queryByText('Phase 1 has not started')).toBeNull()
   })
 })
