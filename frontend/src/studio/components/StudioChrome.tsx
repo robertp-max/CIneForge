@@ -32,7 +32,7 @@ export function StudioChrome({
     <section className="studio page" aria-busy={busy || loadState === 'loading'}>
       <div className="studio-commandbar">
         <div>
-          <span className="eyebrow">Production Phase A</span>
+          <span className="eyebrow">CineForge production</span>
           <strong>{data?.story.title ?? 'Storyboard Studio'}</strong>
           <small>
             {data
@@ -64,7 +64,7 @@ export function StudioChrome({
 
       <header className="page-header studio-header">
         <div>
-          <span className="eyebrow">Storyboard workspace</span>
+          <span className="eyebrow">Studio workspace</span>
           <h1>{title}</h1>
           <p>
             {data ? (

@@ -146,6 +146,21 @@ export function AppShell({
           </button>
         </div>
 
+        {/* Gold Edition order: brand → workspace → project switcher → project nav → bottom */}
+        <span className="sidebar-section-label sidebar-workspace-label">Workspace</span>
+        <nav className="sidebar-workspace-nav" aria-label="Workspace navigation">
+          <button
+            type="button"
+            className={`nav-item touch-target ${view === 'projects' ? 'active' : ''}`}
+            aria-current={view === 'projects' ? 'page' : undefined}
+            onClick={() => handleWorkspaceNavigate(onOpenProjects)}
+          >
+            <span className="nav-icon" aria-hidden="true">▣</span>
+            <span className="nav-label-full">Projects</span>
+            <span className="nav-badge">{projectCount}</span>
+          </button>
+        </nav>
+
         <div className="project-switch-wrap">
           <button
             type="button"
@@ -160,7 +175,7 @@ export function AppShell({
             <span className="project-avatar">{projectInitials}</span>
             <span>
               <strong>{projectName}</strong>
-              <small>Storyboard Phase A</small>
+              <small>{isStudio ? 'Seven-phase production' : 'Select a project'}</small>
             </span>
             <span aria-hidden="true">⌄</span>
           </button>
@@ -178,7 +193,7 @@ export function AppShell({
                 <span className="project-avatar">{projectInitials}</span>
                 <span>
                   <strong>{projectName}</strong>
-                  <small>Current · Storyboard Phase A</small>
+                  <small>Current project</small>
                 </span>
                 <span aria-hidden="true">✓</span>
               </button>
@@ -194,22 +209,8 @@ export function AppShell({
           ) : null}
         </div>
 
-        <span className="sidebar-section-label sidebar-workspace-label">Workspace</span>
-        <nav className="sidebar-workspace-nav" aria-label="Workspace navigation">
-          <button
-            type="button"
-            className={`nav-item touch-target ${view === 'projects' ? 'active' : ''}`}
-            aria-current={view === 'projects' ? 'page' : undefined}
-            onClick={() => handleWorkspaceNavigate(onOpenProjects)}
-          >
-            <span className="nav-icon" aria-hidden="true">▣</span>
-            <span className="nav-label-full">Projects</span>
-            <span className="nav-badge">{projectCount}</span>
-          </button>
-        </nav>
-
         <div className="sidebar-project-nav-section">
-          <span className="sidebar-section-label sidebar-project-label">Project</span>
+          <span className="sidebar-section-label sidebar-project-label">Production</span>
           <nav id={navId} className="sidebar-project-nav" aria-label="Primary navigation">
             {navItems.map((item) => {
               const isActive = isStudio && item.id === activePage
@@ -312,7 +313,7 @@ export function AppShell({
                   <span>{projectName}</span>
                   <span aria-hidden="true">›</span>
                   <strong>{activeLabel}</strong>
-                  <span className="phase-badge">Phase A</span>
+                  <span className="phase-badge">7 PHASES</span>
                 </>
               ) : null}
             </div>
