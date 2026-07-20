@@ -1,5 +1,9 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import { StatusBadge } from './StatusBadge'
+import {
+  getShellTopbarActions,
+  subscribeShellTopbarActions,
+  type ShellTopbarActions,
+} from './shellTopbarActions'
 
 export type PageId =
   | 'overview'
@@ -15,16 +19,39 @@ export type PageId =
 
 export type ShellView = 'projects' | 'new-project' | 'studio'
 
-const navItems: { id: PageId; label: string; icon: string }[] = [
-  { id: 'overview', label: 'Overview', icon: '▦' },
-  { id: 'storyboard', label: 'Storyboard', icon: '▤' },
-  { id: 'story', label: 'Story & chapters', icon: '▱' },
-  { id: 'characters', label: 'Characters', icon: '♙' },
-  { id: 'voices', label: 'Voices', icon: '♬' },
-  { id: 'images', label: 'Starting images', icon: '▧' },
-  { id: 'routing', label: 'Model routing', icon: '◈' },
-  { id: 'workflows', label: 'Workflows', icon: '◇' },
-  { id: 'exports', label: 'Exports', icon: '↓' },
+/** Exact Gold Sites `IconName` subset used by AppShell chrome. */
+type ShellIconName =
+  | 'grid'
+  | 'film'
+  | 'book'
+  | 'people'
+  | 'mic'
+  | 'cpu'
+  | 'layers'
+  | 'download'
+  | 'settings'
+  | 'play'
+  | 'check'
+  | 'chevron'
+  | 'plus'
+  | 'image'
+  | 'search'
+  | 'bell'
+  | 'menu'
+  | 'folder'
+  | 'arrow'
+  | 'more'
+
+const navItems: { id: PageId; label: string; icon: ShellIconName }[] = [
+  { id: 'overview', label: 'Overview', icon: 'grid' },
+  { id: 'storyboard', label: 'Storyboard', icon: 'film' },
+  { id: 'story', label: 'Story & chapters', icon: 'book' },
+  { id: 'characters', label: 'Characters', icon: 'people' },
+  { id: 'voices', label: 'Voices', icon: 'mic' },
+  { id: 'images', label: 'Starting images', icon: 'image' },
+  { id: 'routing', label: 'Model routing', icon: 'cpu' },
+  { id: 'workflows', label: 'Workflows', icon: 'layers' },
+  { id: 'exports', label: 'Exports', icon: 'download' },
 ]
 
 const labels: Record<PageId | 'projects' | 'new-project', string> = {
@@ -67,6 +94,110 @@ function initials(name: string) {
   )
 }
 
+/**
+ * Pixel-identical Gold Sites icon strokes (`CineForge-Storyboard-Studio-v2/components/ui.tsx`).
+ * strokeWidth 1.7 / round caps — theme targets `sidebar nav button.active svg`.
+ */
+function Icon({ name, size = 18 }: { name: ShellIconName; size?: number }) {
+  const paths: Record<ShellIconName, ReactNode> = {
+    grid: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </>
+    ),
+    film: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M7 5v14M17 5v14M3 9h4M17 9h4M3 15h4M17 15h4" />
+      </>
+    ),
+    book: (
+      <>
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z" />
+        <path d="M8 7h8M8 11h6" />
+      </>
+    ),
+    people: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3 3 0 0 1 0 5.6M17 14c2.3.7 4 2.8 4 5.4" />
+      </>
+    ),
+    mic: (
+      <>
+        <rect x="9" y="2" width="6" height="12" rx="3" />
+        <path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
+      </>
+    ),
+    cpu: (
+      <>
+        <rect x="5" y="5" width="14" height="14" rx="2" />
+        <rect x="9" y="9" width="6" height="6" rx="1" />
+        <path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M19 9h4M1 15h4M19 15h4" />
+      </>
+    ),
+    layers: <path d="m12 2 9 5-9 5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5" />,
+    download: <path d="M12 3v12M7 10l5 5 5-5M4 21h16" />,
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z" />
+      </>
+    ),
+    play: <path d="m8 5 11 7-11 7z" />,
+    check: <path d="m5 12 4 4L19 6" />,
+    chevron: <path d="m9 18 6-6-6-6" />,
+    plus: <path d="M12 5v14M5 12h14" />,
+    image: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="8.5" cy="9" r="1.5" />
+        <path d="m21 15-5-5L5 20" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-4-4" />
+      </>
+    ),
+    bell: (
+      <>
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+      </>
+    ),
+    menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+    folder: <path d="M3 6h7l2 2h9v11H3z" />,
+    arrow: <path d="M5 12h14M14 7l5 5-5 5" />,
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1" fill="currentColor" />
+        <circle cx="12" cy="12" r="1" fill="currentColor" />
+        <circle cx="19" cy="12" r="1" fill="currentColor" />
+      </>
+    ),
+  }
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  )
+}
+
 export function AppShell({
   activePage,
   backendStatus,
@@ -84,6 +215,7 @@ export function AppShell({
   const [projectMenu, setProjectMenu] = useState(false)
   const [profile, setProfile] = useState(false)
   const [runtime, setRuntime] = useState(false)
+  const [shellActions, setShellActions] = useState<ShellTopbarActions>(() => getShellTopbarActions())
   const navId = useId()
   const isStudio = view === 'studio'
   const projectInitials = initials(projectName)
@@ -93,6 +225,12 @@ export function AppShell({
       : view === 'new-project'
         ? labels['new-project']
         : labels[activePage]
+  const runtimeLabel =
+    backendStatus === 'ok' || backendStatus === 'ready'
+      ? 'Local backend ok'
+      : `Local backend ${backendStatus}`
+
+  useEffect(() => subscribeShellTopbarActions(() => setShellActions(getShellTopbarActions())), [])
 
   useEffect(() => {
     if (!mobile && !projectMenu && !profile && !runtime) return
@@ -147,7 +285,7 @@ export function AppShell({
       >
         <button type="button" className="brand" onClick={() => goWorkspace(onOpenProjects)}>
           <span className="brand-mark" aria-hidden="true">
-            ▷
+            <Icon name="play" size={15} />
           </span>
           <span>CineForge Studio</span>
         </button>
@@ -160,7 +298,7 @@ export function AppShell({
               className={view === 'projects' ? 'active' : ''}
               onClick={() => goWorkspace(onOpenProjects)}
             >
-              <span aria-hidden="true">▣</span>
+              <Icon name="folder" size={18} />
               <span>Projects</span>
               <em>{projectCount}</em>
             </button>
@@ -182,19 +320,23 @@ export function AppShell({
             <span className="project-thumb">{projectInitials}</span>
             <span>
               <strong>{projectName}</strong>
-              <small>{isStudio ? 'Seven-phase production plan' : 'Select a project'}</small>
+              <small>
+                {projectId || projectName !== 'Select a project'
+                  ? 'Seven-phase production plan'
+                  : 'Select a project'}
+              </small>
             </span>
             <b aria-hidden="true">⌄</b>
           </button>
           {projectMenu ? (
             <div className="popover project-pop" role="menu">
               <button type="button" role="menuitem" onClick={() => goWorkspace(onOpenProjects)}>
-                <span aria-hidden="true">▣</span>
+                <Icon name="folder" size={18} />
                 <span>
                   <b>All projects</b>
                   <small>{projectCount} in this workspace</small>
                 </span>
-                <span aria-hidden="true">›</span>
+                <Icon name="arrow" size={16} />
               </button>
               <button type="button" role="menuitem" onClick={() => setProjectMenu(false)}>
                 <span className="project-thumb">{projectInitials}</span>
@@ -202,15 +344,15 @@ export function AppShell({
                   <b>{projectName}</b>
                   <small>Current project</small>
                 </span>
-                <span aria-hidden="true">✓</span>
+                <Icon name="check" size={16} />
               </button>
               <button type="button" role="menuitem" onClick={() => goWorkspace(onCreateProject)}>
-                <span aria-hidden="true">＋</span>
+                <Icon name="plus" size={18} />
                 <span>
                   <b>New project</b>
                   <small>Guided three-step setup</small>
                 </span>
-                <span aria-hidden="true">›</span>
+                <Icon name="arrow" size={16} />
               </button>
             </div>
           ) : null}
@@ -229,7 +371,7 @@ export function AppShell({
                   aria-current={active ? 'page' : undefined}
                   onClick={() => goPage(item.id)}
                 >
-                  <span aria-hidden="true">{item.icon}</span>
+                  <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
                 </button>
               )
@@ -243,7 +385,7 @@ export function AppShell({
             className={isStudio && activePage === 'settings' ? 'active' : ''}
             onClick={() => goPage('settings')}
           >
-            <span aria-hidden="true">⚙</span>
+            <Icon name="settings" size={18} />
             <span>Project settings</span>
           </button>
 
@@ -258,14 +400,17 @@ export function AppShell({
           >
             <i aria-hidden="true" />
             <span>
-              <strong>Local backend {backendStatus}</strong>
+              <strong>{runtimeLabel}</strong>
               <small>Planning only · no execution</small>
             </span>
           </button>
           {runtime ? (
             <div className="popover runtime-pop">
               <b>Runtime boundary</b>
-              <p>ComfyUI submissions, model downloads, and rendering stay gated. This shell only shows local status.</p>
+              <p>
+                ComfyUI submissions, model downloads, and rendering stay gated. This shell only shows
+                local status.
+              </p>
               {onRefreshStatus ? (
                 <button
                   type="button"
@@ -274,7 +419,8 @@ export function AppShell({
                     onRefreshStatus()
                   }}
                 >
-                  Refresh status ›
+                  Refresh status
+                  <Icon name="arrow" size={14} />
                 </button>
               ) : null}
             </div>
@@ -294,7 +440,7 @@ export function AppShell({
               <strong>Robert</strong>
               <small>Producer</small>
             </span>
-            <span aria-hidden="true">•••</span>
+            <Icon name="more" size={18} />
           </button>
           {profile ? (
             <div className="popover profile-pop">
@@ -309,7 +455,12 @@ export function AppShell({
       </aside>
 
       {mobile ? (
-        <button type="button" className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />
+        <button
+          type="button"
+          className="sidebar-scrim"
+          aria-label="Close navigation"
+          onClick={() => setMobile(false)}
+        />
       ) : null}
 
       <section className="workspace">
@@ -323,9 +474,10 @@ export function AppShell({
               aria-controls="primary-navigation"
               onClick={() => setMobile((open) => !open)}
             >
-              ☰
+              <Icon name="menu" size={18} />
             </button>
-            <div className="crumbs">
+            {/* Sites topbar crumbs: Projects › Project › Page · PHASE A */}
+            <div className="crumbs" aria-label="Breadcrumb">
               {view === 'projects' ? (
                 <>
                   <strong>Projects</strong>
@@ -334,43 +486,60 @@ export function AppShell({
               ) : null}
               {view === 'new-project' ? (
                 <>
-                  <button type="button" onClick={() => goWorkspace(onOpenProjects)}>
-                    Projects
-                  </button>
-                  <span aria-hidden="true">›</span>
+                  <span>Projects</span>
+                  <Icon name="chevron" size={13} />
                   <b>Create project</b>
                 </>
               ) : null}
               {isStudio ? (
                 <>
-                  <button type="button" onClick={() => goWorkspace(onOpenProjects)}>
-                    Projects
-                  </button>
-                  <span aria-hidden="true">›</span>
-                  <strong>{projectName}</strong>
-                  <span aria-hidden="true">›</span>
+                  <span>Projects</span>
+                  <Icon name="chevron" size={13} />
+                  <strong title={projectId}>{projectName}</strong>
+                  <Icon name="chevron" size={13} />
                   <b>{activeLabel}</b>
-                  <span className="phase">7 PHASES</span>
+                  <span className="phase" aria-label="Seven production phases">
+                    7 PHASES
+                  </span>
                 </>
               ) : null}
             </div>
           </div>
+          {/* Sites top-actions: search · bell · Save draft · Preview animatic */}
           <div className="top-actions">
-            <button type="button" className="icon-button" aria-label="Search workspace">
-              ⌕
+            <button type="button" className="icon-button" aria-label="Search project">
+              <Icon name="search" size={16} />
             </button>
             {view === 'projects' ? (
               <button type="button" className="btn primary" onClick={onCreateProject}>
-                ＋ New project
+                <Icon name="plus" size={15} />
+                <span>New project</span>
               </button>
             ) : null}
             {isStudio ? (
               <>
-                <button type="button" className="icon-button has-dot" aria-label="Notifications">
-                  ◦
+                <button type="button" className="icon-button has-dot" aria-label="Open notifications">
+                  <Icon name="bell" size={16} />
                   <i />
                 </button>
-                <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} />
+                <button
+                  type="button"
+                  className="btn secondary"
+                  disabled={shellActions.saving}
+                  onClick={() => shellActions.saveDraft?.()}
+                >
+                  <span>{shellActions.saving ? 'Saving…' : 'Save draft'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={shellActions.canPreview === false}
+                  title="Timing prototype only — no video rendering"
+                  onClick={() => shellActions.previewAnimatic?.()}
+                >
+                  <Icon name="play" size={15} />
+                  <span>Preview animatic</span>
+                </button>
               </>
             ) : null}
           </div>

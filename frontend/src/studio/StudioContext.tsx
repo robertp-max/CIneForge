@@ -137,7 +137,7 @@ export function StudioProvider({
         setStoryId(aggregate.story.id)
         setProjectId(aggregate.story.project_id)
         setLoadState('ready')
-        setMessage('Loaded the selected project and its planning story from the CineForge backend.')
+        setMessage('')
       } catch (err) {
         if (!active) return
         const text = errorMessage(err, 'Unable to load the selected project in Storyboard Studio.')

@@ -11,6 +11,7 @@ import {
   type Voice,
 } from '../../api/client'
 import { useStudio } from '../StudioState'
+import { shotCodeFromLabel, startingFrameUrl } from '../mediaUrls'
 import { formatDuration } from '../utils'
 import { EmptyState } from '../components/StateBlocks'
 
@@ -716,11 +717,70 @@ export function StoryboardPage() {
 
   if (!data) return null
 
+  const mediaScope = {
+    projectId: data.story.project_id,
+    storyTitle: data.story.title,
+  }
+
+  // Global scene ordinal for S##X codes (matches ProductionPhasePreview / static pack).
+  const sceneNumberById = new Map<string, number>()
+  let sceneOrdinal = 0
+  for (const chapter of data.chapters) {
+    for (const scene of chapter.scenes) {
+      sceneOrdinal += 1
+      sceneNumberById.set(scene.id, sceneOrdinal)
+    }
+  }
+
+  const totalShots = data.chapters.reduce(
+    (n, chapter) => n + chapter.scenes.reduce((m, scene) => m + scene.shots.length, 0),
+    0,
+  )
+  const approvedShots = data.chapters.reduce(
+    (n, chapter) =>
+      n +
+      chapter.scenes.reduce(
+        (m, scene) => m + scene.shots.filter((shot) => shot.approval_state === 'approved').length,
+        0,
+      ),
+    0,
+  )
+  const progressPct = totalShots > 0 ? Math.round((approvedShots / totalShots) * 100) : 0
+
   return (
     <div className="storyboard-layout">
       <div>
+        <div className="page-title" style={{ marginBottom: 14 }}>
+          <div>
+            <span className="eyebrow">STORYBOARD WORKSPACE</span>
+            <h1>Production storyboard</h1>
+            <p>Review generated frames, narration, and approval state in production order.</p>
+          </div>
+          <div className="page-actions">
+            <div className="readiness-block" style={{ width: 160 }}>
+              <span>
+                Progress <b>{progressPct}%</b>
+              </span>
+              <i
+                className="project-progress"
+                aria-hidden="true"
+                style={{ display: 'block', height: 4, borderRadius: 99, background: '#292c30', marginTop: 6, overflow: 'hidden' }}
+              >
+                <i style={{ display: 'block', height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg,#7baaf7,#a8c7fa)' }} />
+              </i>
+            </div>
+          </div>
+        </div>
         <div className="toolbar">
-          <span>Ordered hierarchy · display labels are cosmetic; UUIDs remain identity.</span>
+          <div className="segmented" role="group" aria-label="Shot filter">
+            <button type="button" className="active">
+              All
+            </button>
+            <button type="button">Draft</button>
+            <button type="button">Review</button>
+            <button type="button">Approved</button>
+            <button type="button">Blocked</button>
+          </div>
           <div>
             <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('chapter')}>
               + Chapter
@@ -766,28 +826,70 @@ export function StoryboardPage() {
                       {scene.shots.length === 1 ? '' : 's'}
                     </small>
                   </div>
-                  <div className="shot-row" role="list">
-                    {scene.shots.map((shot) => (
-                      <button
-                        key={shot.id}
-                        type="button"
-                        role="listitem"
-                        className={`shot-card ${selectedShot?.id === shot.id ? 'selected' : ''}`}
-                        aria-pressed={selectedShot?.id === shot.id}
-                        onClick={() => setSelectedShot(shot)}
-                      >
-                        <span>
-                          SH{String(shot.order_index + 1).padStart(2, '0')}
-                          {shot.display_label ? ` · ${shot.display_label}` : ''}
-                        </span>
-                        <b>{shot.title}</b>
-                        <small>
-                          {shot.duration_sec}s · {shot.approval_state}
-                          {shot.production_status ? ` · ${shot.production_status}` : ''}
-                          {shot.blocked_reason ? ` · ${shot.blocked_reason}` : ''}
-                        </small>
-                      </button>
-                    ))}
+                  <div className="shot-strip" role="list">
+                    {scene.shots.map((shot, shotIndex) => {
+                      const sceneNumber = sceneNumberById.get(scene.id) ?? sceneIndex + 1
+                      const letter =
+                        shot.order_index < 26
+                          ? String.fromCharCode(65 + shot.order_index)
+                          : String(shot.order_index + 1)
+                      // Global S##X code matches ProductionPhasePreview + Transfiguration static pack.
+                      const syntheticCode = `S${String(sceneNumber).padStart(2, '0')}${letter}`
+                      const shotCode =
+                        shotCodeFromLabel(shot.title) ||
+                        shotCodeFromLabel(shot.display_label) ||
+                        syntheticCode
+                      const frameUrl = startingFrameUrl({
+                        title: shot.title,
+                        code: shotCode,
+                        assetId: shot.starting_image_asset_id,
+                        ...mediaScope,
+                      })
+                      // Prefer production codes (S01A) on the Gold frame badge when available.
+                      const frameLabel = shotCode
+                      return (
+                        <button
+                          key={shot.id}
+                          type="button"
+                          role="listitem"
+                          className={`shot-card ${selectedShot?.id === shot.id ? 'selected' : ''}`}
+                          aria-pressed={selectedShot?.id === shot.id}
+                          onClick={() => setSelectedShot(shot)}
+                        >
+                          <div
+                            className={`frame-art frame-${shotIndex % 8}${frameUrl ? ' has-image' : ''}`}
+                          >
+                            {frameUrl ? (
+                              <img
+                                src={frameUrl}
+                                alt={`${frameLabel} starting frame`}
+                                loading="lazy"
+                                decoding="async"
+                                onError={(event) => {
+                                  const img = event.currentTarget
+                                  img.style.display = 'none'
+                                  img.parentElement?.classList.remove('has-image')
+                                }}
+                              />
+                            ) : null}
+                            <span>{frameLabel}</span>
+                          </div>
+                          <div>
+                            <span>
+                              <code>{frameLabel}</code>
+                              <b>{shot.duration_sec}s</b>
+                            </span>
+                            <strong>
+                              {shot.title.length > 42 ? `${shot.title.slice(0, 40)}…` : shot.title}
+                            </strong>
+                            <small>
+                              {shot.approval_state}
+                              {shot.production_status === 'blocked' ? ' · blocked' : ''}
+                            </small>
+                          </div>
+                        </button>
+                      )
+                    })}
                     {!scene.shots.length ? (
                       <p className="form-hint" style={{ margin: 0 }}>
                         No shots in this scene.

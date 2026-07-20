@@ -1,8 +1,12 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { setShellTopbarActions } from '../../components/shellTopbarActions'
 import { useStudio } from '../StudioState'
-import { formatDuration } from '../utils'
 import { AnimaticModal } from './AnimaticModal'
 
+/**
+ * Sites Gold pages render title chrome inside each page (PageTitle / phase contract).
+ * StudioChrome only wires topbar actions + loading/error/animatic — no extra banners.
+ */
 export function StudioChrome({
   title,
   description,
@@ -14,7 +18,6 @@ export function StudioChrome({
 }) {
   const {
     data,
-    readiness,
     message,
     busy,
     reload,
@@ -25,80 +28,24 @@ export function StudioChrome({
     error,
   } = useStudio()
 
-  const planned = readiness?.planned_duration_sec ?? 0
-  const target = data?.story.target_duration_sec ?? readiness?.target_duration_sec ?? 0
+  // Sites puts Save draft / Preview animatic in the AppShell topbar — register handlers here.
+  useEffect(() => {
+    setShellTopbarActions({
+      canPreview: Boolean(data),
+      saveDraft: () => {
+        setMessage('Draft state is current in the browser session. Server data remains canonical.')
+      },
+      previewAnimatic: () => setAnimaticOpen(true),
+    })
+    return () => setShellTopbarActions(null)
+  }, [data, setAnimaticOpen, setMessage])
+
+  // Keep a11y name for the workspace without painting Sites-unlike chrome.
+  void title
+  void description
 
   return (
-    <section className="studio page" aria-busy={busy || loadState === 'loading'}>
-      <div className="studio-commandbar">
-        <div>
-          <span className="eyebrow">CineForge production</span>
-          <strong>{data?.story.title ?? 'Storyboard Studio'}</strong>
-          <small>
-            {data
-              ? `${formatDuration(target)} target · ${formatDuration(planned)} planned`
-              : 'Guided storyboard planning workspace'}
-          </small>
-        </div>
-        <div className="command-actions">
-          <button
-            type="button"
-            className="ghost-button touch-target"
-            onClick={() => {
-              setMessage('Draft state is current in the browser session. Server data remains canonical.')
-            }}
-          >
-            Save draft
-          </button>
-          <button
-            type="button"
-            className="primary-button touch-target"
-            onClick={() => setAnimaticOpen(true)}
-            disabled={!data}
-            title="Timing prototype only — no video rendering"
-          >
-            ▷ Preview animatic
-          </button>
-        </div>
-      </div>
-
-      <header className="page-header studio-header">
-        <div>
-          <span className="eyebrow">Studio workspace</span>
-          <h1>{title}</h1>
-          <p>
-            {data ? (
-              <>
-                <strong style={{ color: 'var(--text)' }}>{data.story.title}</strong>
-                {' · '}
-                {formatDuration(planned)} planned / {formatDuration(target)} target
-                {' · '}
-                {description}
-              </>
-            ) : (
-              description
-            )}
-          </p>
-        </div>
-        <div className="page-actions">
-          <button
-            type="button"
-            className="secondary-button touch-target"
-            onClick={() => void reload()}
-            disabled={busy || !data}
-          >
-            Continue review
-          </button>
-          <span className="readiness-chip">
-            {readiness?.reasons.filter((reason) => reason.blocking).length ?? 0} blockers
-          </span>
-        </div>
-      </header>
-
-      <p className="studio-message" role="status" aria-live="polite">
-        {message}
-      </p>
-
+    <section className="studio page sites-studio" aria-busy={busy || loadState === 'loading'}>
       {loadState === 'loading' ? (
         <div className="loading-block" role="status">
           <strong>Loading planning data…</strong>
@@ -114,6 +61,13 @@ export function StudioChrome({
             Retry
           </button>
         </div>
+      ) : null}
+
+      {/* Transient notices only — never a permanent "Loaded…" banner under the title. */}
+      {message && loadState !== 'loading' && !message.startsWith('Loaded the selected') ? (
+        <p className="studio-message" role="status" aria-live="polite">
+          {message}
+        </p>
       ) : null}
 
       {loadState !== 'loading' ? children : null}
