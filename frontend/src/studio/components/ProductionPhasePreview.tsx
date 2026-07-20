@@ -8,7 +8,7 @@ import {
   type SnapshotShot,
   type SnapshotWorkspace,
 } from '../snapshotWorkspace'
-import { characterPortraitUrl, startingFrameUrl } from '../mediaUrls'
+import { artDirectionBoardUrl, characterPortraitUrl, startingFrameUrl } from '../mediaUrls'
 import { formatDuration, initials } from '../utils'
 
 type PreviewProps = {
@@ -131,7 +131,7 @@ function PhasePreviewHeader({
         <p>{description}</p>
       </div>
       <div className="phase-workspace-meta">
-        <span className="">{historical ? 'Read-only history' : 'Design available'}</span>
+        <span className="phase-workspace-meta-pill">{historical ? 'Read-only history' : 'Design available'}</span>
         <small>Backend state · {lifecycleLabel(phase.lifecycle_state)}</small>
         {actions?.length && onNavigate ? (
           <div className="phase-header-actions" aria-label="Related workspaces">
@@ -206,8 +206,20 @@ function characterCompleteness(character: SnapshotCharacter): number {
     character.age_range,
     character.physical_description,
     character.personality,
+    character.speaking_style,
+    character.wardrobe,
+    character.consistency_prompt,
   ]
   return Math.round((fields.filter(Boolean).length / fields.length) * 100)
+}
+
+function characterIsApprovedHero(character: SnapshotCharacter): boolean {
+  if ((character.approval_state || '').toLowerCase() === 'approved') return true
+  return (character.reference_links ?? []).some((link) => link.approved)
+}
+
+function statusToken(value: string | null | undefined): string {
+  return (value || 'draft').toLowerCase().replaceAll('_', ' ').trim() || 'draft'
 }
 
 function PhaseTwoPreview({ phase, workspace, historical, onNavigate }: PreviewProps) {
@@ -225,6 +237,28 @@ function PhaseTwoPreview({ phase, workspace, historical, onNavigate }: PreviewPr
   const average = shots.length ? planned / shots.length : 0
   const continuityCount = shots.filter((row) => row.shot.continuity_source_shot_id).length
   const startFrameCount = shots.filter((row) => row.shot.starting_image_required || row.shot.starting_image_asset_id).length
+  const mediaScope = {
+    projectId: workspace?.projectId,
+    storyTitle:
+      typeof workspace?.narrative?.title === 'string' ? workspace.narrative.title : null,
+  }
+  const sceneBoardUrl = selectedScene
+    ? artDirectionBoardUrl({
+        sceneNumber: selectedScene.sceneNumber,
+        ...mediaScope,
+      })
+    : null
+  const sceneFrameUrls = selectedShots
+    .map((row) => ({
+      code: row.code,
+      url: startingFrameUrl({
+        code: row.code,
+        title: row.shot.title,
+        assetId: row.shot.starting_image_asset_id,
+        ...mediaScope,
+      }),
+    }))
+    .filter((item): item is { code: string; url: string } => Boolean(item.url))
 
   return (
     <div className="phase-workspace">
@@ -285,6 +319,30 @@ function PhaseTwoPreview({ phase, workspace, historical, onNavigate }: PreviewPr
                 </span>
               ))}
             </div>
+            {sceneBoardUrl ? (
+              <figure className="phase-scene-board">
+                <img
+                  src={sceneBoardUrl}
+                  alt={`${selectedScene?.scene.title ?? 'Scene'} storyboard board`}
+                  loading="lazy"
+                  decoding="async"
+                />
+                <figcaption>
+                  SCENE {String(selectedScene?.sceneNumber ?? 0).padStart(2, '0')} · selected scene board
+                </figcaption>
+              </figure>
+            ) : sceneFrameUrls.length ? (
+              <div className="phase-scene-frame-strip" aria-label="Selected scene starting frames">
+                {sceneFrameUrls.slice(0, 6).map((frame) => (
+                  <article key={frame.code}>
+                    <div className="frame-art has-image">
+                      <img src={frame.url} alt={`${frame.code} starting frame`} loading="lazy" decoding="async" />
+                      <span>{frame.code}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
             <div className="phase-table-wrap">
               <table>
                 <thead><tr><th>Shot</th><th>Purpose</th><th>Cast / location</th><th>Duration</th><th>Continuity</th></tr></thead>
@@ -360,15 +418,25 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
     : firstCharacterId
   const selected = characters.find((item) => item.id === activeCharacterId) ?? characters[0] ?? null
   const references = selected?.reference_links ?? []
-  const linkedShots = (workspace?.shots ?? []).filter((shot) =>
-    shot.characters?.some((link) => link.character_id === selected?.id),
-  )
   const voices = workspace?.voices ?? []
+  const assignedVoices = characters.filter((item) => item.assigned_voice_profile_id).length
+  const approvedHeroes = characters.filter(characterIsApprovedHero).length
+  const referenceLinks = characters.reduce((total, item) => total + (item.reference_links?.length ?? 0), 0)
   const mediaScope = {
     projectId: workspace?.projectId,
     storyTitle:
       typeof workspace?.narrative?.title === 'string' ? workspace.narrative.title : null,
   }
+  const selectedPortraitUrl = selected
+    ? characterPortraitUrl({
+        name: selected.name,
+        assetId: references[0]?.asset_id,
+        ...mediaScope,
+      })
+    : null
+  const selectedVoice = selected?.assigned_voice_profile_id
+    ? voices.find((voice) => voice.id === selected.assigned_voice_profile_id) ?? null
+    : null
 
   return (
     <div className="phase-workspace">
@@ -376,26 +444,37 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
         phase={phase}
         historical={historical}
         source={historical ? 'Retained snapshot' : 'Live records'}
-        description="Build distinct, continuity-safe character identities and review the required nine-view reference plan before any media is produced."
+        description="Build distinct, continuity-safe character identities and review a required nine-view reference plan before media production."
         actions={[{ label: 'Characters', page: 'characters' }, { label: 'Voices', page: 'voices' }]}
         onNavigate={onNavigate}
       />
       <PreviewDisclosure historical={historical} />
       <div className="phase-metrics four">
         <WorkspaceMetric label="Characters" value={characters.length || '—'} />
-        <WorkspaceMetric label="Principal cast" value={characters.filter((item) => (item.role || '').toLowerCase().includes('lead') || (item.reference_links?.length ?? 0) > 0).length || '—'} />
-        <WorkspaceMetric label="Reference links" value={characters.reduce((total, item) => total + (item.reference_links?.length ?? 0), 0) || '—'} />
-        <WorkspaceMetric label="Voice assignments" value={characters.filter((item) => item.assigned_voice_profile_id).length || '—'} detail={characters.length ? `${voices.length} voice profiles` : undefined} />
+        <WorkspaceMetric label="Approved heroes" value={approvedHeroes || '—'} />
+        <WorkspaceMetric label="Reference links" value={referenceLinks || '—'} />
+        <WorkspaceMetric
+          label="Voice assignments"
+          value={characters.length ? `${assignedVoices}/${characters.length}` : '—'}
+          detail={voices.length ? `${voices.length} voice profiles` : undefined}
+        />
       </div>
 
       {selected ? (
         <div className="phase-character-layout">
           <aside className="phase-list character-list" aria-label="Character profiles">
-            <header><span>CAST</span><b>{characters.length} profiles</b></header>
             {characters.map((character) => (
-              <button key={character.id} type="button" className={character.id === selected.id ? 'active' : ''} onClick={() => setSelectedId(character.id)}>
+              <button
+                key={character.id}
+                type="button"
+                className={character.id === selected.id ? 'active' : ''}
+                onClick={() => setSelectedId(character.id)}
+              >
                 <span>{initials(character.name)}</span>
-                <div><b>{character.name}</b><small>{character.role || 'Role not recorded'}</small></div>
+                <div>
+                  <b>{character.name}</b>
+                  <small>{character.role || 'Role not recorded'}</small>
+                </div>
                 <i>{characterCompleteness(character)}%</i>
               </button>
             ))}
@@ -403,10 +482,10 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
 
           <section className="phase-character-profile">
             <header>
-              <span className={characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id, ...mediaScope }) ? 'has-reference' : undefined}>
-                {characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id, ...mediaScope }) ? (
+              <span className={selectedPortraitUrl ? 'has-reference' : undefined}>
+                {selectedPortraitUrl ? (
                   <img
-                    src={characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id, ...mediaScope })!}
+                    src={selectedPortraitUrl}
                     alt={`${selected.name} reference`}
                     loading="lazy"
                     decoding="async"
@@ -416,19 +495,49 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
               <div>
                 <small>CHARACTER PROFILE</small>
                 <h4>{selected.name}</h4>
-                <p>{selected.role || 'Narrative role not recorded'} · {selected.age_range || 'Age range not recorded'}</p>
+                <p>
+                  {selected.role || 'Narrative role not recorded'}
+                  {' · '}
+                  {selected.age_range || 'Age range not recorded'}
+                </p>
               </div>
-              <span className="status-pill">{selected.approval_state || 'draft'}</span>
+              <span className="status-pill" data-status={statusToken(selected.approval_state)}>
+                {selected.approval_state || 'draft'}
+              </span>
             </header>
             <div className="phase-fact-grid">
-              <article><span>Physical identity</span><p>{selected.physical_description || 'Not recorded in this snapshot.'}</p></article>
-              <article><span>Personality & movement</span><p>{selected.personality || 'Not recorded in this snapshot.'}</p></article>
-              <article><span>Voice assignment</span><p>{selected.assigned_voice_profile_id ? `Linked voice ${selected.assigned_voice_profile_id.slice(0, 8)}…` : 'No voice assignment in this snapshot.'}</p></article>
-              <article><span>Reference coverage</span><p>{references.length} linked reference asset(s).</p></article>
+              <article>
+                <span>Physical identity</span>
+                <p>{selected.physical_description || 'Not recorded'}</p>
+              </article>
+              <article>
+                <span>Personality & movement</span>
+                <p>{selected.personality || 'Not recorded'}</p>
+              </article>
+              <article>
+                <span>Voice & speech</span>
+                <p>
+                  {selected.speaking_style
+                    || (selectedVoice
+                      ? `${selectedVoice.name}${selectedVoice.tone ? ` · ${selectedVoice.tone}` : ''}`
+                      : selected.assigned_voice_profile_id
+                        ? 'Voice linked; speech notes not recorded'
+                        : 'Not recorded')}
+                </p>
+              </article>
+              <article>
+                <span>Wardrobe lock</span>
+                <p>{selected.wardrobe || 'Not recorded'}</p>
+              </article>
             </div>
             <div className="phase-continuity">
-              <span>SHOT LINKS</span>
-              <p>{linkedShots.length} linked shots in this {historical ? 'retained snapshot' : 'current draft'}.</p>
+              <span>CONTINUITY PROMPT</span>
+              <p>
+                {selected.consistency_prompt
+                  || (historical
+                    ? 'No continuity prompt has been recorded in this retained snapshot.'
+                    : 'No continuity prompt has been recorded.')}
+              </p>
             </div>
           </section>
 
@@ -437,19 +546,29 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
               <div>
                 <span>NINE-PANEL SPECIFICATION</span>
                 <h4>Reference-view plan</h4>
-                <p>Each slot remains a planned requirement unless a real managed reference is linked.</p>
+                <p>Slots remain planned unless a real approved reference exists.</p>
               </div>
               <b>{Math.min(9, references.length)}/9 linked</b>
             </header>
             <div>
               {NINE_PANEL_LABELS.map((label, index) => {
                 const reference = references[index]
+                // Slot 0 may use Transfiguration canon portrait when scoped; later slots need real links.
                 const portraitUrl =
                   index === 0
-                    ? characterPortraitUrl({ name: selected.name, assetId: reference?.asset_id, ...mediaScope })
+                    ? characterPortraitUrl({
+                        name: selected.name,
+                        assetId: reference?.asset_id,
+                        ...mediaScope,
+                      })
                     : reference?.asset_id
-                      ? characterPortraitUrl({ name: selected.name, assetId: reference.asset_id, ...mediaScope })
+                      ? characterPortraitUrl({
+                          name: selected.name,
+                          assetId: reference.asset_id,
+                          ...mediaScope,
+                        })
                       : null
+                const hasLinkedSlot = Boolean(reference) || Boolean(portraitUrl)
                 return (
                   <article key={label}>
                     <span className={portraitUrl ? 'has-reference' : undefined}>
@@ -460,10 +579,16 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
                           loading="lazy"
                           decoding="async"
                         />
-                      ) : (index + 1)}
+                      ) : hasLinkedSlot ? initials(selected.name) : (index + 1)}
                     </span>
                     <b>{label}</b>
-                    <small>{reference ? (reference.approved ? 'Approved reference' : 'Draft reference') : 'Planned view'}</small>
+                    <small>
+                      {reference
+                        ? (reference.approved ? 'Approved reference' : 'Draft reference')
+                        : portraitUrl
+                          ? 'Canon portrait'
+                          : 'Planned view'}
+                    </small>
                   </article>
                 )
               })}
@@ -477,19 +602,23 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
         />
       )}
 
-      <div className="phase-footer">
+      <footer className="phase-footer">
         <div>
           <span>PROFILE COVERAGE</span>
           <b>Identity planning, not generated media</b>
-          <p>Completeness is calculated only from {historical ? 'snapshot fields' : 'stored profile fields'} and reference links.</p>
+          <p>
+            Completeness is calculated only from
+            {historical ? ' snapshot fields' : ' stored profile fields'}
+            {' '}
+            and reference links.
+          </p>
         </div>
         {onNavigate ? (
-          <div className="phase-header-actions">
-            <button type="button" className="btn secondary" onClick={() => onNavigate('voices')}>{editorLabel('Review voices', historical)}</button>
-            <button type="button" className="btn primary" onClick={() => onNavigate('characters')}>{editorLabel('Edit character profiles', historical)}</button>
-          </div>
+          <button type="button" className="btn primary" onClick={() => onNavigate('characters')}>
+            {editorLabel('Edit character profiles', historical)}
+          </button>
         ) : null}
-      </div>
+      </footer>
     </div>
   )
 }
@@ -536,18 +665,24 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
       </div>
 
       <div className="phase-location-layout">
-        <section className="phase-location-catalog">
+        <section className="phase-location-catalog" aria-label="Location catalog">
           <div className="phase-subheading">
             <div>
               <span>LOCATION CATALOG</span>
-              <h3>Environment coverage</h3>
+              <h4>Environment coverage</h4>
               <p>{historical ? 'Location names are taken only from the retained snapshot.' : 'Location names are derived from persisted shots.'}</p>
             </div>
+            <b>{locations.length || 0} sites</b>
           </div>
           {locations.length ? (
-            <div className="phase-location-cards">
+            <div className="phase-location-list">
               {locations.map((location, index) => (
-                <button key={location.name} type="button" className={location.name === selected?.name ? 'active' : ''} onClick={() => setSelectedLocation(location.name)}>
+                <button
+                  key={location.name}
+                  type="button"
+                  className={location.name === selected?.name ? 'active' : ''}
+                  onClick={() => setSelectedLocation(location.name)}
+                >
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <div>
                     <b>{location.name}</b>
@@ -566,15 +701,17 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
         </section>
 
         <section className="phase-location-profile">
-          <div className="phase-subheading">
+          <header>
             <div>
               <span>LOCATION PROFILE</span>
-              <h3>{selected?.name || 'Select a location'}</h3>
+              <h4>{selected?.name || 'Select a location'}</h4>
               <p>{selected ? `${selected.shots.length} shot uses are connected to this profile.` : 'No location is selected.'}</p>
             </div>
-            <span className="phase-evidence-pill">{historical ? 'Snapshot' : 'Derived'}</span>
-          </div>
-          <div className="phase-profile-field-grid">
+            <span className="status-pill" data-status={historical ? 'review' : 'draft'}>
+              {historical ? 'Snapshot' : 'Derived'}
+            </span>
+          </header>
+          <div className="phase-fact-grid">
             {[
               ['Story purpose', selected?.shots[0]?.shot.story_purpose || 'Not recorded'],
               ['Geography & scale', 'Profile field ready for backend support'],
@@ -582,25 +719,30 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
               ['Light & weather', 'Time-of-day variants, palette, and material behavior'],
               ['Environmental sound', 'Ambience and recurring acoustic cues'],
               ['Forbidden drift', 'Geometry and landmark changes that must never occur'],
-            ].map(([label, value]) => <article key={label}><span>{label}</span><p>{value}</p></article>)}
+            ].map(([label, value]) => (
+              <article key={label}>
+                <span>{label}</span>
+                <p>{value}</p>
+              </article>
+            ))}
           </div>
         </section>
       </div>
 
-      <section className="phase-key-assets-panel">
+      <section className="phase-key-assets">
         <div className="phase-subheading">
           <div>
             <span>KEY-ASSET REGISTRY</span>
-            <h3>Story-critical object continuity</h3>
+            <h4>Story-critical object continuity</h4>
             <p>
               {workspace?.keyAssets.length
                 ? `${workspace.keyAssets.length} key-asset record(s) are present in this ${historical ? 'snapshot' : 'draft'}.`
                 : 'No canonical key-asset rows are present, so this structure stays truthful and unpopulated.'}
             </p>
           </div>
-          <span className="phase-source-pill">Design template</span>
+          <b>Design template</b>
         </div>
-        <div className="phase-key-asset-grid">
+        <div>
           {[
             ['Identity', 'Canonical name, function, size, shape, material, color'],
             ['Condition', 'Age, wear, damage state, and allowed transformations'],
@@ -610,7 +752,10 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
           ].map(([title, detail], index) => (
             <article key={title}>
               <span>{index + 1}</span>
-              <div><b>{title}</b><p>{detail}</p></div>
+              <div>
+                <b>{title}</b>
+                <p>{detail}</p>
+              </div>
               <small>Field group</small>
             </article>
           ))}
@@ -660,40 +805,83 @@ function PhaseFivePreview({ phase, workspace, historical, onNavigate }: PreviewP
 
       {selected ? (
         <div className="phase-prompt-layout">
-          <aside className="phase-package-list" aria-label="Shot prompt packages">
-            <div className="phase-subheading"><span>SHOT PACKAGES</span><b>{promptCoverage}/{shots.length} complete</b></div>
+          <aside className="phase-list prompt-list" aria-label="Shot prompt packages">
+            <header>
+              <span>SHOT PACKAGES</span>
+              <b>
+                {promptCoverage}/{shots.length} complete
+              </b>
+            </header>
             {shots.map((row) => (
-              <button key={row.shot.id} type="button" className={row.shot.id === selected.shot.id ? 'active' : ''} onClick={() => setSelectedShotId(row.shot.id)}>
+              <button
+                key={row.shot.id}
+                type="button"
+                className={row.shot.id === selected.shot.id ? 'active' : ''}
+                onClick={() => setSelectedShotId(row.shot.id)}
+              >
                 <span>{row.code}</span>
-                <div><b>{row.shot.title}</b><small>{row.sceneTitle}</small></div>
-                <i className={row.shot.image_prompt ? 'has-record' : ''}>{row.shot.image_prompt ? '●' : '○'}</i>
+                <div>
+                  <b>{row.shot.title}</b>
+                  <small>{row.sceneTitle}</small>
+                </div>
+                <i className={row.shot.image_prompt ? 'has-record' : ''} aria-hidden="true">
+                  {row.shot.image_prompt ? '●' : '○'}
+                </i>
               </button>
             ))}
           </aside>
           <section className="phase-prompt-inspector">
-            <div className="phase-subheading">
+            <header>
               <div>
-                <span>{selected.code} · PROMPT PACKAGE</span>
-                <h3>{selected.shot.title}</h3>
-                <p>{selected.shot.visual_description || selected.shot.story_purpose || 'No visual description has been recorded.'}</p>
+                <span>
+                  {selected.code} · PROMPT PACKAGE
+                </span>
+                <h4>{selected.shot.title}</h4>
+                <p>
+                  {selected.shot.visual_description ||
+                    selected.shot.story_purpose ||
+                    'No visual description has been recorded.'}
+                </p>
               </div>
-            </div>
+            </header>
             <div className="phase-inline-tabs" role="tablist" aria-label="Prompt type">
               {(['image', 'video', 'negative'] as const).map((tab) => (
-                <button key={tab} type="button" role="tab" aria-selected={promptTab === tab} className={promptTab === tab ? 'active' : ''} onClick={() => setPromptTab(tab)}>
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={promptTab === tab}
+                  className={promptTab === tab ? 'active' : ''}
+                  onClick={() => setPromptTab(tab)}
+                >
                   {tab} prompt
                 </button>
               ))}
             </div>
             <div className="phase-prompt-copy">
               <span>{promptTab.toUpperCase()} PROMPT</span>
-              <p>{promptText || `No ${promptTab} prompt has been stored for this shot in the ${historical ? 'snapshot' : 'current draft'}.`}</p>
+              <p>
+                {promptText ||
+                  `No ${promptTab} prompt has been stored for this shot in the ${historical ? 'snapshot' : 'current draft'}.`}
+              </p>
             </div>
-            <div className="phase-prompt-support-grid">
-              <article><span>Camera</span><p>{selected.shot.camera_direction || 'No camera direction recorded.'}</p></article>
-              <article><span>Motion</span><p>{selected.shot.motion_direction || 'No motion direction recorded.'}</p></article>
-              <article><span>Cast links</span><p>{selected.shot.characters?.length ?? 0} character link(s)</p></article>
-              <article><span>Style context</span><p>{String(workspace?.narrative?.visual_style || 'No style lock recorded.')}</p></article>
+            <div className="phase-fact-grid">
+              <article>
+                <span>Camera</span>
+                <p>{selected.shot.camera_direction || 'No camera direction recorded.'}</p>
+              </article>
+              <article>
+                <span>Motion</span>
+                <p>{selected.shot.motion_direction || 'No motion direction recorded.'}</p>
+              </article>
+              <article>
+                <span>Cast links</span>
+                <p>{selected.shot.characters?.length ?? 0} character link(s)</p>
+              </article>
+              <article>
+                <span>Style context</span>
+                <p>{String(workspace?.narrative?.visual_style || 'No style lock recorded.')}</p>
+              </article>
             </div>
           </section>
         </div>
@@ -705,25 +893,35 @@ function PhaseFivePreview({ phase, workspace, historical, onNavigate }: PreviewP
       )}
 
       <section className="phase-workflow-evidence">
-        <div className="phase-subheading">
+        <header className="phase-subheading">
           <div>
             <span>WORKFLOW EVIDENCE</span>
-            <h3>Recommendation states stay explicit</h3>
+            <h4>Recommendation states stay explicit</h4>
             <p>Catalog visibility never implies that a workflow can execute.</p>
           </div>
-        </div>
-        <div className="phase-workflow-state-grid">
-          {WORKFLOW_STATES.map(([label, detail]) => (
-            <article key={label}>
-              <span className={`workflow-state-dot ${label.toLowerCase().replaceAll(' ', '-')}`} />
-              <div><b>{label}</b><p>{detail}</p></div>
-            </article>
-          ))}
+        </header>
+        <div>
+          {WORKFLOW_STATES.map(([label, detail]) => {
+            const state = label.toLowerCase().replaceAll(' ', '-')
+            return (
+              <article key={label}>
+                <i data-state={state} aria-hidden="true" />
+                <div>
+                  <b>{label}</b>
+                  <p>{detail}</p>
+                </div>
+              </article>
+            )
+          })}
         </div>
         {onNavigate ? (
           <div className="phase-footer-actions">
-            <button type="button" className="secondary-button" onClick={() => onNavigate('routing')}>{editorLabel('Review model routing', historical)}</button>
-            <button type="button" className="primary-button" onClick={() => onNavigate('workflows')}>{editorLabel('Review workflow catalog', historical)}</button>
+            <button type="button" className="btn secondary" onClick={() => onNavigate('routing')}>
+              {editorLabel('Review model routing', historical)}
+            </button>
+            <button type="button" className="btn primary" onClick={() => onNavigate('workflows')}>
+              {editorLabel('Review workflow catalog', historical)}
+            </button>
           </div>
         ) : null}
       </section>
@@ -785,7 +983,7 @@ function PhaseSixPreview({ phase, workspace, historical, onNavigate }: PreviewPr
               <b>{mappedFrames.length}/{requiredFrames.length || 0} mapped</b>
             </div>
             {requiredFrames.length ? (
-              <div className="phase-frame-grid phase-start-frame-grid">
+              <div className="phase-frame-grid">
                 {requiredFrames.slice(0, 12).map((row, index) => {
                   const frameUrl = startingFrameUrl({
                     title: row.shot.title,
@@ -1009,7 +1207,7 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
             </footer>
           </section>
 
-          <section className="phase-timeline" aria-label="Assembly timeline tracks">
+          <div>
             <div className="phase-subheading">
               <div>
                 <span>ASSEMBLY TIMELINE</span>
@@ -1022,51 +1220,53 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
               <b>{shots.length ? `${shots.length} planned` : 'Empty'}</b>
             </div>
 
-            <div>
-              <b>VIDEO</b>
-              <section aria-label="Video clips by planned duration">
-                {shots.length ? shots.map((row) => {
-                  const dur = Math.max(1, Number(row.shot.duration_sec) || 1)
-                  return (
-                    <span
-                      key={row.shot.id}
-                      style={{ flex: `${dur} 1 0` }}
-                      title={`${row.code} · ${dur}s · clip not generated`}
-                    >
-                      {row.code}
-                    </span>
-                  )
-                }) : <span>No project-scoped video output</span>}
-              </section>
-            </div>
+            <section className="phase-timeline" aria-label="Assembly timeline tracks">
+              <div>
+                <b>VIDEO</b>
+                <section aria-label="Video clips by planned duration">
+                  {shots.length ? shots.map((row) => {
+                    const dur = Math.max(1, Number(row.shot.duration_sec) || 1)
+                    return (
+                      <span
+                        key={row.shot.id}
+                        style={{ flex: `${dur} 1 0` }}
+                        title={`${row.code} · ${dur}s · clip not generated`}
+                      >
+                        {row.code}
+                      </span>
+                    )
+                  }) : <span>No project-scoped video output</span>}
+                </section>
+              </div>
 
-            <div className={voiceShots.length ? 'audio' : 'audio empty'}>
-              <b>VOICE</b>
-              <section aria-label="Voice clips">
-                {voiceShots.length ? voiceShots.map((row) => {
-                  const dur = Math.max(1, Number(row.shot.duration_sec) || 1)
-                  return (
-                    <span
-                      key={row.shot.id}
-                      style={{ flex: `${dur} 1 0` }}
-                      title={`${row.code} · narration planned, audio not synthesized`}
-                    >
-                      {row.code}
-                    </span>
-                  )
-                }) : <span>Narration lane — no voice assets generated</span>}
-              </section>
-            </div>
+              <div className={voiceShots.length ? 'audio' : 'audio empty'}>
+                <b>VOICE</b>
+                <section aria-label="Voice clips">
+                  {voiceShots.length ? voiceShots.map((row) => {
+                    const dur = Math.max(1, Number(row.shot.duration_sec) || 1)
+                    return (
+                      <span
+                        key={row.shot.id}
+                        style={{ flex: `${dur} 1 0` }}
+                        title={`${row.code} · narration planned, audio not synthesized`}
+                      >
+                        {row.code}
+                      </span>
+                    )
+                  }) : <span>Narration lane — no voice assets generated</span>}
+                </section>
+              </div>
 
-            <div className="empty">
-              <b>MUSIC</b>
-              <section><span>Music and SFX design lane</span></section>
-            </div>
-            <div className="empty">
-              <b>CAPTIONS</b>
-              <section><span>Subtitle and accessibility lane</span></section>
-            </div>
-          </section>
+              <div className="empty">
+                <b>MUSIC</b>
+                <section><span>Music and SFX design lane</span></section>
+              </div>
+              <div className="empty">
+                <b>CAPTIONS</b>
+                <section><span>Subtitle and accessibility lane</span></section>
+              </div>
+            </section>
+          </div>
         </div>
       ) : null}
 

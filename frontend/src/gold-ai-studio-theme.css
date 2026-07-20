@@ -31,8 +31,7 @@ html,
 body {
   background: var(--bg);
   color: var(--text);
-  /* Match Gold Sites stack (gold-globals.html/body) — Inter then system UI. */
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-family: Inter, "Segoe UI", Roboto, Arial, ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   letter-spacing: 0;
 }
@@ -257,63 +256,33 @@ select:focus-visible {
   display: none;
 }
 
-.topbar {
-  height: 62px;
-  flex-basis: 62px;
-  border-bottom-color: #272729;
-  background: rgb(19 19 20 / 92%);
-  padding: 0 26px;
-}
+/*
+ * PIXEL: topbar / crumbs / top-actions intentionally inherit Sites
+ * gold-globals.css (58px bar, 9px crumbs, square 32px icon-buttons, green PHASE A).
+ * Do not re-theme those selectors here — screenshot parity depends on Sites values.
+ */
 
 .crumbs {
   min-width: 0;
-  gap: 9px;
-  color: #888a8f;
-  font-size: 12px;
 }
 
 .crumbs strong {
   max-width: min(28vw, 420px);
   overflow: hidden;
-  color: #d0d3d7;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.crumbs b {
-  color: #aeb1b6;
-}
-
-.workspace-chip,
-.phase {
-  border-color: #3b4f6e;
-  border-radius: 999px;
-  background: #1d2b42;
-  color: #a8c7fa;
-  font-size: 9px;
-  letter-spacing: 0.7px;
-  padding: 4px 8px;
-}
-
-.top-actions {
-  gap: 8px;
-}
-
-.icon-button {
-  width: 36px;
-  height: 36px;
-  border-color: transparent;
-  border-radius: 50%;
-  background: #29292b;
-  color: #c5c8cc;
-}
-
-.icon-button:hover {
-  background: #343436;
-}
-
-.has-dot > i {
-  background: #a8c7fa;
+/* Multi-project workspace chip only (not the Sites .phase badge). */
+.workspace-chip {
+  border-color: #324351;
+  border-radius: 4px;
+  background: #1b2831;
+  color: #8fa5b8;
+  font-size: 7px;
+  letter-spacing: 0.8px;
+  font-weight: 750;
+  padding: 3px 6px;
 }
 
 .page {
@@ -415,7 +384,30 @@ select:focus-visible {
   font-size: 11px !important;
 }
 
-/* status-pill density/colors: owned by gold-globals (Sites). Do not override. */
+.status-pill {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.status-pill[data-status="approved"],
+.status-pill[data-status="ready"],
+.status-pill[data-status="installed"],
+.status-pill[data-status="connected"],
+.status-pill[data-status="complete"] {
+  border-color: #355b43;
+  background: #1d3325;
+  color: #81c995;
+}
+
+.status-pill[data-status="draft"],
+.status-pill[data-status="auto"],
+.status-pill[data-status="local"],
+.status-pill[data-status="disabled"] {
+  border-color: #3b4f6e;
+  background: #1d2b42;
+  color: #a8c7fa;
+}
 
 .progress {
   height: 5px;
@@ -959,7 +951,6 @@ select:focus-visible {
 
 .phase-list b,
 .phase-location-list b,
-.phase-table-wrap td b,
 .phase-voice-grid h4,
 .phase-manifest-grid article > span {
   font-size: 11px !important;
@@ -982,18 +973,31 @@ select:focus-visible {
   color: #d9e6fa;
 }
 
+/* Phase shot tables: Sites compact 7–8px (do not inflate to AI-studio 11px). */
 .phase-table-wrap {
   border-color: #303033;
-  border-radius: 12px;
+  border-radius: 7px;
 }
 
-.phase-table-wrap th {
-  color: #a2a4a8;
-  font-size: 10px !important;
-}
-
+.phase-table-wrap th,
 .phase-table-wrap td {
-  font-size: 11px !important;
+  font-size: 7px !important;
+}
+
+.phase-table-wrap thead th {
+  color: #747d78;
+  font-size: 6px !important;
+  text-transform: uppercase;
+}
+
+.phase-table-wrap td b {
+  font-size: 8px !important;
+  color: #d4d9d7;
+}
+
+.phase-table-wrap td small {
+  font-size: 6px !important;
+  color: #68716d;
 }
 
 .phase-prompt-copy,
@@ -1022,7 +1026,7 @@ select:focus-visible {
   font-size: 12px;
 }
 
-/* .phase-preview-disclosure stays purple Sites (gold-globals); do not blue-wash. */
+.phase-preview-disclosure,
 .phase-release-banner,
 .notice-card,
 .storage-warning {

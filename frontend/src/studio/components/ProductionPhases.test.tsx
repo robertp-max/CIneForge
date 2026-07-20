@@ -348,12 +348,12 @@ describe('ProductionPhases', () => {
     expect(screen.getByText('Establish the world.')).toBeTruthy()
     expect(screen.getByText('Primary location')).toBeTruthy()
     expect(screen.getByText('8.0s')).toBeTruthy()
-    expect(screen.getAllByText(/draft|none/i).length).toBeGreaterThan(0)
-    expect(screen.getByText('QA PREVIEW')).toBeTruthy()
+    expect(screen.getByText('None')).toBeTruthy()
+    expect(screen.getByText(/PLANNING DIAGNOSTICS|QA PREVIEW/)).toBeTruthy()
     expect(screen.getByText(/1\/1 shots in 6–10s/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Storyboard' }))
     expect(onNavigate).toHaveBeenCalledWith('storyboard')
-    expect(screen.queryByText(/Locked ·/i)).toBeNull()
+    expect(screen.queryByText(/Locked/i)).toBeNull()
   })
 
   it('saves edits as a new version and reruns QA', async () => {

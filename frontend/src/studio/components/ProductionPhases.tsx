@@ -672,10 +672,10 @@ export function ProductionPhases({
                 </div>
               </div>
             ) : !packageData && historical ? (
-              <div className="panel phase-one-empty">
-                <span>1</span>
+              <div className="phase-empty">
+                <span aria-hidden="true">＋</span>
                 <div>
-                  <h3>This retained snapshot has no Phase 1 script package</h3>
+                  <b>This retained snapshot has no Phase 1 script package</b>
                   <p>
                     Phase 1 baselines store narrative planning state rather than a generated script package.
                     The current draft was not substituted. Return to current draft to edit live records.
@@ -683,16 +683,16 @@ export function ProductionPhases({
                 </div>
               </div>
             ) : !packageData ? (
-              <div className="panel phase-one-empty">
-                <span>1</span>
+              <div className="phase-empty">
+                <span aria-hidden="true">＋</span>
                 <div>
-                  <h3>Phase 1 has not started</h3>
+                  <b>Phase 1 has not started</b>
                   <p>Add an original creative prompt and target duration to create the first script package.</p>
                 </div>
               </div>
             ) : (
               <>
-                <div className="phase-metrics six phase-one-metrics" aria-label="Phase 1 script metrics">
+                <div className="phase-metrics six" aria-label="Phase 1 script metrics">
                   <article className="phase-metric"><span>Script words</span><strong>{packageData.script_word_count.toLocaleString()}</strong></article>
                   <article className="phase-metric"><span>Narration</span><strong>{formatDuration(packageData.duration_analysis.narration_duration_sec)}</strong></article>
                   <article className="phase-metric"><span>Dialogue</span><strong>{formatDuration(packageData.duration_analysis.dialogue_duration_sec)}</strong></article>
@@ -706,7 +706,7 @@ export function ProductionPhases({
                   </article>
                 </div>
 
-                <div className="panel phase-one-review-panel">
+                <div className="panel phase-one-review-panel phase-workspace">
                   <div className="panel-title">
                     <div>
                       <span className="eyebrow">
@@ -745,7 +745,7 @@ export function ProductionPhases({
                       </div>
                     </div>
                   ) : (
-                    <div className="phase-one-document">
+                    <div className="phase-one-document phase-document">
                       <section><span>WORKING TITLE</span><h3>{packageData.project_title}</h3></section>
                       <section><span>LOGLINE</span><p>{packageData.logline}</p></section>
                       <section><span>SHORT SYNOPSIS</span><p>{packageData.short_synopsis}</p></section>
