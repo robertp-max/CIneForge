@@ -15,23 +15,32 @@ export type PageId =
 
 export type ShellView = 'projects' | 'new-project' | 'studio'
 
-const navItems: {
-  id: PageId
-  label: string
-  short: string
-  icon: string
-  badge?: string
-}[] = [
-  { id: 'overview', label: 'Overview', short: 'Overview', icon: '▦' },
-  { id: 'storyboard', label: 'Storyboard', short: 'Board', icon: '▤' },
-  { id: 'story', label: 'Story & chapters', short: 'Story', icon: '▱' },
-  { id: 'characters', label: 'Characters', short: 'Cast', icon: '♙' },
-  { id: 'voices', label: 'Voices', short: 'Voices', icon: '♬' },
-  { id: 'images', label: 'Starting images', short: 'Images', icon: '▧' },
-  { id: 'routing', label: 'Model routing', short: 'Routing', icon: '◈' },
-  { id: 'workflows', label: 'Workflows', short: 'Flows', icon: '◇' },
-  { id: 'exports', label: 'Exports', short: 'Export', icon: '↓' },
+const navItems: { id: PageId; label: string; icon: string }[] = [
+  { id: 'overview', label: 'Overview', icon: '▦' },
+  { id: 'storyboard', label: 'Storyboard', icon: '▤' },
+  { id: 'story', label: 'Story & chapters', icon: '▱' },
+  { id: 'characters', label: 'Characters', icon: '♙' },
+  { id: 'voices', label: 'Voices', icon: '♬' },
+  { id: 'images', label: 'Starting images', icon: '▧' },
+  { id: 'routing', label: 'Model routing', icon: '◈' },
+  { id: 'workflows', label: 'Workflows', icon: '◇' },
+  { id: 'exports', label: 'Exports', icon: '↓' },
 ]
+
+const labels: Record<PageId | 'projects' | 'new-project', string> = {
+  projects: 'Projects',
+  'new-project': 'Create Project',
+  overview: 'Overview',
+  storyboard: 'Storyboard',
+  story: 'Story & Chapters',
+  characters: 'Characters',
+  voices: 'Voices',
+  images: 'Starting Images',
+  routing: 'Model Routing',
+  workflows: 'Workflows',
+  exports: 'Exports',
+  settings: 'Project Settings',
+}
 
 type AppShellProps = {
   activePage: PageId
@@ -47,6 +56,17 @@ type AppShellProps = {
   children: ReactNode
 }
 
+function initials(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || 'CF'
+  )
+}
+
 export function AppShell({
   activePage,
   backendStatus,
@@ -60,147 +80,134 @@ export function AppShell({
   onRefreshStatus,
   children,
 }: AppShellProps) {
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [mobile, setMobile] = useState(false)
+  const [projectMenu, setProjectMenu] = useState(false)
+  const [profile, setProfile] = useState(false)
+  const [runtime, setRuntime] = useState(false)
   const navId = useId()
-  const sidebarId = useId()
   const isStudio = view === 'studio'
+  const projectInitials = initials(projectName)
   const activeLabel =
     view === 'projects'
-      ? 'Projects'
+      ? labels.projects
       : view === 'new-project'
-        ? 'Create project'
-        : activePage === 'settings'
-          ? 'Project settings'
-          : navItems.find((item) => item.id === activePage)?.label ?? 'Studio'
-  const projectInitials = projectName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'PR'
+        ? labels['new-project']
+        : labels[activePage]
 
   useEffect(() => {
-    if (!mobileNavOpen && !projectMenuOpen && !profileMenuOpen) return
+    if (!mobile && !projectMenu && !profile && !runtime) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setMobileNavOpen(false)
-        setProjectMenuOpen(false)
-        setProfileMenuOpen(false)
+        setMobile(false)
+        setProjectMenu(false)
+        setProfile(false)
+        setRuntime(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mobileNavOpen, profileMenuOpen, projectMenuOpen])
+  }, [mobile, profile, projectMenu, runtime])
 
-  const handleNavigate = (page: PageId) => {
+  useEffect(() => {
+    const breakpoint = window.matchMedia('(max-width: 900px)')
+    const closeAtDesktop = () => {
+      if (!breakpoint.matches) setMobile(false)
+    }
+    breakpoint.addEventListener('change', closeAtDesktop)
+    closeAtDesktop()
+    return () => breakpoint.removeEventListener('change', closeAtDesktop)
+  }, [])
+
+  const goPage = (page: PageId) => {
     onNavigate(page)
-    setMobileNavOpen(false)
-    setProjectMenuOpen(false)
-    setProfileMenuOpen(false)
+    setMobile(false)
+    setProjectMenu(false)
+    setProfile(false)
+    setRuntime(false)
   }
 
-  const handleWorkspaceNavigate = (action: () => void) => {
+  const goWorkspace = (action: () => void) => {
     action()
-    setMobileNavOpen(false)
-    setProjectMenuOpen(false)
-    setProfileMenuOpen(false)
+    setMobile(false)
+    setProjectMenu(false)
+    setProfile(false)
+    setRuntime(false)
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
-      <a className="skip-link" href="#main-content">
+    <main className="app-shell">
+      <a className="skip-link sr-only" href="#main-content">
         Skip to main content
       </a>
 
       <aside
-        id={sidebarId}
-        className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileNavOpen ? 'sidebar-open' : ''}`}
-        aria-label="Studio sidebar"
+        id="primary-navigation"
+        className={`sidebar ${mobile ? 'mobile-open' : ''}`}
+        aria-label="Primary navigation"
       >
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
+        <button type="button" className="brand" onClick={() => goWorkspace(onOpenProjects)}>
+          <span className="brand-mark" aria-hidden="true">
             ▷
-          </div>
-          <div>
-            <strong>CineForge</strong>
-          </div>
-          <button
-            type="button"
-            className="sidebar-collapse"
-            aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-            aria-pressed={sidebarCollapsed}
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-          >
-            <span aria-hidden="true">{sidebarCollapsed ? '›' : '‹'}</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-close touch-target"
-            aria-label="Close navigation"
-            onClick={() => setMobileNavOpen(false)}
-          >
-            ×
-          </button>
-        </div>
+          </span>
+          <span>CineForge Studio</span>
+        </button>
 
-        {/* Gold Edition order: brand → workspace → project switcher → project nav → bottom */}
-        <span className="sidebar-section-label sidebar-workspace-label">Workspace</span>
-        <nav className="sidebar-workspace-nav" aria-label="Workspace navigation">
-          <button
-            type="button"
-            className={`nav-item touch-target ${view === 'projects' ? 'active' : ''}`}
-            aria-current={view === 'projects' ? 'page' : undefined}
-            onClick={() => handleWorkspaceNavigate(onOpenProjects)}
-          >
-            <span className="nav-icon" aria-hidden="true">▣</span>
-            <span className="nav-label-full">Projects</span>
-            <span className="nav-badge">{projectCount}</span>
-          </button>
-        </nav>
+        <section className="sidebar-workspace-section" aria-label="Workspace navigation">
+          <p className="nav-label">WORKSPACE</p>
+          <nav className="workspace-nav">
+            <button
+              type="button"
+              className={view === 'projects' ? 'active' : ''}
+              onClick={() => goWorkspace(onOpenProjects)}
+            >
+              <span aria-hidden="true">▣</span>
+              <span>Projects</span>
+              <em>{projectCount}</em>
+            </button>
+          </nav>
+        </section>
 
-        <div className="project-switch-wrap">
+        <div className="project-switcher">
           <button
             type="button"
-            className="project-switcher touch-target"
+            className="project-switch"
             title={projectId}
-            aria-expanded={projectMenuOpen}
+            aria-expanded={projectMenu}
             onClick={() => {
-              setProjectMenuOpen((open) => !open)
-              setProfileMenuOpen(false)
+              setProjectMenu((open) => !open)
+              setProfile(false)
+              setRuntime(false)
             }}
           >
-            <span className="project-avatar">{projectInitials}</span>
+            <span className="project-thumb">{projectInitials}</span>
             <span>
               <strong>{projectName}</strong>
-              <small>{isStudio ? 'Seven-phase production' : 'Select a project'}</small>
+              <small>{isStudio ? 'Seven-phase production plan' : 'Select a project'}</small>
             </span>
-            <span aria-hidden="true">⌄</span>
+            <b aria-hidden="true">⌄</b>
           </button>
-          {projectMenuOpen ? (
-            <div className="sidebar-popover project-popover" role="menu" aria-label="Projects">
-              <button type="button" role="menuitem" onClick={() => handleWorkspaceNavigate(onOpenProjects)}>
-                <span className="nav-icon" aria-hidden="true">▣</span>
+          {projectMenu ? (
+            <div className="popover project-pop" role="menu">
+              <button type="button" role="menuitem" onClick={() => goWorkspace(onOpenProjects)}>
+                <span aria-hidden="true">▣</span>
                 <span>
-                  <strong>All projects</strong>
+                  <b>All projects</b>
                   <small>{projectCount} in this workspace</small>
                 </span>
                 <span aria-hidden="true">›</span>
               </button>
-              <button type="button" role="menuitem" className="active" onClick={() => setProjectMenuOpen(false)}>
-                <span className="project-avatar">{projectInitials}</span>
+              <button type="button" role="menuitem" onClick={() => setProjectMenu(false)}>
+                <span className="project-thumb">{projectInitials}</span>
                 <span>
-                  <strong>{projectName}</strong>
+                  <b>{projectName}</b>
                   <small>Current project</small>
                 </span>
                 <span aria-hidden="true">✓</span>
               </button>
-              <button type="button" role="menuitem" onClick={() => handleWorkspaceNavigate(onCreateProject)}>
-                <span className="nav-icon" aria-hidden="true">＋</span>
+              <button type="button" role="menuitem" onClick={() => goWorkspace(onCreateProject)}>
+                <span aria-hidden="true">＋</span>
                 <span>
-                  <strong>New project</strong>
+                  <b>New project</b>
                   <small>Guided three-step setup</small>
                 </span>
                 <span aria-hidden="true">›</span>
@@ -209,134 +216,170 @@ export function AppShell({
           ) : null}
         </div>
 
-        <div className="sidebar-project-nav-section">
-          <span className="sidebar-section-label sidebar-project-label">Production</span>
-          <nav id={navId} className="sidebar-project-nav" aria-label="Primary navigation">
+        <section className="sidebar-project-section" aria-label="Current project navigation">
+          <p className="nav-label project-nav-label">PRODUCTION</p>
+          <nav id={navId} className="project-nav">
             {navItems.map((item) => {
-              const isActive = isStudio && item.id === activePage
+              const active = isStudio && item.id === activePage
               return (
                 <button
                   type="button"
                   key={item.id}
-                  className={`nav-item touch-target ${isActive ? 'active' : ''}`}
-                  aria-current={isActive ? 'page' : undefined}
-                  onClick={() => handleNavigate(item.id)}
+                  className={active ? 'active' : ''}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => goPage(item.id)}
                 >
-                  <span className="nav-icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <span className="nav-label-full">{item.label}</span>
-                  <span className="nav-label-short">{item.short}</span>
-                  {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
+                  <span aria-hidden="true">{item.icon}</span>
+                  <span>{item.label}</span>
                 </button>
               )
             })}
           </nav>
-        </div>
+        </section>
 
-        <div className="sidebar-footer">
-          <button type="button" className="settings-entry touch-target" onClick={() => handleNavigate('settings')}>
-            <span className="nav-icon" aria-hidden="true">⚙</span>
+        <div className="sidebar-bottom">
+          <button
+            type="button"
+            className={isStudio && activePage === 'settings' ? 'active' : ''}
+            onClick={() => goPage('settings')}
+          >
+            <span aria-hidden="true">⚙</span>
             <span>Project settings</span>
           </button>
-          <div className="runtime-card">
-            <span className="live-dot" aria-hidden="true" />
-            <strong>ComfyUI ready</strong>
-            <small>RTX 5090 Laptop · 24 GB</small>
-          </div>
-          <div className="user-menu-wrap">
-            <button
-              type="button"
-              className="user-card"
-              aria-label="Robert, Producer"
-              aria-expanded={profileMenuOpen}
-              onClick={() => {
-                setProfileMenuOpen((open) => !open)
-                setProjectMenuOpen(false)
-              }}
-            >
-              <span className="user-avatar">RP</span>
-              <span>
-                <strong>Robert</strong>
-                <small>Producer</small>
-              </span>
-              <span aria-hidden="true">•••</span>
-            </button>
-            {profileMenuOpen ? (
-              <div className="sidebar-popover profile-popover" role="menu" aria-label="Profile">
-                <div>
-                  <strong>Robert</strong>
-                  <small>Local producer profile</small>
-                </div>
-                <button type="button" role="menuitem" onClick={() => handleNavigate('settings')}>
-                  Project settings
+
+          <button
+            type="button"
+            className="gpu"
+            onClick={() => {
+              setRuntime((open) => !open)
+              setProfile(false)
+              setProjectMenu(false)
+            }}
+          >
+            <i aria-hidden="true" />
+            <span>
+              <strong>Local backend {backendStatus}</strong>
+              <small>Planning only · no execution</small>
+            </span>
+          </button>
+          {runtime ? (
+            <div className="popover runtime-pop">
+              <b>Runtime boundary</b>
+              <p>ComfyUI submissions, model downloads, and rendering stay gated. This shell only shows local status.</p>
+              {onRefreshStatus ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRuntime(false)
+                    onRefreshStatus()
+                  }}
+                >
+                  Refresh status ›
                 </button>
-              </div>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            className="user"
+            onClick={() => {
+              setProfile((open) => !open)
+              setRuntime(false)
+              setProjectMenu(false)
+            }}
+          >
+            <span>RP</span>
+            <span>
+              <strong>Robert</strong>
+              <small>Producer</small>
+            </span>
+            <span aria-hidden="true">•••</span>
+          </button>
+          {profile ? (
+            <div className="popover profile-pop">
+              <b>Robert</b>
+              <small>Local producer profile</small>
+              <button type="button" onClick={() => goPage('settings')}>
+                Project settings
+              </button>
+            </div>
+          ) : null}
         </div>
       </aside>
 
-      {mobileNavOpen ? (
-        <button
-          type="button"
-          className="nav-backdrop"
-          aria-label="Dismiss navigation"
-          onClick={() => setMobileNavOpen(false)}
-        />
+      {mobile ? (
+        <button type="button" className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />
       ) : null}
 
-      <div className="workspace">
+      <section className="workspace">
         <header className="topbar">
-          <div className="topbar-leading">
+          <div className="top-left">
             <button
               type="button"
-              className="mobile-nav-toggle touch-target"
-              aria-expanded={mobileNavOpen}
-              aria-controls={sidebarId}
-              onClick={() => setMobileNavOpen((open) => !open)}
+              className="mobile-menu"
+              aria-label="Toggle navigation"
+              aria-expanded={mobile}
+              aria-controls="primary-navigation"
+              onClick={() => setMobile((open) => !open)}
             >
-              <span className="sr-only">Open navigation</span>
-              <span aria-hidden="true">☰</span>
+              ☰
             </button>
-            <div className="breadcrumb" aria-label="Breadcrumb">
-              <span>Projects</span>
+            <div className="crumbs">
+              {view === 'projects' ? (
+                <>
+                  <strong>Projects</strong>
+                  <span className="workspace-chip">WORKSPACE</span>
+                </>
+              ) : null}
               {view === 'new-project' ? (
                 <>
+                  <button type="button" onClick={() => goWorkspace(onOpenProjects)}>
+                    Projects
+                  </button>
                   <span aria-hidden="true">›</span>
-                  <strong>{activeLabel}</strong>
+                  <b>Create project</b>
                 </>
               ) : null}
               {isStudio ? (
                 <>
+                  <button type="button" onClick={() => goWorkspace(onOpenProjects)}>
+                    Projects
+                  </button>
                   <span aria-hidden="true">›</span>
-                  <span>{projectName}</span>
+                  <strong>{projectName}</strong>
                   <span aria-hidden="true">›</span>
-                  <strong>{activeLabel}</strong>
-                  <span className="phase-badge">7 PHASES</span>
+                  <b>{activeLabel}</b>
+                  <span className="phase">7 PHASES</span>
                 </>
               ) : null}
             </div>
           </div>
-          <div className="topbar-status">
-            <button type="button" className="icon-button touch-target" aria-label="Search workspace">
+          <div className="top-actions">
+            <button type="button" className="icon-button" aria-label="Search workspace">
               ⌕
             </button>
             {view === 'projects' ? (
-              <button type="button" className="primary-button topbar-new-project" onClick={onCreateProject}>
+              <button type="button" className="btn primary" onClick={onCreateProject}>
                 ＋ New project
               </button>
             ) : null}
-            {isStudio ? <button type="button" className="icon-button touch-target" aria-label="Notifications">◦</button> : null}
-            {isStudio ? <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} /> : null}
-            {isStudio && onRefreshStatus ? <button type="button" className="ghost-button touch-target status-refresh" onClick={onRefreshStatus}>Refresh</button> : null}
+            {isStudio ? (
+              <>
+                <button type="button" className="icon-button has-dot" aria-label="Notifications">
+                  ◦
+                  <i />
+                </button>
+                <StatusBadge status={backendStatus} label={`Backend ${backendStatus}`} />
+              </>
+            ) : null}
           </div>
         </header>
 
-        <main id="main-content" className="main-content" tabIndex={-1}>
+        <div id="main-content" className="page-scroll" tabIndex={-1}>
           {children}
-        </main>
-      </div>
-    </div>
+        </div>
+      </section>
+    </main>
   )
 }

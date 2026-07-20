@@ -144,9 +144,6 @@ async function enrichProject(project: Project): Promise<ProjectSummary> {
   }
 }
 
-function ProjectStatus({ status }: { status: ProjectSummary['status'] }) {
-  return <span className="project-status" data-status={status.toLowerCase().replace(' ', '-')}>{status}</span>
-}
 
 function ProjectList({
   onCreateNew,
@@ -211,13 +208,15 @@ function ProjectList({
 
   return (
     <div className="page projects-page">
-      <div className="page-heading-row projects-heading">
-        <PageHeader
-          eyebrow="CINEFORGE WORKSPACE"
-          title="Projects"
-          description="Create, organize, and continue every production plan from one workspace."
-        />
-        <button type="button" className="primary-button" onClick={onCreateNew}>＋ New project</button>
+      <div className="page-title projects-heading">
+        <div>
+          <span className="eyebrow">CINEFORGE WORKSPACE</span>
+          <h1>Projects</h1>
+          <p>Create, organize, and continue every production plan from one workspace.</p>
+        </div>
+        <div className="page-actions">
+          <button type="button" className="btn primary" onClick={onCreateNew}>＋ New project</button>
+        </div>
       </div>
 
       {error ? <ErrorNotice message={error} /> : null}
@@ -235,7 +234,7 @@ function ProjectList({
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…" aria-label="Search projects" />
           {query ? <button type="button" onClick={() => setQuery('')} aria-label="Clear project search">×</button> : null}
         </label>
-        <div className="projects-filter" aria-label="Filter projects">
+        <div className="segmented projects-filter" aria-label="Filter projects">
           {filters.map((item) => (
             <button type="button" key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>
               {item}<span>{item === 'All' ? summaries.length : summaries.filter((summary) => summary.status === item).length}</span>
@@ -264,7 +263,7 @@ function ProjectList({
                 <button type="button" className={`project-cover project-cover-${index % 6}`} onClick={open} aria-label={`Open ${project.name}`}>
                   <span className="cover-grid" /><span className="cover-orb orb-a" /><span className="cover-orb orb-b" />
                   <span className="cover-initials">{projectInitials(project.name)}</span>
-                  <ProjectStatus status={status} />
+                  <span className="status-pill" data-status={status.toLowerCase().replace(' ', '-')}>{status}</span>
                 </button>
                 <div className="project-card-body">
                   <div className="project-card-title">

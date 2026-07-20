@@ -1,0 +1,276 @@
+/*
+ * Tiny compatibility layer between Gold Edition CSS class names and residual
+ * CineForge-only markup (StatusBadge, production history, forms, etc.).
+ * Does not reintroduce the legacy dashboard look.
+ */
+
+#root {
+  height: 100%;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link:not(:focus):not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 100;
+  width: auto;
+  height: auto;
+  margin: 0;
+  clip: auto;
+  overflow: visible;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line-2);
+}
+
+/* Map old CineForge button utilities onto Gold .btn language */
+.primary-button {
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid #e0f5e9;
+  background: #e0f5e9;
+  color: #152019;
+  font-weight: 650;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.secondary-button,
+.ghost-button {
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid var(--line-2);
+  background: #202225;
+  color: #d0d3d6;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.btn.primary {
+  background: #e0f5e9;
+  border-color: #e0f5e9;
+  color: #152019;
+  font-weight: 650;
+}
+
+/* AI Studio theme uses blue mint — keep primary buttons aligned */
+.primary-button,
+.btn.primary {
+  background: #d3e3fd;
+  border-color: #d3e3fd;
+  color: #041e49;
+}
+
+.page-heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.page-header {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.page-header h1 {
+  font-size: 23px;
+  line-height: 1.1;
+  letter-spacing: -0.55px;
+  margin: 6px 0 5px;
+  font-weight: 610;
+}
+
+.page-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  max-width: 700px;
+}
+
+/* Production history UI kept from prior work — restyle to Gold surfaces */
+.production-contract,
+.phase-iteration-bar,
+.phase-history-banner,
+.phase-comparison,
+.phase-modal,
+.phase-workspace,
+.studio-commandbar {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 9px;
+}
+
+.production-phase-rail > button.current {
+  border-color: color-mix(in srgb, var(--mint) 55%, #303033);
+  background: color-mix(in srgb, var(--mint) 12%, #1b1d1f);
+}
+
+.phase-history-banner {
+  border-color: color-mix(in srgb, var(--purple) 45%, #303033);
+  background: color-mix(in srgb, var(--purple) 10%, #1c1e20);
+}
+
+.phase-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(8, 10, 11, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.phase-modal {
+  width: min(560px, 100%);
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  box-shadow: var(--shadow);
+}
+
+.phase-modal.wide {
+  width: min(760px, 100%);
+}
+
+.truth-pill,
+.status-badge,
+.readiness-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 7px;
+  border: 1px solid transparent;
+}
+
+/* StatusBadge component */
+.status-badge {
+  background: #292c30;
+  border-color: #383c41;
+  color: #aeb2b7;
+}
+
+/* Ensure page-scroll children fill workspace */
+.page-scroll > .page,
+.page-scroll > .studio {
+  min-height: 100%;
+}
+
+/* Sidebar scrim for mobile */
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  border: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* Project cover utilities used by Projects.tsx */
+.project-cover {
+  position: relative;
+  min-height: 128px;
+  width: 100%;
+  border: 0;
+  overflow: hidden;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cover-grid,
+.cover-orb {
+  pointer-events: none;
+}
+
+.cover-initials {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  z-index: 2;
+  font-weight: 700;
+}
+
+/* Wizard / forms still used by create project */
+.form-stack label,
+.wizard-form label,
+.form-grid label {
+  display: grid;
+  gap: 5px;
+  font-size: 8px;
+  color: var(--soft);
+}
+
+.form-stack input,
+.form-stack textarea,
+.form-stack select,
+.wizard-form input,
+.wizard-form textarea,
+.wizard-form select,
+.form-grid input,
+.form-grid textarea,
+.form-grid select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #191c1e;
+  color: var(--text);
+  padding: 9px 10px;
+}
+
+.error-block,
+.loading-block,
+.panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 9px;
+  padding: 13px;
+}
+
+.empty-state,
+.empty {
+  text-align: center;
+  border: 1px dashed #35393e;
+  border-radius: 8px;
+  padding: 30px;
+  color: #6f757d;
+}
