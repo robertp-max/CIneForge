@@ -57,13 +57,14 @@ body {
   border: 1px solid var(--line-2);
 }
 
-/* Map old CineForge button utilities onto Gold .btn language */
+/* Map old CineForge button utilities onto Gold .btn language.
+   Primary = blue mint (kill green #e0f5e9 from gold-globals). */
 .primary-button {
   height: 32px;
   border-radius: 7px;
-  border: 1px solid #e0f5e9;
-  background: #e0f5e9;
-  color: #152019;
+  border: 1px solid #d3e3fd;
+  background: #d3e3fd;
+  color: #041e49;
   font-weight: 650;
   font-size: 9px;
   display: inline-flex;
@@ -90,19 +91,17 @@ body {
   white-space: nowrap;
 }
 
-.btn.primary {
-  background: #e0f5e9;
-  border-color: #e0f5e9;
-  color: #152019;
-  font-weight: 650;
-}
-
-/* AI Studio theme uses blue mint — keep primary buttons aligned */
+/* Kill green .btn.primary — blue mint fill */
 .primary-button,
-.btn.primary {
+.btn.primary,
+button.primary-button,
+button.btn.primary,
+a.primary-button,
+a.btn.primary {
   background: #d3e3fd;
   border-color: #d3e3fd;
   color: #041e49;
+  font-weight: 650;
 }
 
 .page-heading-row {
@@ -152,6 +151,12 @@ body {
    PIXEL: Sites topbar owns crumbs + Save draft / Preview animatic.
    Local commandbar is metadata-only under the Sites chrome.
    ============================================================================= */
+
+/* Kill green topbar phase chip (.phase / PHASE A) — not part of live chrome. */
+.topbar .phase,
+.crumbs .phase {
+  display: none !important;
+}
 
 .studio.page {
   display: grid;
@@ -1100,12 +1105,6 @@ body {
   color: #78b793;
 }
 .production-phase-panel { min-width: 0; outline: none; }
-.production-phase-panel > .phase-one-complete-message { margin-bottom: 14px; }
-
-.phase-one-complete-message { display: flex; align-items: center; gap: 13px; border: 1px solid #3b7055; border-radius: 11px; background: linear-gradient(90deg, #192a21, #1a2420); padding: 14px 16px; }
-.phase-one-complete-message > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #2b6145; color: #b9f0d2; }
-.phase-one-complete-message b { color: #dcece3; }
-.phase-one-complete-message p { margin: 4px 0 0; color: #8da397; font-size: 0.72rem; }
 
 /* === PIXEL: .phase-empty = Gold Sites gold-globals (exact).
    Aliases: .phase-one-empty (Phase 1) and .phase-design-empty (legacy).
@@ -1203,7 +1202,7 @@ body {
 }
 .phase-one-review-panel > .panel-title .eyebrow {
   display: block;
-  color: #6fab8a;
+  color: #8ab0e8;
   font-size: 7px;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -1240,7 +1239,7 @@ body {
 .phase-one-document details summary,
 .phase-one-document .phase-one-speech b {
   display: block;
-  color: #6fab8a;
+  color: #8ab0e8;
   font-size: 7px;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -1268,7 +1267,7 @@ body {
   cursor: pointer;
   margin: 0;
   padding: 0;
-  color: #6fab8a;
+  color: #8ab0e8;
   font-size: 7px;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -1347,7 +1346,8 @@ body {
 }
 
 .phase-one-editor { display: grid; gap: 14px; border-top: 1px solid var(--line); padding: 20px; }
-.phase-one-editor label { display: grid; gap: 6px; color: #c6cbce; font-size: 0.72rem; font-weight: 800; }
+/* Sites phase field labels = 7px mint uppercase (PIXEL block reasserts under .studio). */
+.phase-one-editor label { display: grid; gap: 6px; color: #8ab0e8; font-size: 7px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; }
 .phase-one-editor input, .phase-one-editor textarea { width: 100%; border: 1px solid #393e42; border-radius: 8px; background: #191c1e; color: #e1e4e5; padding: 10px 11px; }
 .phase-one-editor textarea { min-height: 86px; resize: vertical; line-height: 1.5; }
 .phase-one-editor textarea.tall { min-height: 180px; }
@@ -1440,7 +1440,8 @@ body {
 .phase-preview-footer li:first-child { border-top: 0; }
 .phase-preview-footer li b { color: #aeb6b2; text-align: right; }
 
-.phase-character-layout { display: grid; min-width: 0; grid-template-columns: 250px minmax(0, 1fr); gap: 12px; }
+/* Sites gold-globals: 220px cast rail + gap 10px (not legacy 250/12) */
+.phase-character-layout { display: grid; min-width: 0; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
 .phase-character-list { display: grid; align-content: start; max-height: 600px; overflow-y: auto; gap: 6px; scrollbar-width: thin; }
 .phase-character-list > button { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 9px; padding: 8px; }
 .phase-character-list > button > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; background: linear-gradient(145deg, #315a46, #283b32); color: #c1ddcd; font-size: 0.68rem; font-weight: 850; }
@@ -1517,7 +1518,7 @@ body {
 .phase-location-cards > button:hover,
 .phase-location-cards > button.active {
   border-color: transparent;
-  background: #212724;
+  background: #292b2e;
 }
 .phase-location-list > button > span,
 .phase-location-cards > button > span {
@@ -1533,8 +1534,8 @@ body {
 }
 .phase-location-list > button.active > span,
 .phase-location-cards > button.active > span {
-  background: #244232;
-  color: #9bd2b3;
+  background: #24344f;
+  color: #a8c7fa;
 }
 .phase-location-list b,
 .phase-location-list small,
@@ -1578,7 +1579,7 @@ body {
   min-width: 0;
 }
 .phase-location-profile > header span:not(.status-pill) {
-  color: #6fac8a;
+  color: #8ab0e8;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -1769,6 +1770,7 @@ body {
   .phase-segmentation-layout, .phase-prompt-layout, .phase-character-layout, .phase-location-layout, .phase-media-layout, .phase-assembly-layout { grid-template-columns: 1fr; }
   .phase-scene-browser, .phase-package-list, .phase-character-list { max-height: 300px; }
   .phase-nine-panel { grid-column: auto; }
+  .phase-key-assets > div,
   .phase-key-asset-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .phase-media-summary { order: -1; }
   /* phase-frame-grid / phase-start-frame-grid breakpoints: Gold Sites (1500→3, 620→1) at file end */
@@ -2122,14 +2124,14 @@ body {
 
 .phase-nine-panel article b {
   margin-top: 5px;
-  font-size: 10px;
+  font-size: 7px;
   color: #b8c0bc;
 }
 
 .phase-nine-panel article small {
   margin-top: 2px;
   color: #616a66;
-  font-size: 9px;
+  font-size: 6px;
 }
 
 /* Character profile portrait — Sites uses header > span.has-reference; CineForge uses .phase-character-avatar */
@@ -2369,7 +2371,8 @@ body {
   display: grid;
   gap: 5px;
   min-width: 0;
-  font-size: 11px;
+  /* Sites gold-globals form labels = 8px (not AI-studio 11–12px inflation). */
+  font-size: 8px;
   color: var(--soft, #c9cdd1);
 }
 
@@ -3426,7 +3429,9 @@ body {
 
 /* =============================================================================
    PIXEL: Sites type scale under .studio
-   Gold Sites dense UI (gold-globals): body 9px · labels 7px · titles 11–17px.
+   Gold Sites dense UI (gold-globals): body 9px · labels 7–8px · titles 11–17px.
+     · form field labels (form-stack / wizard / routing / stack-form) = 8px
+     · meta chips / status-pill / phase eyebrows / table th = 7px
    Scoped to .studio so projects home / shell keep the AI workbench scale.
    !important + .studio prefix beat gold-ai-studio-theme 10–14px inflations.
    ============================================================================= */
@@ -3460,8 +3465,22 @@ body {
   line-height: 1.45 !important;
 }
 
-/* Labels / meta / chips (Sites status-pill, eyebrow, phase labels = 7px) */
+/* Form field labels — Sites gold-globals .form-stack / .wizard-form / routing = 8px.
+   Beats theme .phase-iteration-form label { 10px } and residual stack-form inflation. */
 .studio label,
+.studio .form-stack label,
+.studio .form-grid label,
+.studio .stack-form label,
+.studio .wizard-form label,
+.studio .routing-controls > label,
+.studio .panel label,
+.studio .inspector label,
+.studio .phase-version-nav label,
+.studio .phase-iteration-form label {
+  font-size: 8px !important;
+}
+
+/* Meta / chips / eyebrows / dense phase chrome (Sites status-pill, phase, th = 7px) */
 .studio .eyebrow,
 .studio small,
 .studio th,
@@ -3502,7 +3521,12 @@ body {
 .studio .filter-row button,
 .studio .phase-one-document > section > span,
 .studio .phase-one-document summary,
-.studio .studio-metrics span {
+.studio .studio-metrics span,
+.studio .phase-version-nav label > span,
+.studio .phase-iteration-form label > span,
+.studio .phase-one-editor label,
+.studio .nav-label,
+.studio .production-phase-rail > button small {
   font-size: 7px !important;
 }
 
@@ -3700,7 +3724,7 @@ body {
 .phase-workspace-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid #292d30; padding: 2px 2px 13px; }
 .phase-workspace-header h3 { margin: 5px 0 4px; font-size: 17px; letter-spacing: -.3px; color: #e8ecea; }
 .phase-workspace-header p { max-width: 790px; margin: 0; color: #818985; font-size: 8px; line-height: 1.5; }
-.phase-workspace-header .eyebrow { color: #6fac8a; font-size: 7px; font-weight: 800; letter-spacing: .7px; }
+.phase-workspace-header .eyebrow { color: #8ab0e8; font-size: 7px; font-weight: 800; letter-spacing: .7px; }
 
 /* Phase 1 document panel → Gold .phase-document (wins over gold-ai-studio-theme 11px inflation) */
 .phase-document {
@@ -3714,7 +3738,7 @@ body {
 .phase-document > div > span,
 .phase-document details summary,
 .phase-document-grid span {
-  color: #6fab8a !important;
+  color: #8ab0e8 !important;
   font-size: 7px !important;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -3753,7 +3777,7 @@ body {
   border-bottom: 1px solid #2b3033;
 }
 .phase-one-review-panel > .panel-title .eyebrow {
-  color: #6fab8a !important;
+  color: #8ab0e8 !important;
   font-size: 7px !important;
   font-weight: 800 !important;
   letter-spacing: 0.7px !important;
@@ -3790,7 +3814,7 @@ body {
 .phase-one-document .phase-one-lists section > span,
 .phase-one-document details summary,
 .phase-one-document .phase-one-speech b {
-  color: #6fab8a !important;
+  color: #8ab0e8 !important;
   font-size: 7px !important;
   font-weight: 800 !important;
   letter-spacing: 0.7px !important;
@@ -3853,7 +3877,7 @@ body {
   border-top: 1px solid #2b3033;
 }
 .phase-one-editor label {
-  color: #6fab8a;
+  color: #8ab0e8;
   font-size: 7px;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -4031,7 +4055,7 @@ body {
 }
 .phase-list > header span,
 .phase-inspector > header span {
-  color: #6fac8a !important;
+  color: #8ab0e8 !important;
   font-size: 7px !important;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -4061,7 +4085,7 @@ body {
 .phase-list > button.active,
 .phase-location-list > button:hover,
 .phase-location-list > button.active {
-  background: #212724;
+  background: #292b2e;
 }
 .phase-list > button > span,
 .phase-location-list > button > span {
@@ -4076,8 +4100,8 @@ body {
 }
 .phase-list > button.active > span,
 .phase-location-list > button.active > span {
-  background: #244232;
-  color: #9bd2b3;
+  background: #24344f;
+  color: #a8c7fa;
 }
 .phase-list b,
 .phase-list small,
@@ -4264,14 +4288,14 @@ body {
   border-radius: 999px;
   background: #213229;
   color: #8bc7a5;
-  padding: 3px 7px;
-  font-size: 9px !important;
+  padding: 4px 7px;
+  font-size: 7px !important;
   font-weight: 750;
 }
 
 .phase-workspace:has(.phase-segmentation-layout) .phase-workspace-meta > small {
   color: #68726d;
-  font-size: 10px !important;
+  font-size: 7px !important;
 }
 
 .phase-workspace:has(.phase-segmentation-layout) .phase-header-actions {
@@ -4381,7 +4405,7 @@ body {
 }
 
 .phase-segmentation-layout .phase-list > header span {
-  color: #6fac8a !important;
+  color: #8ab0e8 !important;
   font-size: 7px !important;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -4411,7 +4435,7 @@ body {
 
 .phase-segmentation-layout .phase-list > button:hover,
 .phase-segmentation-layout .phase-list > button.active {
-  background: #212724 !important;
+  background: #292b2e !important;
 }
 
 .phase-segmentation-layout .phase-list > button > span {
@@ -4427,8 +4451,8 @@ body {
 }
 
 .phase-segmentation-layout .phase-list > button.active > span {
-  background: #244232;
-  color: #9bd2b3;
+  background: #24344f;
+  color: #a8c7fa;
 }
 
 .phase-segmentation-layout .phase-list b,
@@ -4469,7 +4493,7 @@ body {
 }
 
 .phase-segmentation-layout .phase-inspector > header span {
-  color: #6fac8a !important;
+  color: #8ab0e8 !important;
   font-size: 7px !important;
   font-weight: 800;
   letter-spacing: 0.7px;
@@ -4749,7 +4773,7 @@ body {
 .phase-location-cards > button:hover,
 .phase-location-cards > button.active {
   border-color: transparent !important;
-  background: #212724 !important;
+  background: #292b2e !important;
 }
 
 .phase-location-list > button > span,
@@ -4764,20 +4788,30 @@ body {
 
 .phase-location-list > button.active > span,
 .phase-location-cards > button.active > span {
-  background: #244232;
-  color: #9bd2b3;
+  background: #24344f;
+  color: #a8c7fa;
 }
 
 .phase-location-list b,
 .phase-location-cards b {
-  font-size: 11px !important;
+  font-size: 8px !important;
+  color: #d4d9d7;
+  font-weight: 650;
 }
 
 .phase-location-list small,
 .phase-location-cards small {
   margin-top: 2px;
   color: #67706c;
-  font-size: 10px !important;
+  font-size: 7px !important;
+  line-height: 1.45 !important;
+}
+
+.phase-location-list i,
+.phase-location-cards i {
+  color: #65706a;
+  font-size: 7px !important;
+  font-style: normal;
 }
 
 /* Profile fact grid — Sites .phase-fact-grid (+ residual .phase-profile-field-grid) */
@@ -4808,7 +4842,7 @@ body {
 .phase-profile-field-grid article > span {
   display: block;
   color: #70aa89;
-  font-size: 10px !important;
+  font-size: 7px !important;
   font-weight: 750;
   letter-spacing: 0.04em;
 }
@@ -4816,8 +4850,8 @@ body {
 .phase-profile-field-grid article > p {
   margin: 4px 0 0;
   color: #858e89;
-  font-size: 10px !important;
-  line-height: 1.45;
+  font-size: 7px !important;
+  line-height: 1.5;
 }
 
 /* Key-asset registry — Sites .phase-key-assets > div (+ residual grid) */
@@ -4848,19 +4882,19 @@ body {
   border-radius: 5px;
   background: #28242f;
   color: #aa9cbc;
-  font-size: 10px !important;
+  font-size: 6px !important;
 }
 
 .phase-key-assets article b,
 .phase-key-asset-grid article b {
-  font-size: 11px !important;
+  font-size: 7px !important;
 }
 
 .phase-key-assets article p,
 .phase-key-asset-grid article p {
   margin: 3px 0 0;
   color: #68716d;
-  font-size: 10px !important;
+  font-size: 6px !important;
   line-height: 1.4;
 }
 
@@ -4868,7 +4902,7 @@ body {
 .phase-key-asset-grid article small {
   grid-column: 1 / -1;
   color: #685f74;
-  font-size: 9px !important;
+  font-size: 6px !important;
   text-transform: uppercase;
 }
 
@@ -5085,8 +5119,25 @@ body {
     grid-template-columns: 1fr !important;
   }
 
+  .phase-key-assets > div,
   .phase-key-asset-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .phase-fact-grid,
+  .phase-profile-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-fact-grid article,
+  .phase-profile-field-grid article {
+    border-left: 0;
+    border-top: 1px solid #2d3235;
+  }
+
+  .phase-fact-grid article:first-child,
+  .phase-profile-field-grid article:first-child {
+    border-top: 0;
   }
 }
 
@@ -5745,25 +5796,50 @@ body {
   --blue: #a8c7fa !important;
   --success: #81c995;
 }
+/* Kill green primary buttons (#e0f5e9 / gold-globals) → blue mint */
+.primary-button,
+.btn.primary,
+button.primary-button,
+button.btn.primary,
+a.primary-button,
+a.btn.primary {
+  background: #d3e3fd !important;
+  border-color: #d3e3fd !important;
+  color: #041e49 !important;
+}
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgb(168 199 250 / 72%) !important;
 }
-/* Phase rail / current: blue AI studio, not forest green */
-.production-phase-rail > button.current {
-  border-color: #5b7aa8 !important;
-  background: linear-gradient(145deg, #1a2434, #171c24) !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.1) !important;
+/* Phase rail / current: gold-globals.css exact (mint, not AI-studio blue) */
+.production-phase-rail > button.current,
+.production-phase-rail > button[aria-current="step"],
+.studio .production-phase-rail > button.current,
+.studio .production-phase-rail > button[aria-current="step"] {
+  border-color: #4b8065 !important;
+  background: #1a2821 !important;
+  box-shadow: inset 0 0 0 1px rgba(88, 221, 161, 0.07) !important;
 }
-.production-phase-rail > button.current > span {
-  border-color: #6b8fc4 !important;
-  background: #24344f !important;
-  color: #a8c7fa !important;
+.production-phase-rail > button.current > span,
+.production-phase-rail > button[aria-current="step"] > span,
+.studio .production-phase-rail > button.current > span,
+.studio .production-phase-rail > button[aria-current="step"] > span {
+  border-color: #4c8d6b !important;
+  background: #224331 !important;
+  color: #58dda1 !important; /* gold-globals --mint literal (survives --mint remaps) */
 }
-.production-phase-rail > button.current b { color: #e4eaf4 !important; }
-.production-phase-rail > button.current small { color: #9bb6df !important; }
+.production-phase-rail > button.current b,
+.studio .production-phase-rail > button.current b {
+  color: #c9cdcb !important; /* gold-globals has no separate current-b color */
+}
+.production-phase-rail > button.current small,
+.production-phase-rail > button[aria-current="step"] small,
+.studio .production-phase-rail > button.current small,
+.studio .production-phase-rail > button[aria-current="step"] small {
+  color: #78b793 !important;
+}
 .phase-workspace-meta > span,
 .phase-workspace-meta-pill,
 .design-available-pill {
@@ -5783,875 +5859,136 @@ select:focus-visible {
   border-color: #3d4a5c !important;
   background: #1a222e !important;
 }
-/* Kill green gradients forced by old bridge */
+/* Solid gold-globals surfaces (no legacy gradients) */
 .production-phase-rail > button.current,
+.production-phase-rail > button[aria-current="step"],
+.studio .production-phase-rail > button.current,
+.studio .production-phase-rail > button[aria-current="step"],
 .phase-preview-header {
-  background-image: none;
+  background-image: none !important;
 }
-
-/* === PIXEL: ImagesPage image-grid Gold Sites parity ===
-   gold-ai-studio-theme loosens .segmented / form-stack; studio type scale forces
-   .studio h3 { 12px !important } and .studio .segmented button { 7px !important }.
-   Reassert Sites gold-globals values for starting-image layout, cards, and review. */
-
-.image-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 365px;
-  gap: 12px;
-}
-
-.image-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.image-toolbar .segmented {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--line, #2b2e32);
-  background: #181a1c;
-  border-radius: 7px;
-  padding: 2px;
-}
-
-.image-toolbar .segmented button {
-  border: 0 !important;
-  background: none !important;
-  color: #7e838b !important;
-  border-radius: 5px !important;
-  height: 26px !important;
-  min-height: 0 !important;
-  padding: 0 9px !important;
-  font-size: 8px !important;
-  box-shadow: none !important;
-}
-
-.image-toolbar .segmented button.active {
-  background: #2a2d31 !important;
-  color: #f0f2f3 !important;
-}
-
-.image-toolbar .segmented span {
-  margin-left: 5px;
-  color: #62676e;
-  font-size: 8px !important;
-}
-
-.image-toolbar select {
-  width: 115px;
-  margin: 0 !important;
-  height: 33px;
-  min-height: 0;
-  border: 1px solid #30343a;
-  border-radius: 6px;
-  background: #1d2022;
-  color: #d5d8db;
-  padding: 8px;
-  font-size: 9px !important;
-}
-
-.image-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-/* Candidate inventory in the review column: denser 2-up */
-.image-grid.image-grid-compact,
-.image-review .image-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.image-grid > button {
-  width: 100%;
-  min-height: 0;
-  height: auto;
-  border: 1px solid var(--line, #2b2e32);
-  background: var(--panel, #17191b);
-  border-radius: 8px;
-  overflow: hidden;
-  text-align: left;
-  padding: 0;
-  color: inherit;
-  display: block;
-  cursor: pointer;
-  box-shadow: none;
-}
-
-.image-grid > button:hover,
-.image-grid > button.selected {
-  border-color: #4e896c;
-  background: var(--panel, #17191b);
-}
-
-.image-placeholder {
-  height: 98px !important;
-  min-height: 0 !important;
-  aspect-ratio: auto !important;
-  position: relative;
-  display: grid;
-  place-items: center;
-  color: rgba(255, 255, 255, 0.55);
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-}
-
-.image-placeholder:before,
-.review-canvas:before {
-  content: "";
-  position: absolute;
-  width: 38%;
-  height: 60%;
-  bottom: -12%;
-  left: 31%;
-  border-radius: 48% 48% 15% 15%;
-  background: #1b2023;
-  box-shadow: 0 -18px 0 -8px #3b4448;
-}
-
-.image-placeholder > span {
-  position: absolute;
-  z-index: 2;
-  left: 7px;
-  top: 7px;
-  font-size: 6px !important;
-  line-height: 1.2;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 3px 4px;
-  border-radius: 0;
-  font-weight: 500;
-}
-
-.image-placeholder > img,
-.review-canvas > img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  z-index: 1;
-}
-
-.image-placeholder.has-image:before,
-.review-canvas.has-image:before {
-  display: none;
-}
-
-.image-placeholder.has-image > span,
-.review-canvas.has-image > span {
-  z-index: 3;
-}
-
-.image-grid > button > div:last-child {
-  padding: 8px;
-}
-
-.image-grid code {
-  font-size: 6px !important;
-  color: #777d84;
-}
-
-.image-grid > button > div:last-child > span {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.image-grid > button > div:last-child > span > b {
-  font-size: 7px !important;
-  color: var(--muted, #858a92);
-  font-weight: 650;
-}
-
-/* Override studio type scale (.studio h3 { 12px !important }) */
-.studio .image-grid h3,
-.image-grid h3 {
-  font-size: 9px !important;
-  margin: 5px 0 3px !important;
-  line-height: 1.25 !important;
-  letter-spacing: 0 !important;
-  font-weight: 650;
-  color: var(--text, #eef0f2);
-}
-
-.studio .image-grid p,
-.image-grid p {
-  font-size: 7px !important;
-  color: var(--muted, #858a92) !important;
-  margin: 0 !important;
-  line-height: 1.35 !important;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.image-grid footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 7px;
-  gap: 6px;
-}
-
-.image-grid footer small {
-  font-size: 6px !important;
-  color: #767c83;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.image-grid footer .status-pill {
-  font-size: 7px !important;
-  padding: 3px 6px;
-}
-
-/* Review column (Sites .image-review) */
-.image-review {
-  border: 1px solid var(--line, #2b2e32);
-  background: var(--panel, #17191b);
-  border-radius: 9px;
-  padding: 13px;
-  height: max-content;
-  max-height: calc(100dvh - 118px);
-  overflow: auto;
-  position: sticky;
-  top: 0;
-}
-
-.image-review > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.image-review > header > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.studio .image-review h2,
-.image-review h2 {
-  font-size: 13px !important;
-  margin: 3px 0 0 !important;
-  line-height: 1.2 !important;
-  letter-spacing: -0.2px;
-}
-
-.review-canvas {
-  height: 191px !important;
-  min-height: 0 !important;
-  aspect-ratio: auto !important;
-  border-radius: 8px;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  padding: 11px;
-  border: 0;
-}
-
-.review-canvas > span {
-  position: relative;
-  z-index: 2;
-  left: auto;
-  top: auto;
-  font-size: 12px !important;
-  font-weight: 600;
-  background: none;
-  padding: 0;
-  line-height: 1.25;
-}
-
-.review-canvas.has-image:after {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 50%, rgba(5, 6, 7, 0.72));
-  pointer-events: none;
-}
-
-.image-meta {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  margin: 8px 0;
-}
-
-.image-meta div {
-  background: #1c1e20;
-  border: 1px solid #2c2f33;
-  border-radius: 6px;
-  padding: 7px;
-}
-
-.image-meta span,
-.image-meta b {
-  display: block;
-}
-
-.image-meta span {
-  font-size: 6px !important;
-  color: var(--muted, #858a92);
-}
-
-.image-meta b {
-  font-size: 7px !important;
-  margin-top: 2px;
-  color: var(--text, #eef0f2);
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-
-/* Keep review form controls at Sites density (theme sets 42px / 13px / 12px radius) */
-.image-review .form-stack input,
-.image-review .form-stack select,
-.image-review .form-stack textarea {
-  min-height: 0 !important;
-  border: 1px solid #30343a !important;
-  border-radius: 6px !important;
-  background: #1d2022 !important;
-  color: #d5d8db !important;
-  padding: 8px !important;
-  font-size: 9px !important;
-}
-
-.image-review .form-stack input,
-.image-review .form-stack select {
-  height: 33px !important;
-}
-
-.image-review .form-stack textarea {
-  height: auto !important;
-  min-height: 58px !important;
-  resize: vertical;
-  line-height: 1.5;
-}
-
-.image-review .form-stack textarea.tall,
-.image-review .form-stack textarea.prompt.tall {
-  min-height: 83px !important;
-}
-
-.image-review .form-stack textarea.prompt {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace !important;
-  font-size: 8px !important;
-  color: #c7d2cc !important;
-}
-
-.image-review .form-hint {
-  font-size: 7px !important;
-  color: var(--muted, #858a92);
-  line-height: 1.4;
-}
-
-/* Art-direction strip above the main layout uses the same card system */
-.page > .panel > .image-grid {
-  margin-top: 4px;
-}
-
-@media (max-width: 1500px) {
-  .image-grid:not(.image-grid-compact) {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1050px) {
-  .image-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .image-review {
-    position: relative;
-    max-height: none;
-  }
-
-  .image-grid:not(.image-grid-compact) {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 620px) {
-  .image-grid,
-  .image-grid.image-grid-compact,
-  .image-review .image-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .image-toolbar {
-    align-items: stretch;
-  }
-
-  .image-toolbar select,
-  .image-toolbar input:not([type='checkbox']):not([type='radio']):not([type='file']) {
-    width: 100%;
-    min-width: 0;
-  }
-}
-
-/* === PIXEL Phase 5: prompt package layout / inspector / workflow evidence (Gold Sites) ===
-   gold-ai-studio-theme inflates prompt panels; restore Sites gold-globals density last.
-   Markup uses .phase-list.prompt-list + .phase-prompt-inspector + .phase-fact-grid +
-   .phase-workflow-evidence > div with i[data-state]. */
-
-.phase-prompt-layout {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: 260px minmax(0, 1fr) !important;
-  gap: 10px !important;
-}
-
-/* Prompt package list — Sites .phase-list + mono mint code badge */
-.phase-prompt-layout .phase-list,
-.phase-prompt-layout .prompt-list {
-  min-width: 0;
-  max-height: 430px;
-  overflow: auto;
-  border: 1px solid #2e3336 !important;
-  border-radius: 8px !important;
-  background: #17191b !important;
-  padding: 7px !important;
-  scrollbar-width: thin;
-  scrollbar-color: #393e42 transparent;
-}
-
-.phase-prompt-layout .phase-list > header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 5px 5px 8px;
-}
-
-.phase-prompt-layout .phase-list > header span {
-  color: #6fac8a !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.phase-prompt-layout .phase-list > header b {
-  font-size: 7px !important;
-  color: #7e8782;
-  font-weight: 650;
-}
-
-.phase-prompt-layout .phase-list > button {
-  width: 100%;
-  min-height: 0 !important;
-  border: 0;
-  border-radius: 6px !important;
-  background: none;
-  display: grid;
-  grid-template-columns: 29px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 7px !important;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-
+/* phase-list / location selection: neutral AI studio, not forest green */
+.phase-list > button:hover,
+.phase-list > button.active,
+.phase-location-list > button:hover,
+.phase-location-list > button.active,
+.phase-location-cards > button:hover,
+.phase-location-cards > button.active,
+.phase-segmentation-layout .phase-list > button:hover,
+.phase-segmentation-layout .phase-list > button.active,
 .phase-prompt-layout .phase-list > button:hover,
 .phase-prompt-layout .phase-list > button.active {
-  background: #212724 !important;
+  background: #292b2e !important;
+}
+.phase-list > button.active > span,
+.phase-location-list > button.active > span,
+.phase-location-cards > button.active > span,
+.phase-segmentation-layout .phase-list > button.active > span,
+.phase-prompt-layout .prompt-list > button.active > span,
+.phase-prompt-layout .phase-list > button.active > span {
+  background: #24344f !important;
+  color: #a8c7fa !important;
 }
 
-.phase-prompt-layout .prompt-list > button > span {
-  width: 27px;
-  height: 27px;
-  border-radius: 6px;
-  background: #262b2d;
-  display: grid;
-  place-items: center;
-  color: #79ad90 !important;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace !important;
-  font-size: 7px !important;
-  font-weight: 700;
+/* === PIXEL FINAL: production-phase-rail = gold-globals.css exactly === */
+.production-phase-rail,
+.studio .production-phase-rail {
+  gap: 7px !important;
+  padding: 1px 1px 5px !important;
+  scrollbar-color: #3a3e43 transparent !important;
 }
-
-.phase-prompt-layout .prompt-list > button.active > span {
-  background: #244232;
-  color: #9bd2b3 !important;
-}
-
-.phase-prompt-layout .phase-list b,
-.phase-prompt-layout .phase-list small {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.phase-prompt-layout .phase-list b {
-  font-size: 8px !important;
-  color: #d4d9d7;
-  font-weight: 650;
-}
-
-.phase-prompt-layout .phase-list small {
-  margin-top: 2px;
-  color: #67706c;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-
-.phase-prompt-layout .phase-list i {
-  color: #65706a;
-  font-size: 7px !important;
-  font-style: normal;
-}
-
-.phase-prompt-layout .phase-list i.has-record {
-  color: #62c58f;
-}
-
-/* Prompt inspector */
-.phase-prompt-layout .phase-prompt-inspector,
-.phase-prompt-inspector {
-  display: grid;
-  align-content: start;
-  gap: 10px !important;
-  min-width: 0;
-  border: 1px solid #2e3336 !important;
+.production-phase-rail > button,
+.studio .production-phase-rail > button {
+  min-width: 145px !important;
+  min-height: 72px !important;
+  border: 1px solid var(--line, #2b2e32) !important;
   border-radius: 8px !important;
-  background: #181a1c !important;
-  padding: 12px !important;
-}
-
-.phase-prompt-inspector > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.phase-prompt-inspector > header span {
-  color: #6fac8a !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.phase-prompt-inspector > header h4 {
-  margin: 4px 0 3px;
-  font-size: 12px !important;
-  color: #e8ecea;
-  font-weight: 650;
-}
-
-.phase-prompt-inspector > header p {
-  margin: 0;
-  color: #747d78;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-
-/* Image / video / negative tabs — Sites compact, not theme pill inflation */
-.phase-prompt-layout .phase-inline-tabs,
-.phase-prompt-inspector .phase-inline-tabs {
-  display: flex;
-  gap: 4px !important;
-  max-width: 100%;
-  overflow-x: auto;
-  border-bottom: 1px solid #2e3336;
-  padding-bottom: 7px;
-}
-
-.phase-prompt-layout .phase-inline-tabs button,
-.phase-prompt-inspector .phase-inline-tabs button {
-  min-height: 34px !important;
-  flex: 0 0 auto;
-  border: 1px solid transparent;
-  border-radius: 6px !important;
-  background: none;
-  color: #7b837f;
-  padding: 0 10px !important;
-  font-size: 7px !important;
-  font-weight: 750;
-  text-transform: capitalize;
-}
-
-.phase-prompt-layout .phase-inline-tabs button:hover,
-.phase-prompt-layout .phase-inline-tabs button.active,
-.phase-prompt-inspector .phase-inline-tabs button:hover,
-.phase-prompt-inspector .phase-inline-tabs button.active {
-  border-color: #3d5a4b !important;
-  background: #202a25 !important;
-  color: #b9d5c5 !important;
-}
-
-/* Prompt body */
-.phase-prompt-layout .phase-prompt-copy,
-.phase-prompt-inspector .phase-prompt-copy {
-  min-height: 120px !important;
-  border: 1px solid #2e3336 !important;
-  border-radius: 7px !important;
-  background: #141618 !important;
-  padding: 11px !important;
-}
-
-.phase-prompt-copy > span {
-  color: #6fac8a !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.phase-prompt-copy p {
-  margin: 7px 0 0 !important;
-  color: #b1b8b4 !important;
-  font: 8px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace !important;
-  white-space: pre-wrap;
-}
-
-/* Support facts — Sites .phase-fact-grid */
-.phase-prompt-inspector .phase-fact-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  overflow: hidden;
-  border: 1px solid #2d3235;
-  border-radius: 7px;
-  margin-top: 0;
-}
-
-.phase-prompt-inspector .phase-fact-grid article {
-  min-width: 0;
-  border-top: 1px solid #2d3235;
-  border-left: 1px solid #2d3235;
-  padding: 9px;
-}
-
-.phase-prompt-inspector .phase-fact-grid article:nth-child(-n + 2) {
-  border-top: 0;
-}
-
-.phase-prompt-inspector .phase-fact-grid article:nth-child(odd) {
-  border-left: 0;
-}
-
-.phase-prompt-inspector .phase-fact-grid span {
-  color: #70aa89;
-  font-size: 7px !important;
-  font-weight: 750;
-}
-
-.phase-prompt-inspector .phase-fact-grid p {
-  margin: 4px 0 0 !important;
-  color: #858e89;
-  font-size: 7px !important;
-  line-height: 1.5 !important;
-}
-
-/* Workflow evidence board — Sites .phase-workflow-evidence > div grid */
-.phase-workflow-evidence {
-  border: 1px solid #2e3336 !important;
-  border-radius: 8px !important;
-  background: #181a1c !important;
-  padding: 12px !important;
-}
-
-.phase-workflow-evidence > header.phase-subheading,
-.phase-workflow-evidence > .phase-subheading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.phase-workflow-evidence > header span,
-.phase-workflow-evidence .phase-subheading span {
-  color: #6fac8a !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.phase-workflow-evidence > header h4,
-.phase-workflow-evidence .phase-subheading h4 {
-  margin: 4px 0 3px;
-  font-size: 12px !important;
-  color: #e8ecea;
-  font-weight: 650;
-}
-
-.phase-workflow-evidence > header p,
-.phase-workflow-evidence .phase-subheading p {
-  margin: 0;
-  color: #747d78;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-
-/* Only the state grid is a bare direct div (not footer actions) */
-.phase-workflow-evidence > div:not(.phase-footer-actions) {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 7px;
-  margin-top: 10px;
-}
-
-.phase-workflow-evidence > div:not(.phase-footer-actions) article {
-  display: flex;
-  gap: 7px;
-  border: 1px solid #2f3538 !important;
-  border-radius: 7px !important;
-  background: #151719 !important;
-  padding: 8px !important;
-}
-
-.phase-workflow-evidence article > i {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: #6e7772;
-  margin-top: 3px;
-  font-style: normal;
-}
-
-.phase-workflow-evidence article > i[data-state='available'] {
-  background: #73b88e;
-}
-
-.phase-workflow-evidence article > i[data-state='admitted'] {
-  background: #67c995;
-}
-
-.phase-workflow-evidence article > i[data-state='benchmark-required'] {
-  background: #d2a865;
-}
-
-.phase-workflow-evidence article > i[data-state='blocked'] {
-  background: #c27b71;
-}
-
-.phase-workflow-evidence article > i[data-state='unavailable'] {
-  background: #875f63;
-}
-
-.phase-workflow-evidence article b {
-  font-size: 7px !important;
-  color: #c6ceca;
-  font-weight: 650;
-}
-
-.phase-workflow-evidence article p {
-  margin: 3px 0 0 !important;
-  color: #68716d;
-  font-size: 6px !important;
-  line-height: 1.4 !important;
-}
-
-.phase-workflow-evidence > .phase-footer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.phase-workflow-evidence > .phase-footer-actions .btn {
-  min-height: 30px;
-  height: 30px;
-  font-size: 10px;
-}
-
-/* Residual alias: old CineForge package-list name maps to Sites phase-list density */
-.phase-package-list {
-  min-width: 0;
-  max-height: 430px;
-  overflow: auto;
-  border: 1px solid #2e3336;
-  border-radius: 8px;
-  background: #17191b;
-  padding: 7px;
-}
-
-/* Scoped workspace density when Phase 5 is active */
-.phase-workspace:has(.phase-prompt-layout) {
-  gap: 12px !important;
-  padding: 14px !important;
-}
-
-.phase-workspace:has(.phase-prompt-layout) .phase-metrics {
-  border-radius: 8px !important;
-  border: 1px solid #2d3235;
-  background: #17191b;
-}
-
-.phase-workspace:has(.phase-prompt-layout) .phase-metric {
-  min-height: 0 !important;
+  background: #17191b !important;
+  display: grid !important;
+  grid-template-columns: 25px minmax(0, 1fr) !important;
+  gap: 8px !important;
+  align-items: start !important;
   padding: 10px !important;
+  text-align: left !important;
+  box-shadow: none !important;
+  transform: none !important;
+  background-image: none !important;
 }
-
-.phase-workspace:has(.phase-prompt-layout) .phase-metric > span {
-  color: #737b77;
+.production-phase-rail > button:hover,
+.studio .production-phase-rail > button:hover {
+  border-color: #46504b !important;
+  background: #1b1f1d !important;
+  transform: none !important;
+}
+.production-phase-rail > button.current,
+.production-phase-rail > button[aria-current="step"],
+.studio .production-phase-rail > button.current,
+.studio .production-phase-rail > button[aria-current="step"] {
+  border-color: #4b8065 !important;
+  background: #1a2821 !important;
+  box-shadow: inset 0 0 0 1px rgba(88, 221, 161, 0.07) !important;
+  background-image: none !important;
+}
+.production-phase-rail > button > span,
+.studio .production-phase-rail > button > span {
+  width: 24px !important;
+  height: 24px !important;
+  border: 1px solid #3b4140 !important;
+  border-radius: 50% !important;
+  display: grid !important;
+  place-items: center !important;
+  color: #8c9691 !important;
+  font-size: 8px !important;
+  font-weight: 400 !important;
+  background: transparent !important;
+}
+.production-phase-rail > button.current > span,
+.production-phase-rail > button[aria-current="step"] > span,
+.studio .production-phase-rail > button.current > span,
+.studio .production-phase-rail > button[aria-current="step"] > span {
+  border-color: #4c8d6b !important;
+  background: #224331 !important;
+  color: #58dda1 !important;
+}
+.production-phase-rail b,
+.production-phase-rail > button b,
+.studio .production-phase-rail > button b {
+  display: block !important;
+  min-height: 0 !important;
   font-size: 7px !important;
-  text-transform: none;
-  letter-spacing: 0;
+  line-height: 1.35 !important;
+  color: #c9cdcb !important;
 }
-
-.phase-workspace:has(.phase-prompt-layout) .phase-metric > strong {
-  margin-top: 5px;
-  color: #d9dddb;
-  font-size: 15px !important;
-}
-
-.phase-workspace:has(.phase-prompt-layout) .phase-metric > small {
-  margin-top: 3px;
-  color: #606965;
+.production-phase-rail small,
+.production-phase-rail > button small,
+.studio .production-phase-rail > button small {
+  display: block !important;
+  margin-top: 4px !important;
+  color: #6f7874 !important;
   font-size: 6px !important;
+  text-transform: none !important;
 }
-
-@media (max-width: 1050px) {
-  .phase-prompt-layout {
-    grid-template-columns: 1fr !important;
-  }
-
-  .phase-prompt-layout .phase-list {
-    max-height: 300px;
-  }
-
-  .phase-workflow-evidence > div:not(.phase-footer-actions) {
-    grid-template-columns: repeat(3, 1fr);
+.production-phase-rail > button.current small,
+.production-phase-rail > button[aria-current="step"] small,
+.studio .production-phase-rail > button.current small,
+.studio .production-phase-rail > button[aria-current="step"] small {
+  color: #78b793 !important;
+}
+@media (max-width: 1500px) {
+  .production-phase-rail,
+  .studio .production-phase-rail {
+    grid-template-columns: repeat(7, minmax(170px, 1fr)) !important;
   }
 }
-
 @media (max-width: 620px) {
-  .phase-prompt-layout .phase-inline-tabs button,
-  .phase-prompt-inspector .phase-inline-tabs button {
-    min-height: 44px !important;
+  .production-phase-rail,
+  .studio .production-phase-rail {
+    grid-template-columns: repeat(7, minmax(245px, 78vw)) !important;
+    margin-right: -14px !important;
+    padding-right: 14px !important;
   }
-
-  .phase-prompt-inspector .phase-fact-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .phase-prompt-inspector .phase-fact-grid article {
-    border-left: 0;
-    border-top: 1px solid #2d3235;
-  }
-
-  .phase-prompt-inspector .phase-fact-grid article:first-child {
-    border-top: 0;
-  }
-
-  .phase-workflow-evidence > div:not(.phase-footer-actions) {
-    grid-template-columns: 1fr;
-  }
-
-  .phase-workspace:has(.phase-prompt-layout) .phase-metrics.five {
-    grid-template-columns: 1fr 1fr;
+  .production-phase-rail > button,
+  .studio .production-phase-rail > button {
+    min-height: 82px !important;
   }
 }
