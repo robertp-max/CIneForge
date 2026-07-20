@@ -967,11 +967,15 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
             <div className="assembly-track">
               <b>VIDEO</b>
               <div>
-                {shots.map((row) => (
-                  <span key={row.shot.id} style={{ flexGrow: Math.max(1, Number(row.shot.duration_sec || 1)) }} title={`${row.code} · clip not generated`}>
+                {shots.length ? shots.map((row) => (
+                  <span
+                    key={row.shot.id}
+                    style={{ flex: `${Math.max(1, Number(row.shot.duration_sec || 1))} 1 0` }}
+                    title={`${row.code} · clip not generated`}
+                  >
                     {row.code}
                   </span>
-                ))}
+                )) : <span className="empty-lane">No project-scoped video output</span>}
               </div>
             </div>
             <div className="assembly-track audio">

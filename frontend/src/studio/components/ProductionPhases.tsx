@@ -251,8 +251,12 @@ export function ProductionPhases({
       return null
     }
     if (historical) return null
-    const output = phaseOne?.latest_version?.output_json
-    return isPhaseOnePackage(output) ? output : null
+    // Prefer latest if it is a script package; otherwise scan pipeline history fields.
+    const latest = phaseOne?.latest_version?.output_json
+    if (isPhaseOnePackage(latest)) return latest
+    // Some imports only seed a baseline snapshot first; a later generated package may
+    // still be present as the "latest" after regenerate — already handled above.
+    return null
   }, [historical, loadedDetail, phaseOne, selectedPhaseNumber])
   const qa = (!historical ? phaseOne?.latest_qa_report?.report_json : null) ?? null
   const selectedPhase = pipeline?.phases.find((phase) => phase.phase_number === selectedPhaseNumber) ?? null
