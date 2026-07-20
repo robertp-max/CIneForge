@@ -512,4 +512,61 @@ describe('ProductionPhases', () => {
     expect(screen.getByText('A complete test logline.')).toBeTruthy()
     expect(screen.queryByText('Phase 1 has not started')).toBeNull()
   })
+
+  it('renders Phase 7 assembly workspace with timeline, QA, and manifest tabs', async () => {
+    const onNavigate = vi.fn()
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    mockHistoryApis()
+    render(
+      <ProductionPhases
+        storyId="story-1"
+        projectId="project-1"
+        data={aggregate}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Video Generation, Assembly, and Final QA/ }))
+
+    expect(screen.getByRole('heading', { name: 'Video Generation, Assembly, and Final QA' })).toBeTruthy()
+    expect(screen.getByText('Interactive UI/UX preview')).toBeTruthy()
+    expect(screen.getByText('Planned shots')).toBeTruthy()
+    expect(screen.getByText('Selected clips')).toBeTruthy()
+    expect(screen.getByText('No project-scoped clip API')).toBeTruthy()
+    expect(screen.getByText('Not produced')).toBeTruthy()
+    expect(screen.getByText('not evaluated')).toBeTruthy()
+
+    expect(screen.getByRole('tablist', { name: 'Phase 7 assembly view' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Assembly timeline' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByLabelText('Final assembly preview')).toBeTruthy()
+    expect(screen.getByText('Final preview area')).toBeTruthy()
+    expect(screen.getByText(/No project-scoped video output is available/)).toBeTruthy()
+    expect(screen.getByLabelText('Assembly timeline tracks')).toBeTruthy()
+    expect(screen.getByText('ASSEMBLY TIMELINE')).toBeTruthy()
+    expect(screen.getByText(/Clips are not generated or concatenated here/)).toBeTruthy()
+    expect(screen.getByLabelText('Video clips by planned duration')).toBeTruthy()
+    expect(screen.getAllByText('S01A').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Music and SFX design lane')).toBeTruthy()
+    expect(screen.getByText('Subtitle and accessibility lane')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Final QA review' }))
+    expect(screen.getByLabelText('Final QA review')).toBeTruthy()
+    expect(screen.getByText('FINAL QA REVIEW')).toBeTruthy()
+    expect(screen.getByText('Timeline coverage')).toBeTruthy()
+    expect(screen.getByText('Output integrity')).toBeTruthy()
+    expect(screen.getAllByText('Pending evidence').length).toBe(6)
+    expect(screen.getByText(/No FFmpeg or decode validation is run from this UI/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Manifest & provenance' }))
+    expect(screen.getByLabelText('Final manifest and provenance')).toBeTruthy()
+    expect(screen.getByText('FINAL MANIFEST')).toBeTruthy()
+    expect(screen.getByText('Output identity')).toBeTruthy()
+    expect(screen.getAllByText('Awaiting production output').length).toBe(6)
+    expect(screen.getByText(/does not claim that an output exists/)).toBeTruthy()
+
+    expect(screen.getByText('BACKEND PRESERVED')).toBeTruthy()
+    expect(screen.getByText(/No project-scoped clip, FFmpeg, or final-output API/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Open Exports/i }))
+    expect(onNavigate).toHaveBeenCalledWith('exports')
+  })
 })

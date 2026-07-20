@@ -1780,8 +1780,7 @@ body {
   line-height: 1.5;
 }
 
-/* Scene list + character list already use Sites .phase-list in Phase 2/3;
-   keep CineForge-only side panels dense for other phases */
+/* Phase 2–4 side panels: Sites density (catalog uses Gold .phase-location-list) */
 .phase-scene-browser,
 .phase-package-list,
 .phase-character-list,
@@ -1792,6 +1791,7 @@ body {
 .phase-scene-list button,
 .phase-package-list > button,
 .phase-character-list > button,
+.phase-location-list > button,
 .phase-location-cards > button {
   min-height: 42px;
   padding: 7px 8px;
@@ -1800,8 +1800,39 @@ body {
 .phase-shot-planner,
 .phase-character-profile,
 .phase-prompt-inspector,
-.phase-location-profile {
+.phase-location-profile,
+.phase-key-assets,
+.phase-key-assets-panel {
   padding: 12px;
+}
+
+/* Residual field grid → Sites .phase-fact-grid density */
+.phase-profile-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid #2d3235;
+  border-radius: 7px;
+  margin-top: 12px;
+}
+.phase-profile-field-grid article {
+  min-width: 0;
+  border-top: 1px solid #2d3235;
+  border-left: 1px solid #2d3235;
+  padding: 9px;
+}
+.phase-profile-field-grid article:nth-child(-n + 2) { border-top: 0; }
+.phase-profile-field-grid article:nth-child(odd) { border-left: 0; }
+.phase-profile-field-grid span {
+  color: #70aa89;
+  font-size: 10px;
+  font-weight: 750;
+}
+.phase-profile-field-grid p {
+  margin: 4px 0 0;
+  color: #858e89;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 /* Table density — Gold Sites .phase-table-wrap compact 7–8px (+ residual shot-table aliases) */
@@ -2724,16 +2755,18 @@ body {
   font-weight: 700;
 }
 
-/* Image toolbar free-text search (Gold only styles select) */
+/* Image toolbar free-text search (Gold only styles select; match Sites control density) */
 .image-toolbar input:not([type='checkbox']):not([type='radio']):not([type='file']) {
-  min-height: 32px;
-  min-width: 180px;
+  min-height: 0;
+  height: 33px;
+  min-width: 140px;
+  margin: 0;
   border: 1px solid #30343a;
   border-radius: 6px;
   background: #1d2022;
   color: #d5d8db;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 8px;
+  font-size: 9px;
 }
 
 /* Export cards (planning downloads) */
@@ -4633,28 +4666,30 @@ body {
   padding: 3px;
 }
 
+/* PIXEL Phase 7: visual duration segments — preserve inline flex duration, hide glyphs */
 .assembly-track .assembly-clip,
 .assembly-track > div > span:not(.empty-lane) {
-  display: flex !important;
-  flex: 1 1 0% !important;
-  align-items: center;
-  justify-content: center;
+  display: block !important;
+  flex-shrink: 1;
+  flex-basis: 0;
   min-width: 0 !important;
   min-height: 30px;
   overflow: hidden;
   border-radius: 4px;
   background: #294a39;
-  color: #9dc8af;
-  font: 600 0.48rem / 1 ui-monospace, monospace;
+  color: transparent !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
   white-space: nowrap;
-  text-overflow: ellipsis;
-  padding: 0 2px;
+  text-overflow: clip;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .assembly-track.audio .assembly-clip,
 .assembly-track.audio > div > span:not(.empty-lane) {
   background: #33314b;
-  color: #bcb5d5;
+  color: transparent !important;
 }
 
 .assembly-track .empty-lane {
@@ -4757,35 +4792,47 @@ body {
   padding: 3px;
 }
 
-.phase-timeline > div:not(.assembly-track) > section > span {
-  display: flex !important;
-  flex: 1 1 0% !important;
-  align-items: center;
-  justify-content: center;
+/* PIXEL Phase 7 .phase-timeline clips: visual bars (title carries identity) */
+.phase-timeline > div:not(.assembly-track) > section > span[title] {
+  display: block !important;
+  flex-shrink: 1;
+  flex-basis: 0;
   min-width: 0 !important;
   min-height: 30px;
   overflow: hidden;
   border-radius: 4px;
   background: #294a39;
-  color: #9dc8af;
-  font: 600 0.48rem / 1 ui-monospace, monospace;
+  color: transparent !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
   white-space: nowrap;
-  text-overflow: ellipsis;
-  padding: 0 2px;
+  text-overflow: clip;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.phase-timeline > div.audio:not(.assembly-track) > section > span {
+.phase-timeline > div.audio:not(.assembly-track) > section > span[title] {
   background: #33314b;
-  color: #bcb5d5;
+  color: transparent !important;
 }
 
-.phase-timeline > div.empty:not(.assembly-track) > section > span {
+/* Empty / message lanes (no title) keep a single readable label */
+.phase-timeline > div.empty:not(.assembly-track) > section > span,
+.phase-timeline > div:not(.assembly-track) > section > span:not([title]) {
+  display: flex !important;
   flex: 1 1 100% !important;
-  min-width: 100% !important;
-  background: #222629;
-  color: #59625e;
+  align-items: center;
   justify-content: flex-start;
+  min-width: 100% !important;
+  min-height: 30px;
+  background: #222629 !important;
+  color: #59625e !important;
+  font: 500 6px / 1.2 ui-monospace, SFMono-Regular, Consolas, monospace !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0 8px;
+  box-sizing: border-box;
 }
 
 /* =============================================================================
@@ -5326,4 +5373,55 @@ body {
   padding: 2px 5px;
   font-size: 9px;
   font-weight: 750;
+}
+
+/* === KILL GREEN WASH: AI Studio theme wins (Sites published mint is blue) === */
+:root {
+  --mint: #a8c7fa !important;
+  --mint-dark: #233348 !important;
+  --blue: #a8c7fa !important;
+  --success: #81c995;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgb(168 199 250 / 72%) !important;
+}
+/* Phase rail / current: blue AI studio, not forest green */
+.production-phase-rail > button.current {
+  border-color: #5b7aa8 !important;
+  background: linear-gradient(145deg, #1a2434, #171c24) !important;
+  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.1) !important;
+}
+.production-phase-rail > button.current > span {
+  border-color: #6b8fc4 !important;
+  background: #24344f !important;
+  color: #a8c7fa !important;
+}
+.production-phase-rail > button.current b { color: #e4eaf4 !important; }
+.production-phase-rail > button.current small { color: #9bb6df !important; }
+.phase-workspace-meta > span,
+.phase-workspace-meta-pill,
+.design-available-pill {
+  border-color: #4a5f7d !important;
+  background: #1e2a3c !important;
+  color: #a8c7fa !important;
+}
+.phase-workspace-header .eyebrow,
+.phase-subheading > span,
+.phase-subheading > div > span,
+.phase-one-document > section > span,
+.phase-one-document summary {
+  color: #8ab0e8 !important;
+}
+.phase-iteration-bar.viewing-history,
+.phase-history-banner {
+  border-color: #3d4a5c !important;
+  background: #1a222e !important;
+}
+/* Kill green gradients forced by old bridge */
+.production-phase-rail > button.current,
+.phase-preview-header {
+  background-image: none;
 }

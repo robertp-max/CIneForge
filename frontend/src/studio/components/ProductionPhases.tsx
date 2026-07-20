@@ -263,39 +263,38 @@ export function ProductionPhases({
 
   useEffect(() => {
     let active = true
-    if (historical || selectedPhaseNumber !== 1) {
-      setPackageFallback(null)
-      return () => {
-        active = false
+    // Async IIFE so setState is not synchronous in the effect body
+    // (react-hooks/set-state-in-effect). Matches the history-load pattern above.
+    void (async () => {
+      if (historical || selectedPhaseNumber !== 1) {
+        if (active) setPackageFallback(null)
+        return
       }
-    }
-    const latest = phaseOne?.latest_version?.output_json
-    if (isPhaseOnePackage(latest)) {
-      setPackageFallback(null)
-      return () => {
-        active = false
+      const latest = phaseOne?.latest_version?.output_json
+      if (isPhaseOnePackage(latest)) {
+        if (active) setPackageFallback(null)
+        return
       }
-    }
-    const history = versionsByPhase[1] ?? []
-    // Prefer generated/revision rows (package sources); also accept completed manual
-    // retains that may carry a preserved package after the backend retain fix.
-    const candidates = [...history]
-      .reverse()
-      .filter((item) => item.source === 'generated' || item.source === 'revision' || item.completed)
-    const candidate = candidates[0]
-    if (!candidate) {
-      setPackageFallback(null)
-      return () => {
-        active = false
+      const history = versionsByPhase[1] ?? []
+      // Prefer generated/revision rows (package sources); also accept completed manual
+      // retains that may carry a preserved package after the backend retain fix.
+      const candidates = [...history]
+        .reverse()
+        .filter((item) => item.source === 'generated' || item.source === 'revision' || item.completed)
+      const candidate = candidates[0]
+      if (!candidate) {
+        if (active) setPackageFallback(null)
+        return
       }
-    }
-    void api.getPhaseVersion(storyId, 1, candidate.id).then((detail) => {
-      if (!active) return
-      const output = detail.output_json
-      setPackageFallback(isPhaseOnePackage(output) ? output : null)
-    }).catch(() => {
-      if (active) setPackageFallback(null)
-    })
+      try {
+        const detail = await api.getPhaseVersion(storyId, 1, candidate.id)
+        if (!active) return
+        const output = detail.output_json
+        setPackageFallback(isPhaseOnePackage(output) ? output : null)
+      } catch {
+        if (active) setPackageFallback(null)
+      }
+    })()
     return () => {
       active = false
     }

@@ -347,9 +347,6 @@ select:focus-visible {
 .panel,
 .overview-strip,
 .metric-card,
-.projects-summary,
-.projects-toolbar,
-.project-card,
 .wizard-panel,
 .project-preview,
 .production-phase-panel,
@@ -363,6 +360,14 @@ select:focus-visible {
 .legacy-overview-diagnostics {
   border-color: #303033;
   border-radius: 16px;
+  background: #1e1f20;
+}
+
+/* Projects chrome keeps Sites radii (summary 10 / toolbar 9 / card 11) — color only. */
+.projects-summary,
+.projects-toolbar,
+.project-card {
+  border-color: #303033;
   background: #1e1f20;
 }
 
@@ -384,11 +389,7 @@ select:focus-visible {
   font-size: 11px !important;
 }
 
-.status-pill {
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 10px;
-}
+/* status-pill density stays Sites (gold-globals 7px / 4px radius). Colors only: */
 
 .status-pill[data-status="approved"],
 .status-pill[data-status="ready"],
@@ -469,10 +470,7 @@ select:focus-visible {
   font-size: 16px;
 }
 
-/* Project home: a functional local navigator using an AI-workbench composition. */
-.projects-page {
-  max-width: 1500px;
-}
+/* Project home max-width/density: gold-globals (1620) + bridge PIXEL Projects. */
 
 .studio-home-hero {
   display: grid;
@@ -670,130 +668,23 @@ select:focus-visible {
 .studio-suggestion-row button:nth-child(4) svg { color: #81c995; }
 .studio-suggestion-row button:nth-child(5) svg { color: #8ab4f8; }
 
-.projects-summary {
-  overflow: hidden;
-  border-radius: 18px;
-  margin-bottom: 14px;
-}
-
-.projects-summary > div {
-  min-height: 84px;
-  padding: 15px 18px;
-}
-
-.projects-summary small {
-  font-size: 11px;
-}
-
-.projects-summary b {
-  font-size: 22px;
-  font-weight: 500;
-}
-
-.summary-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
-}
-
+/*
+ * Projects page: color accents only.
+ * Card / summary / toolbar density is Sites gold-globals (cover 142px, compact type).
+ * Do not re-inflate sizes here — cineforge-bridge PIXEL Projects block reasserts Sites metrics.
+ */
 .summary-icon.mint { background: #21324b; color: #a8c7fa; }
 .summary-icon.blue { background: #21324b; color: #a8c7fa; }
 .summary-icon.amber { background: #3a321f; color: #fdd663; }
 .summary-icon.purple { background: #342740; color: #c58af9; }
 
-.projects-toolbar {
-  min-height: 58px;
-  border-radius: 16px;
-  gap: 12px;
-  padding: 9px;
-  margin-bottom: 14px;
-}
-
-.projects-search {
-  min-height: 40px;
-  height: 40px;
-  max-width: 420px;
-  border-color: #3c4043;
-  border-radius: 999px;
-  background: #252527;
-  padding: 0 13px;
-}
-
-.projects-search input {
-  color: #f1f3f4;
-  font-size: 12px;
-}
-
-.sort-select,
-.sort-select select {
-  font-size: 11px;
-}
-
-.sort-select select {
-  min-height: 40px;
-  height: 40px;
-  border-radius: 999px;
-  background: #252527;
-}
-
-.project-grid {
-  gap: 16px;
-}
-
-.project-card {
-  border-radius: 18px;
-  box-shadow: 0 8px 28px rgb(0 0 0 / 13%);
-}
-
-.project-card:hover {
-  transform: none;
-  border-color: #45464a;
-  box-shadow: 0 12px 36px rgb(0 0 0 / 20%);
-}
-
 .project-card.current {
-  border-color: #4c6388;
-  box-shadow: inset 0 0 0 1px rgb(168 199 250 / 9%);
-}
-
-.project-cover {
-  height: 184px;
-}
-
-.project-card-body {
-  padding: 18px 18px 15px;
-}
-
-.project-card-title h2 {
-  font-size: 16px;
-  font-weight: 560;
-}
-
-.project-card-title p,
-.project-meta,
-.project-readiness > span,
-.project-readiness small,
-.project-card > footer {
-  font-size: 11px !important;
-}
-
-.project-counts dt {
-  font-size: 10px;
-}
-
-.project-counts dd {
-  font-size: 13px;
-}
-
-.project-card > footer {
-  min-height: 52px;
-  height: auto;
-  padding: 8px 18px;
+  border-color: #365b49;
+  box-shadow: inset 0 0 0 1px rgba(88, 221, 161, 0.08);
 }
 
 .project-card > footer > button {
-  color: #a8c7fa;
-  font-size: 11px;
+  color: #9eb7aa;
 }
 
 /* Seven-phase workspace: neutral surfaces with blue selection and readable detail. */
@@ -1717,30 +1608,8 @@ select:focus-visible {
     padding-right: 16px;
   }
 
-  .projects-summary > div {
-    min-height: 76px;
-    padding: 12px;
-  }
-
-  .summary-icon {
-    width: 34px;
-    height: 34px;
-  }
-
-  .projects-summary b {
-    font-size: 19px;
-  }
-
-  .projects-toolbar {
-    border-radius: 14px;
-  }
-
   .projects-search {
     max-width: none;
-  }
-
-  .project-card-body {
-    padding: 15px;
   }
 
   .phase-workspace {
