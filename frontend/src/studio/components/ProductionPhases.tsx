@@ -36,12 +36,24 @@ type EditablePhaseOne = Pick<
   | 'creative_assumptions'
 >
 
+/** Canonical Phase 1 script package schema from the production API. */
+const PHASE_ONE_PACKAGE_SCHEMA = 'cineforge.phase_one_script_package'
+
 function isPhaseOnePackage(value: unknown): value is PhaseOnePackage {
-  return Boolean(
-    value
-    && typeof value === 'object'
-    && (value as { schema_name?: string }).schema_name === 'cineforge.phase_one_script_package',
-  )
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  // Match Transfiguration / generated heads: schema plus fields the Phase 1 workspace renders.
+  if (row.schema_name !== PHASE_ONE_PACKAGE_SCHEMA) return false
+  if (typeof row.project_title !== 'string') return false
+  if (typeof row.logline !== 'string') return false
+  if (!row.duration_analysis || typeof row.duration_analysis !== 'object') return false
+  return true
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
 }
 
 function stateLabel(value: string) {
@@ -225,7 +237,7 @@ export function ProductionPhases({
     return () => window.removeEventListener('keydown', handleShortcut)
   }, [createOpen, historyOpen])
 
-  const phaseOne = pipeline?.phases[0] ?? null
+  const phaseOne = pipeline?.phases.find((phase) => phase.phase_number === 1) ?? null
   const historical = Boolean(selectedIterationId && loadedDetail && !historyError)
   const historicalWorkspaceResult = useMemo(() => {
     if (!historical || !loadedDetail) return null
@@ -278,22 +290,32 @@ export function ProductionPhases({
       const history = versionsByPhase[1] ?? []
       // Prefer generated/revision rows (package sources); also accept completed manual
       // retains that may carry a preserved package after the backend retain fix.
+      // Walk newest-first until a real script package is found (skip non-package heads).
       const candidates = [...history]
         .reverse()
-        .filter((item) => item.source === 'generated' || item.source === 'revision' || item.completed)
-      const candidate = candidates[0]
-      if (!candidate) {
+        .filter((item) => (
+          item.source === 'generated'
+          || item.source === 'revision'
+          || item.source === 'imported'
+          || item.completed
+        ))
+      if (!candidates.length) {
         if (active) setPackageFallback(null)
         return
       }
-      try {
-        const detail = await api.getPhaseVersion(storyId, 1, candidate.id)
-        if (!active) return
-        const output = detail.output_json
-        setPackageFallback(isPhaseOnePackage(output) ? output : null)
-      } catch {
-        if (active) setPackageFallback(null)
+      for (const candidate of candidates) {
+        try {
+          const detail = await api.getPhaseVersion(storyId, 1, candidate.id)
+          if (!active) return
+          if (isPhaseOnePackage(detail.output_json)) {
+            setPackageFallback(detail.output_json)
+            return
+          }
+        } catch {
+          // Try the next retained version.
+        }
       }
+      if (active) setPackageFallback(null)
     })()
     return () => {
       active = false
@@ -474,6 +496,10 @@ export function ProductionPhases({
   const historicalMetrics = snapshotMetricsFromWorkspace(
     incompleteReason ? null : historicalWorkspace,
   )
+  const packageDuration = packageData?.duration_analysis
+  const packageEmotional = stringList(packageData?.emotional_progression)
+  const packageAssumptions = stringList(packageData?.creative_assumptions)
+  const packageDirection = packageData?.creative_direction ?? {}
 
   return (
     <section className="production-contract" aria-labelledby="production-contract-title">
@@ -672,185 +698,255 @@ export function ProductionPhases({
                 </div>
               </div>
             ) : (
-              <>
-                <div className="phase-metrics six" aria-label="Phase 1 script metrics">
-                  <article className="phase-metric"><span>Script words</span><strong>{packageData.script_word_count.toLocaleString()}</strong></article>
-                  <article className="phase-metric"><span>Narration</span><strong>{formatDuration(packageData.duration_analysis.narration_duration_sec)}</strong></article>
-                  <article className="phase-metric"><span>Dialogue</span><strong>{formatDuration(packageData.duration_analysis.dialogue_duration_sec)}</strong></article>
-                  <article className="phase-metric"><span>Visual / silence</span><strong>{formatDuration(packageData.duration_analysis.planned_silence_visual_duration_sec)}</strong></article>
-                  <article className="phase-metric"><span>Estimated total</span><strong>{formatDuration(packageData.duration_analysis.estimated_total_duration_sec)}</strong></article>
-                  <article className="phase-metric">
-                    <span>QA</span>
-                    <strong className={qa?.passed ? 'qa-pass' : 'qa-fail'}>
-                      {historical ? 'Historical' : qa?.passed ? 'Passed' : qa ? 'Needs revision' : '—'}
-                    </strong>
-                  </article>
-                </div>
-
-                <div className="panel phase-one-review-panel">
-                  <div className="panel-title">
-                    <div>
-                      <span className="eyebrow">
-                        PHASE 1 · VERSION {historical ? selectedIteration?.version_number : phaseOne?.current_version_number}
-                      </span>
-                      <h2>Complete script package</h2>
-                      <p>
-                        {historical
-                          ? 'Historical package is read-only. Return to current draft to edit.'
-                          : 'Generated text is editable. Saving creates a new immutable version and reruns Phase 1 QA.'}
-                      </p>
-                    </div>
-                    {!editing && !historical ? (
-                      <button type="button" className="secondary-button" onClick={beginEdit}>Edit script package</button>
-                    ) : null}
+              <div className="phase-workspace phase-one-workspace">
+                <div className="phase-workspace-header">
+                  <div>
+                    <span className="eyebrow">
+                      PHASE 1 · {historical ? 'RETAINED SNAPSHOT' : 'PROTOTYPE DATA'}
+                    </span>
+                    <h3>Script and Narrative Development</h3>
+                    <p>
+                      Review the narrative foundation, duration intent, source fidelity, and planning boundary before segmentation begins.
+                    </p>
                   </div>
-
-                  {editing && draft && !historical ? (
-                    <div className="phase-one-editor">
-                      <label>Project title<input value={draft.project_title} onChange={(event) => setDraft({ ...draft, project_title: event.target.value })} /></label>
-                      <label>Logline<textarea value={draft.logline} onChange={(event) => setDraft({ ...draft, logline: event.target.value })} /></label>
-                      <label>Short synopsis<textarea value={draft.short_synopsis} onChange={(event) => setDraft({ ...draft, short_synopsis: event.target.value })} /></label>
-                      <label>Detailed treatment<textarea className="tall" value={draft.detailed_treatment} onChange={(event) => setDraft({ ...draft, detailed_treatment: event.target.value })} /></label>
-                      <label>Complete script<textarea className="script" value={draft.complete_script} onChange={(event) => setDraft({ ...draft, complete_script: event.target.value })} /></label>
-                      <label>Narration script<textarea className="tall" value={draft.narration_script} onChange={(event) => setDraft({ ...draft, narration_script: event.target.value })} /></label>
-                      <label>Dialogue script<textarea value={draft.dialogue_script} onChange={(event) => setDraft({ ...draft, dialogue_script: event.target.value })} /></label>
-                      <label>Non-dialogue action · one item per line<textarea value={listText(draft.non_dialogue_action)} onChange={(event) => setDraft({ ...draft, non_dialogue_action: textList(event.target.value) })} /></label>
-                      <label>Silent visual beats · one item per line<textarea value={listText(draft.silent_visual_beats)} onChange={(event) => setDraft({ ...draft, silent_visual_beats: textList(event.target.value) })} /></label>
-                      <label>Source-fidelity notes · one item per line<textarea value={listText(draft.source_fidelity_notes)} onChange={(event) => setDraft({ ...draft, source_fidelity_notes: textList(event.target.value) })} /></label>
-                      <label>Creative assumptions · one item per line<textarea value={listText(draft.creative_assumptions)} onChange={(event) => setDraft({ ...draft, creative_assumptions: textList(event.target.value) })} /></label>
-                      <div className="phase-one-editor-actions">
-                        <button type="button" className="secondary-button" disabled={saving} onClick={() => { setEditing(false); setDraft(null) }}>Cancel</button>
-                        <button type="button" className="primary-button" disabled={saving} onClick={() => void saveRevision()}>
-                          {saving ? 'Saving version…' : 'Save as new version & rerun QA'}
+                  <div className="phase-workspace-meta">
+                    <span className="phase-workspace-meta-pill">
+                      {historical ? 'Read-only history' : 'Design available'}
+                    </span>
+                    <small>
+                      {historical
+                        ? `v${selectedIteration?.version_number ?? '—'} · immutable`
+                        : `Backend state · ${stateLabel(phaseOne?.lifecycle_state || 'drafting')}`}
+                    </small>
+                    <div className="phase-header-actions" aria-label="Related workspaces">
+                      {!editing && !historical ? (
+                        <button type="button" className="btn secondary" onClick={beginEdit}>
+                          Edit script package
                         </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <section className="phase-document" aria-label="Phase 1 script document">
-                      <div>
-                        <span>WORKING TITLE</span>
-                        <h4>{packageData.project_title}</h4>
-                      </div>
-                      <div>
-                        <span>LOGLINE</span>
-                        <p>{packageData.logline || 'No logline has been recorded.'}</p>
-                      </div>
-                      <div>
-                        <span>SHORT SYNOPSIS</span>
-                        <p>{packageData.short_synopsis || 'No synopsis has been recorded.'}</p>
-                      </div>
-                      <details open>
-                        <summary>Source story and treatment</summary>
-                        <p>{packageData.detailed_treatment || 'Add the original story, script, narration, or treatment in Story & Chapters.'}</p>
-                      </details>
-                      <details open>
-                        <summary>Complete expanded script</summary>
-                        <p>{packageData.complete_script || 'No complete script has been recorded.'}</p>
-                      </details>
-                      <details>
-                        <summary>Narration and dialogue</summary>
-                        <div className="phase-document-grid">
-                          <article>
-                            <span>NARRATION</span>
-                            <p>{packageData.narration_script || 'No narration script has been recorded.'}</p>
-                          </article>
-                          <article>
-                            <span>DIALOGUE</span>
-                            <p>{packageData.dialogue_script || 'No dialogue script has been recorded.'}</p>
-                          </article>
-                        </div>
-                      </details>
-                      <div className="phase-document-grid">
-                        <article>
-                          <span>EMOTIONAL PROGRESSION</span>
-                          <p>
-                            {packageData.emotional_progression.length
-                              ? packageData.emotional_progression.join(' · ')
-                              : 'Not recorded'}
-                          </p>
-                        </article>
-                        <article>
-                          <span>CREATIVE ASSUMPTIONS</span>
-                          <p>
-                            {packageData.creative_assumptions.length
-                              ? packageData.creative_assumptions.join(' · ')
-                              : 'Not recorded'}
-                          </p>
-                        </article>
-                        <article>
-                          <span>CREATIVE DIRECTION</span>
-                          <p>
-                            {[
-                              typeof packageData.creative_direction?.language === 'string'
-                                ? packageData.creative_direction.language
-                                : null,
-                              typeof packageData.creative_direction?.genre === 'string'
-                                ? packageData.creative_direction.genre
-                                : null,
-                              typeof packageData.creative_direction?.tone === 'string'
-                                ? packageData.creative_direction.tone
-                                : null,
-                            ].filter(Boolean).join(' · ') || 'Planning text only.'}
-                          </p>
-                        </article>
-                        <article>
-                          <span>PRODUCTION BOUNDARY</span>
-                          <p>
-                            Planning text only. No scene media, voices, videos, render jobs, or final outputs are created here.
-                          </p>
-                        </article>
-                      </div>
-                    </section>
-                  )}
-                </div>
-
-                {!historical ? (
-                  <div className="split-2 phase-one-evidence">
-                    <div className="panel">
-                      <div className="panel-title">
-                        <div>
-                          <span className="eyebrow">PHASE 1 QA REPORT</span>
-                          <h2>{qa?.passed ? 'All blocking checks passed' : 'Revision required'}</h2>
-                          <p>QA completion does not approve the script.</p>
-                        </div>
-                        <span className={`truth-pill ${qa?.passed ? 'verified' : 'unknown'}`}>{qa?.passed ? 'PASS' : 'FAIL'}</span>
-                      </div>
-                      <ul className="phase-qa-checks">
-                        {qa?.checks.map((check) => (
-                          <li key={check.code} className={check.passed ? 'passed' : 'failed'}>
-                            <span>{check.passed ? '✓' : '!'}</span>
-                            <div><b>{check.label}</b><p>{check.detail}</p></div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="panel">
-                      <div className="panel-title">
-                        <div>
-                          <span className="eyebrow">FAIL-CLOSED BOUNDARY</span>
-                          <h2>Nothing downstream executed</h2>
-                          <p>These values are persisted in the QA evidence, not inferred by the UI.</p>
-                        </div>
-                      </div>
-                      <ul className="phase-boundary-list">
-                        {Object.entries(qa?.phase_boundary ?? {}).map(([key, value]) => (
-                          <li key={key}><span>{key.replaceAll('_', ' ')}</span><b>{value ? 'Yes' : 'No'}</b></li>
-                        ))}
-                      </ul>
-                      {packageData.baseline_comparison ? (
-                        <div className="baseline-result">
-                          <span>TRANSFIGURATION BASELINE</span>
-                          <b>{stateLabel(packageData.baseline_comparison.classification)}</b>
-                          <p>{packageData.baseline_comparison.note}</p>
-                          <small>
-                            {packageData.baseline_comparison.missing_count} missing · {packageData.baseline_comparison.unsafe_count} unsafe · human review still required
-                          </small>
-                        </div>
+                      ) : null}
+                      {onNavigate ? (
+                        <>
+                          <button type="button" className="btn secondary" onClick={() => onNavigate('story')}>
+                            Open for UI/UX review
+                          </button>
+                          <button type="button" className="btn secondary" onClick={() => onNavigate('story')}>
+                            Open story editor <span aria-hidden="true">↗</span>
+                          </button>
+                        </>
                       ) : null}
                     </div>
                   </div>
+                </div>
+
+                <div className="phase-preview-disclosure" role="note">
+                  <span aria-hidden="true">◇</span>
+                  <div>
+                    <b>{historical ? 'Immutable retained snapshot' : 'Interactive UI/UX prototype'}</b>
+                    <p>
+                      {historical
+                        ? 'This workspace renders only the verified SQLite snapshot for the selected iteration. It never substitutes current draft records.'
+                        : 'This workspace reads current planning records for display. It does not generate media, submit jobs, call ComfyUI, synthesize voices, run FFmpeg, or change execution gates.'}
+                    </p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const targetSec = Number(packageDuration?.target_duration_sec || 0)
+                  const plannedSec = Number(packageDuration?.estimated_total_duration_sec || 0)
+                  const narrationWords = Number(packageDuration?.narration_word_count || 0)
+                  const failCount = Array.isArray(qa?.checks)
+                    ? qa.checks.filter((check) => !check.passed).length
+                    : 0
+                  const readinessPct = qa
+                    ? Math.round(
+                        ((qa.checks?.filter((check) => check.passed).length || 0)
+                          / Math.max(1, qa.checks?.length || 1))
+                          * 100,
+                      )
+                    : historical
+                      ? 100
+                      : 0
+                  const qaLabel = historical
+                    ? 'Historical'
+                    : qa?.passed
+                      ? 'Passed'
+                      : qa
+                        ? 'Needs review'
+                        : '—'
+                  return (
+                    <div className="phase-metrics six" aria-label="Phase 1 script metrics">
+                      <article className="phase-metric">
+                        <span>Script words</span>
+                        <strong>{Number(packageData.script_word_count || 0).toLocaleString()}</strong>
+                      </article>
+                      <article className="phase-metric">
+                        <span>Narration words</span>
+                        <strong>{narrationWords.toLocaleString()}</strong>
+                      </article>
+                      <article className="phase-metric">
+                        <span>Target runtime</span>
+                        <strong>{targetSec ? formatDuration(targetSec) : '—'}</strong>
+                      </article>
+                      <article className="phase-metric">
+                        <span>Planned runtime</span>
+                        <strong>{plannedSec ? formatDuration(plannedSec) : '—'}</strong>
+                      </article>
+                      <article className="phase-metric">
+                        <span>Readiness</span>
+                        <strong>{readinessPct}%</strong>
+                      </article>
+                      <article className="phase-metric">
+                        <span>Planning QA</span>
+                        <strong className={qa?.passed || historical ? 'qa-pass' : 'qa-fail'}>
+                          {qaLabel}
+                        </strong>
+                        {!historical && failCount > 0 ? (
+                          <small>{failCount} open gate{failCount === 1 ? '' : 's'}</small>
+                        ) : null}
+                      </article>
+                    </div>
+                  )
+                })()}
+
+                {editing && draft && !historical ? (
+                  <div className="phase-one-editor panel">
+                    <label>Project title<input value={draft.project_title} onChange={(event) => setDraft({ ...draft, project_title: event.target.value })} /></label>
+                    <label>Logline<textarea value={draft.logline} onChange={(event) => setDraft({ ...draft, logline: event.target.value })} /></label>
+                    <label>Short synopsis<textarea value={draft.short_synopsis} onChange={(event) => setDraft({ ...draft, short_synopsis: event.target.value })} /></label>
+                    <label>Detailed treatment<textarea className="tall" value={draft.detailed_treatment} onChange={(event) => setDraft({ ...draft, detailed_treatment: event.target.value })} /></label>
+                    <label>Complete script<textarea className="script" value={draft.complete_script} onChange={(event) => setDraft({ ...draft, complete_script: event.target.value })} /></label>
+                    <label>Narration script<textarea className="tall" value={draft.narration_script} onChange={(event) => setDraft({ ...draft, narration_script: event.target.value })} /></label>
+                    <label>Dialogue script<textarea value={draft.dialogue_script} onChange={(event) => setDraft({ ...draft, dialogue_script: event.target.value })} /></label>
+                    <label>Non-dialogue action · one item per line<textarea value={listText(draft.non_dialogue_action)} onChange={(event) => setDraft({ ...draft, non_dialogue_action: textList(event.target.value) })} /></label>
+                    <label>Silent visual beats · one item per line<textarea value={listText(draft.silent_visual_beats)} onChange={(event) => setDraft({ ...draft, silent_visual_beats: textList(event.target.value) })} /></label>
+                    <label>Source-fidelity notes · one item per line<textarea value={listText(draft.source_fidelity_notes)} onChange={(event) => setDraft({ ...draft, source_fidelity_notes: textList(event.target.value) })} /></label>
+                    <label>Creative assumptions · one item per line<textarea value={listText(draft.creative_assumptions)} onChange={(event) => setDraft({ ...draft, creative_assumptions: textList(event.target.value) })} /></label>
+                    <div className="phase-one-editor-actions">
+                      <button type="button" className="secondary-button" disabled={saving} onClick={() => { setEditing(false); setDraft(null) }}>Cancel</button>
+                      <button type="button" className="primary-button" disabled={saving} onClick={() => void saveRevision()}>
+                        {saving ? 'Saving version…' : 'Save as new version & rerun QA'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <section className="phase-document" aria-label="Phase 1 script document">
+                    <div>
+                      <span>WORKING TITLE</span>
+                      <h4>{packageData.project_title}</h4>
+                    </div>
+                    <div>
+                      <span>LOGLINE</span>
+                      <p>{packageData.logline || 'No logline has been recorded.'}</p>
+                    </div>
+                    <div>
+                      <span>SHORT SYNOPSIS</span>
+                      <p>{packageData.short_synopsis || 'No synopsis has been recorded.'}</p>
+                    </div>
+                    <details open>
+                      <summary>Source story and treatment</summary>
+                      <p>{packageData.detailed_treatment || 'Add the original story, script, narration, or treatment in Story & Chapters.'}</p>
+                    </details>
+                    <div className="phase-document-grid phase-document-pair">
+                      <article>
+                        <span>CREATIVE DIRECTION</span>
+                        <p>
+                          {[
+                            typeof packageDirection.language === 'string' ? packageDirection.language : null,
+                            typeof packageDirection.genre === 'string' ? packageDirection.genre : null,
+                            typeof packageDirection.tone === 'string' ? packageDirection.tone : null,
+                            typeof packageDirection.visual_style === 'string' ? packageDirection.visual_style : null,
+                          ].filter(Boolean).join(' · ')
+                            || packageEmotional.join(' · ')
+                            || 'Planning text only.'}
+                        </p>
+                      </article>
+                      <article>
+                        <span>PRODUCTION BOUNDARY</span>
+                        <p>
+                          Planning text only. No scene media, voices, videos, render jobs, or final outputs are created here.
+                        </p>
+                      </article>
+                    </div>
+                  </section>
+                )}
+
+                <div className="phase-footer phase-one-review-footer">
+                  <div>
+                    <span className="eyebrow">PHASE 1 REVIEW</span>
+                    <b>
+                      {historical
+                        ? 'Historical snapshot is read-only'
+                        : qa?.passed
+                          ? 'Human review remains required'
+                          : 'Revision required before review'}
+                    </b>
+                    <p>
+                      {historical
+                        ? 'Return to the current draft to edit. This snapshot cannot be overwritten.'
+                        : 'This workspace does not approve or execute production. Edit the script package to create a new immutable version.'}
+                    </p>
+                  </div>
+                  {!historical ? (
+                    <button type="button" className="btn primary" onClick={beginEdit}>
+                      Edit story foundation
+                    </button>
+                  ) : null}
+                </div>
+
+                {!historical && qa ? (
+                  <details className="phase-one-evidence-drawer">
+                    <summary>
+                      <span>PHASE 1 QA EVIDENCE</span>
+                      <b>{qa.passed ? 'All blocking checks passed' : 'Open gates remain'}</b>
+                      <small>Expand for QA checks and fail-closed boundary</small>
+                    </summary>
+                    <div className="split-2 phase-one-evidence">
+                      <div className="panel">
+                        <div className="panel-title">
+                          <div>
+                            <span className="eyebrow">PHASE 1 QA REPORT</span>
+                            <h2>{qa.passed ? 'All blocking checks passed' : 'Revision required'}</h2>
+                            <p>QA completion does not approve the script.</p>
+                          </div>
+                          <span className={`truth-pill ${qa.passed ? 'verified' : 'unknown'}`}>{qa.passed ? 'PASS' : 'FAIL'}</span>
+                        </div>
+                        <ul className="phase-qa-checks">
+                          {qa.checks.map((check) => (
+                            <li key={check.code} className={check.passed ? 'passed' : 'failed'}>
+                              <span>{check.passed ? '✓' : '!'}</span>
+                              <div><b>{check.label}</b><p>{check.detail}</p></div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="panel">
+                        <div className="panel-title">
+                          <div>
+                            <span className="eyebrow">FAIL-CLOSED BOUNDARY</span>
+                            <h2>Nothing downstream executed</h2>
+                            <p>These values are persisted in the QA evidence, not inferred by the UI.</p>
+                          </div>
+                        </div>
+                        <ul className="phase-boundary-list">
+                          {Object.entries(qa.phase_boundary ?? {}).map(([key, value]) => (
+                            <li key={key}><span>{key.replaceAll('_', ' ')}</span><b>{value ? 'Yes' : 'No'}</b></li>
+                          ))}
+                        </ul>
+                        {packageData.baseline_comparison ? (
+                          <div className="baseline-result">
+                            <span>TRANSFIGURATION BASELINE</span>
+                            <b>{stateLabel(packageData.baseline_comparison.classification)}</b>
+                            <p>{packageData.baseline_comparison.note}</p>
+                            <small>
+                              {packageData.baseline_comparison.missing_count} missing · {packageData.baseline_comparison.unsafe_count} unsafe · human review still required
+                            </small>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </details>
                 ) : null}
-              </>
+              </div>
             )}
           </>
         ) : displayPhase ? (

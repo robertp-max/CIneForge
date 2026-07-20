@@ -623,78 +623,111 @@
 .production-phase-rail > button {
   position: relative;
   min-width: 145px;
-  min-height: 72px;
+  min-height: 74px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: #17191b;
-  display: grid;
-  grid-template-columns: 25px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   padding: 10px;
   text-align: left;
   color: inherit;
   cursor: pointer;
 }
 .production-phase-rail > button:hover {
-  border-color: #46504b;
-  background: #1b1f1d;
+  border-color: #46505a;
+  background: #1b1f23;
+  transform: translateY(-1px);
 }
 .production-phase-rail > button:focus-visible {
-  outline: 2px solid var(--mint);
+  outline: 2px solid #a8c7fa;
   outline-offset: 2px;
 }
 .production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"] {
+.production-phase-rail > button[aria-current="step"],
+.production-phase-rail > button[aria-selected="true"] {
   border-color: #5b7aa8;
   background: #1a2434;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250), 0.07);
+  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.12);
 }
 .production-phase-rail > button > span {
-  width: 24px;
-  height: 24px;
-  border: 1px solid #3b4140;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  border: 1px solid #3b4145;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #8c9691;
-  font-size: 8px;
+  color: #8a9297;
+  font-size: 0.67rem;
+  font-weight: 800;
 }
 .production-phase-rail > button.current > span,
-.production-phase-rail > button[aria-current="step"] > span {
-  border-color: #4c8d6b;
-  background: #224331;
-  color: var(--mint);
+.production-phase-rail > button[aria-current="step"] > span,
+.production-phase-rail > button[aria-selected="true"] > span {
+  border-color: #6b8fc4;
+  background: #24344f;
+  color: #a8c7fa;
 }
 .production-phase-rail b,
 .production-phase-rail small {
   display: block;
 }
 .production-phase-rail b {
-  font-size: 7px;
+  min-height: 34px;
+  font-size: 0.66rem;
   line-height: 1.35;
-  color: #c9cdcb;
-  min-height: 0;
+  color: #aeb4b8;
+  font-weight: 700;
 }
 .production-phase-rail small {
   margin-top: 4px;
-  color: #6f7874;
-  font-size: 6px;
+  color: #6f777c;
+  font-size: 0.59rem;
   text-transform: none;
 }
+.production-phase-rail > button.current b,
+.production-phase-rail > button[aria-current="step"] b,
+.production-phase-rail > button[aria-selected="true"] b {
+  color: #e0e6f0;
+}
 .production-phase-rail > button.current small,
-.production-phase-rail > button[aria-current="step"] small {
-  color: #78b793;
+.production-phase-rail > button[aria-current="step"] small,
+.production-phase-rail > button[aria-selected="true"] small {
+  color: #9bb6df;
+}
+.production-phase-rail .phase-iteration-badge {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-width: 18px;
+  height: 18px;
+  border: 1px solid #3a4248;
+  border-radius: 999px;
+  background: #1c2024;
+  color: #8a9297;
+  display: grid;
+  place-items: center;
+  font-size: 0.58rem;
+  font-weight: 800;
+  font-style: normal;
+}
+.production-phase-rail > button.current .phase-iteration-badge,
+.production-phase-rail > button[aria-selected="true"] .phase-iteration-badge {
+  border-color: #5b7aa8;
+  background: #1a2434;
+  color: #a8c7fa;
 }
 .production-phase-panel { min-width: 0; outline: none; }
 .production-phase-panel > .phase-one-complete-message { margin-bottom: 14px; }
 
 .phase-one-complete-message { margin-bottom: 14px; }
 
-.phase-one-complete-message { display: flex; align-items: center; gap: 13px; border: 1px solid #3b7055; border-radius: 11px; background: linear-gradient(90deg, #192a21, #1a2420); padding: 14px 16px; }
-.phase-one-complete-message > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #2b6145; color: #b9f0d2; }
-.phase-one-complete-message b { color: #dcece3; }
-.phase-one-complete-message p { margin: 4px 0 0; color: #8da397; font-size: 0.72rem; }
+.phase-one-complete-message { display: flex; align-items: center; gap: 13px; border: 1px solid #3d4f6a; border-radius: 11px; background: #1a2434; padding: 14px 16px; }
+.phase-one-complete-message > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #24344f; color: #a8c7fa; }
+.phase-one-complete-message b { color: #e4eaf4; }
+.phase-one-complete-message p { margin: 4px 0 0; color: #9bb6df; font-size: 0.72rem; }
 
 /* Residual .phase-one-empty / .phase-one-metrics → Gold .phase-empty / .phase-metrics
  * (full alias rules in GOLD PHASE RESIDUAL ALIASES ONLY section below). */
@@ -703,12 +736,78 @@
 .phase-one-metrics .qa-fail,
 .phase-metric .qa-fail { color: #f0a19c; }
 
+.phase-one-workspace { gap: 12px; }
+.phase-one-review-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  border-top: 1px solid #303033 !important;
+  margin-top: 4px !important;
+  padding: 16px 2px 0 !important;
+}
+.phase-one-review-footer .eyebrow {
+  display: block;
+  color: #a8c7fa !important;
+  font-size: 10px !important;
+  letter-spacing: 0.08em;
+}
+.phase-one-review-footer b {
+  display: block;
+  margin-top: 4px;
+  color: #f1f3f4;
+  font-size: 12px;
+}
+.phase-one-review-footer p {
+  margin: 4px 0 0;
+  color: #707975;
+  font-size: 11px;
+  line-height: 1.45;
+  max-width: 520px;
+}
+.phase-one-evidence-drawer {
+  border: 1px solid #2d3235;
+  border-radius: 10px;
+  background: #17191b;
+  padding: 0;
+}
+.phase-one-evidence-drawer > summary {
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+}
+.phase-one-evidence-drawer > summary::-webkit-details-marker { display: none; }
+.phase-one-evidence-drawer > summary span {
+  color: #a8c7fa;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.phase-one-evidence-drawer > summary b {
+  color: #e8eaed;
+  font-size: 13px;
+}
+.phase-one-evidence-drawer > summary small {
+  color: #707975;
+  font-size: 11px;
+}
+.phase-one-evidence-drawer[open] > summary {
+  border-bottom: 1px solid #2d3235;
+}
+.phase-one-evidence-drawer .phase-one-evidence {
+  padding: 12px;
+}
+.phase-document-pair {
+  margin-top: 4px;
+}
 .phase-one-review-panel { padding: 0; }
 .phase-one-review-panel > .panel-title { padding: 18px 20px 14px; }
 .phase-one-review-panel > .panel-title h2 { margin: 4px 0; }
 .phase-one-document { border-top: 1px solid var(--line); }
 .phase-one-document > section { border-bottom: 1px solid #2b2f32; padding: 16px 20px; }
-.phase-one-document > section > span, .phase-one-document .phase-one-lists section > span { color: #78b494; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.12em; }
+.phase-one-document > section > span, .phase-one-document .phase-one-lists section > span { color: #8ab0e8; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.12em; }
 .phase-one-document > section h3 { margin: 7px 0 0; font-size: 1.2rem; }
 .phase-one-document > section p { margin: 7px 0 0; color: #bec4c7; line-height: 1.65; }
 .phase-one-document details { border-bottom: 1px solid #2b2f32; }
@@ -1016,7 +1115,7 @@
 .phase-package-list > button.active,
 .phase-character-list > button:hover,
 .phase-character-list > button.active {
-  background: #212724;
+  background: #1a2434;
 }
 .phase-list > button > span,
 .phase-location-list > button > span,
@@ -1395,7 +1494,7 @@
 .phase-audio-wave i {
   width: 3px;
   border-radius: 8px;
-  background: #4f9a70;
+  background: #a8c7fa;
 }
 .phase-wave i:nth-child(1), .phase-wave i:nth-child(6),
 .phase-audio-wave i:nth-child(1), .phase-audio-wave i:nth-child(6) { height: 8px; }
@@ -1603,7 +1702,7 @@
 .phase-monitor > div > span {
   width: 42px;
   height: 42px;
-  border: 1px solid #4a5e53;
+  border: 1px solid #4a5f7d;
   border-radius: 50%;
   background: #24352d;
   color: #9bc9af;
@@ -1814,17 +1913,17 @@
   padding: 12px 2px 0;
 }
 
-/* Continuity residual */
+/* Continuity residual — AI Studio blue, never mint */
 .phase-continuity,
 .phase-continuity-note {
   margin-top: 10px;
-  border-left: 3px solid #4c7d63;
-  background: #1d2521;
+  border-left: 3px solid #5b7aa8;
+  background: #1a2434;
   padding: 10px 12px;
 }
 .phase-continuity span,
 .phase-continuity-note span {
-  color: #78af91;
+  color: #a8c7fa;
   font-size: 7px;
   font-weight: 850;
 }
@@ -2298,7 +2397,7 @@
   width: 42px;
   height: 42px;
   place-items: center;
-  border: 1px solid #4a5e53;
+  border: 1px solid #4a5f7d;
   border-radius: 50%;
   background: #24352d;
   color: #9bc9af;
@@ -2609,19 +2708,27 @@
   }
 }
 
-/* Overview production-phase rail: Gold Sites mint (beats AI Studio blue) */
+/* Overview production-phase rail: AI Studio blue only — NEVER mint/forest green */
 .studio .production-phase-rail > button.current,
 .studio .production-phase-rail > button[aria-selected="true"],
 .studio .production-phase-rail > button[aria-current="step"] {
   border-color: #5b7aa8 !important;
-  background: linear-gradient(145deg, #1b2b23, #19211d) !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250), 0.08) !important;
+  background: #1a2434 !important;
+  background-color: #1a2434 !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.12) !important;
 }
 .studio .production-phase-rail > button.current > span,
-.studio .production-phase-rail > button[aria-selected="true"] > span {
-  border-color: #5b7aa8 !important;
+.studio .production-phase-rail > button[aria-selected="true"] > span,
+.studio .production-phase-rail > button[aria-current="step"] > span {
+  border-color: #6b8fc4 !important;
   background: #24344f !important;
+  background-image: none !important;
   color: #a8c7fa !important;
+}
+.studio .production-phase-rail > button.current small,
+.studio .production-phase-rail > button[aria-selected="true"] small {
+  color: #9bb6df !important;
 }
 
 /* === PIXEL Phase 4: beat gold-ai-studio-theme inflation (Gold Sites density) === */
@@ -2647,7 +2754,7 @@
 .phase-location-list > button.active,
 .phase-location-cards > button:hover,
 .phase-location-cards > button.active {
-  background: #212724 !important;
+  background: #1a2434 !important;
 }
 .phase-location-list > button.active > span,
 .phase-location-cards > button.active > span {

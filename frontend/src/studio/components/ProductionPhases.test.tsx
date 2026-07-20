@@ -286,8 +286,36 @@ describe('ProductionPhases', () => {
     render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
 
     expect(await screen.findByText('7 complete workspaces')).toBeTruthy()
-    expect(screen.getByText('All blocking checks passed')).toBeTruthy()
-    expect(screen.getByText('The Test Film')).toBeTruthy()
+    expect(screen.getAllByText('All blocking checks passed').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('The Test Film').length).toBeGreaterThan(0)
+
+    // Phase 1 Gold Sites structure: PROTOTYPE DATA workspace + metrics + document
+    expect(screen.getAllByText(/PHASE 1 · PROTOTYPE DATA/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Script and Narrative Development').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Interactive UI/UX prototype').length).toBeGreaterThan(0)
+    expect(document.querySelector('.phase-one-workspace')).toBeTruthy()
+    const metrics = document.querySelector('.phase-metrics.six')
+    expect(metrics).toBeTruthy()
+    expect(metrics?.querySelectorAll('.phase-metric').length).toBe(6)
+    expect(screen.getAllByText('Script words').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Narration words').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Target runtime').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Planned runtime').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Readiness').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Planning QA').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Phase 1 script document').classList.contains('phase-document')).toBe(true)
+    expect(screen.getAllByText('WORKING TITLE').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('LOGLINE').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('SHORT SYNOPSIS').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Source story and treatment').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('CREATIVE DIRECTION').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('PRODUCTION BOUNDARY').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/PHASE 1 REVIEW/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Edit story foundation/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Complete script package')).toBeNull()
+    expect(document.querySelector('.phase-one-document')).toBeNull()
+    expect(document.querySelector('.phase-one-metrics')).toBeNull()
+
     const tabs = screen.getAllByRole('tab')
     expect(tabs).toHaveLength(7)
     tabs.forEach((tab) => expect(tab.hasAttribute('disabled')).toBe(false))
@@ -296,11 +324,12 @@ describe('ProductionPhases', () => {
     for (const name of phaseNames.slice(1)) {
       fireEvent.click(screen.getByRole('tab', { name: new RegExp(name) }))
       expect(screen.getByRole('heading', { name })).toBeTruthy()
-      expect(screen.getByText('Interactive UI/UX preview')).toBeTruthy()
+      expect(screen.getAllByText('Interactive UI/UX preview').length).toBeGreaterThan(0)
     }
 
     fireEvent.click(screen.getByRole('tab', { name: /Script and Narrative Development/ }))
-    expect(screen.getByText('The Test Film')).toBeTruthy()
+    expect(screen.getAllByText('The Test Film').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Phase 1 script document')).toBeTruthy()
     expect(api.getProductionPipeline).toHaveBeenCalledTimes(1)
     expect(api.revisePhaseOne).not.toHaveBeenCalled()
   })
@@ -337,18 +366,18 @@ describe('ProductionPhases', () => {
     fireEvent.click(await screen.findByRole('tab', { name: /Scene and Shot Segmentation/ }))
 
     expect(screen.getByRole('heading', { name: 'Scene and Shot Segmentation' })).toBeTruthy()
-    expect(screen.getByText('Interactive UI/UX preview')).toBeTruthy()
-    expect(screen.getByText('Chapters / acts')).toBeTruthy()
-    expect(screen.getByText('STRUCTURE')).toBeTruthy()
+    expect(screen.getAllByText('Interactive UI/UX preview').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Chapters / acts').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('STRUCTURE').length).toBeGreaterThan(0)
     expect(screen.getByLabelText('Scene browser')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Opening scene/i })).toBeTruthy()
     expect(screen.getByLabelText('Selected scene shot timing')).toBeTruthy()
     expect(screen.getAllByText('S01A').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('Establish the world.')).toBeTruthy()
-    expect(screen.getByText('Primary location')).toBeTruthy()
-    expect(screen.getByText('8.0s')).toBeTruthy()
-    expect(screen.getByText('None')).toBeTruthy()
-    expect(screen.getByText(/PLANNING DIAGNOSTICS|QA PREVIEW/)).toBeTruthy()
+    expect(screen.getAllByText('Establish the world.').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Primary location').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('8.0s').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('None').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/PLANNING DIAGNOSTICS|QA PREVIEW/).length).toBeGreaterThan(0)
     /* duration band assertion relaxed for UI density */
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Storyboard' }))
     expect(onNavigate).toHaveBeenCalledWith('storyboard')
@@ -507,9 +536,134 @@ describe('ProductionPhases', () => {
     render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
 
     expect(await screen.findByText('The Test Film')).toBeTruthy()
-    expect(screen.getByText('Complete script package')).toBeTruthy()
-    expect(screen.getByText('A complete test logline.')).toBeTruthy()
+    expect(screen.getAllByText(/PHASE 1 · PROTOTYPE DATA|Script and Narrative Development/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('A complete test logline.').length).toBeGreaterThan(0)
     expect(screen.queryByText('Phase 1 has not started')).toBeNull()
+  })
+
+  it('shows Phase 1 package for Transfiguration API package schema on the pipeline head', async () => {
+    // Mirrors live /production/stories/:id Phase 1 output for The Transfiguration.
+    const transfigurationPackage = {
+      ...packageData,
+      schema_name: 'cineforge.phase_one_script_package',
+      schema_version: 1,
+      project_title: 'The Transfiguration',
+      logline:
+        'A combined Synoptic Gospel account: Jesus leads Peter, James and John up a high mountain to pray.',
+      short_synopsis: 'A 5-minute Live-action biblical epic narrative follows the source.',
+      detailed_treatment: 'Opening, development, climax, and resolution on the mountain.',
+      complete_script: '## Opening\n**ACTION:** They ascend.\n**NARRATION:** They ascend the mountain.',
+      narration_script: 'They ascend the mountain.',
+      dialogue_script: 'Source-required speech; exact wording requires human review.',
+      emotional_progression: [
+        'Orientation and anticipation',
+        'Growing attention and uncertainty',
+        'Overwhelming recognition and peak consequence',
+        'Mercy, reflection, and resolved forward movement',
+      ],
+      creative_direction: {
+        audience: 'General faith-based and cinematic audience',
+        genre: 'Live-action biblical epic',
+        tone: 'Reverent, awe-filled, solemn',
+        language: 'English',
+        visual_style: 'Ultra-photorealistic sacred realism',
+      },
+      script_word_count: 659,
+      duration_analysis: {
+        target_duration_sec: 300,
+        narration_word_count: 48,
+        dialogue_word_count: 16,
+        narration_duration_sec: 19.86,
+        dialogue_duration_sec: 7.11,
+        planned_silence_visual_duration_sec: 273.03,
+        estimated_total_duration_sec: 300,
+        narration_wpm: 145,
+        dialogue_wpm: 135,
+      },
+    }
+    const transfigurationPipeline: ProductionPipeline = {
+      ...pipeline,
+      story_id: '6db487e3-76f5-5ac8-86a6-e2816536e8b8',
+      project_id: '1823e5da-e926-5b61-9d45-4bf9bea10c94',
+      completion_message: 'Your complete script is ready for review.',
+      phases: pipeline.phases.map((phase, index) => (
+        index === 0
+          ? {
+              ...phase,
+              lifecycle_state: 'ready_for_review',
+              current_version_number: 2,
+              version_count: 2,
+              latest_version: {
+                id: 'e89986b4-f303-40a1-b1e2-3a3a264ce015',
+                version_number: 2,
+                lifecycle_state: 'ready_for_review',
+                completed: true,
+                label: 'Generated package',
+                source: 'generated',
+                input_snapshot_json: {},
+                output_json: transfigurationPackage,
+                input_hash: 'a'.repeat(64),
+                output_hash: 'b'.repeat(64),
+                created_by: 'system:generate',
+                previous_version_id: 'baseline-1',
+                created_at: '2026-07-20T06:55:39Z',
+                updated_at: '2026-07-20T06:55:39Z',
+              },
+              latest_qa_report: {
+                id: 'qa-transfiguration',
+                entity_type: 'production_phase_version',
+                entity_id: 'e89986b4-f303-40a1-b1e2-3a3a264ce015',
+                created_at: '2026-07-20T06:55:39Z',
+                report_json: {
+                  phase_number: 1,
+                  passed: true,
+                  result: 'pass',
+                  checks: [{
+                    code: 'phase_boundary',
+                    label: 'No downstream execution',
+                    passed: true,
+                    blocking: true,
+                    detail: 'Text only.',
+                  }],
+                  blocking_failures: [],
+                  review_items: [],
+                  phase_boundary: {
+                    images_generated: false,
+                    voices_generated: false,
+                    videos_generated: false,
+                  },
+                },
+              },
+            }
+          : phase
+      )),
+    }
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(transfigurationPipeline)
+    mockHistoryApis()
+
+    render(
+      <ProductionPhases
+        storyId="6db487e3-76f5-5ac8-86a6-e2816536e8b8"
+        projectId="1823e5da-e926-5b61-9d45-4bf9bea10c94"
+        data={{
+          ...aggregate,
+          story: {
+            ...aggregate.story,
+            id: '6db487e3-76f5-5ac8-86a6-e2816536e8b8',
+            project_id: '1823e5da-e926-5b61-9d45-4bf9bea10c94',
+            title: 'The Transfiguration',
+          },
+        }}
+      />,
+    )
+
+    expect(await screen.findByText(/Script and Narrative Development|PHASE 1 · PROTOTYPE DATA/i)).toBeTruthy()
+    expect(screen.getAllByText('The Transfiguration').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Jesus leads Peter, James and John/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('All blocking checks passed').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('659').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Phase 1 has not started')).toBeNull()
+    expect(screen.queryByText('This retained snapshot has no Phase 1 script package')).toBeNull()
   })
 
   it('renders Phase 7 assembly workspace with timeline, QA, and manifest tabs', async () => {
@@ -528,43 +682,44 @@ describe('ProductionPhases', () => {
     fireEvent.click(await screen.findByRole('tab', { name: /Video Generation, Assembly, and Final QA/ }))
 
     expect(screen.getByRole('heading', { name: 'Video Generation, Assembly, and Final QA' })).toBeTruthy()
-    expect(screen.getByText('Interactive UI/UX preview')).toBeTruthy()
-    expect(screen.getByText('Planned shots')).toBeTruthy()
-    expect(screen.getByText('Selected clips')).toBeTruthy()
-    expect(screen.getByText('No project-scoped clip API')).toBeTruthy()
-    expect(screen.getByText('Not produced')).toBeTruthy()
-    expect(screen.getByText('not evaluated')).toBeTruthy()
+    expect(screen.getAllByText('Interactive UI/UX preview').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Planned shots').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Selected clips').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('No project-scoped clip API').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Not produced').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('not evaluated').length).toBeGreaterThan(0)
 
     expect(screen.getByRole('tablist', { name: 'Phase 7 assembly view' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Assembly timeline' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByLabelText('Final assembly preview')).toBeTruthy()
-    expect(screen.getByText('Final preview area')).toBeTruthy()
-    expect(screen.getByText(/No project-scoped video output is available/)).toBeTruthy()
+    expect(screen.getAllByText('Final preview area').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/No project-scoped video output is available/).length).toBeGreaterThan(0)
     expect(screen.getByLabelText('Assembly timeline tracks')).toBeTruthy()
-    expect(screen.getByText('ASSEMBLY TIMELINE')).toBeTruthy()
-    expect(screen.getByText(/Clips are not generated or concatenated here/)).toBeTruthy()
+    expect(screen.getAllByText('ASSEMBLY TIMELINE').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Clips are not generated or concatenated here/).length).toBeGreaterThan(0)
     expect(screen.getByLabelText('Video clips by planned duration')).toBeTruthy()
     expect(screen.getAllByText('S01A').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('Music and SFX design lane')).toBeTruthy()
-    expect(screen.getByText('Subtitle and accessibility lane')).toBeTruthy()
+    expect(screen.getAllByText('Music and SFX design lane').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Subtitle and accessibility lane').length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Final QA review' }))
     expect(screen.getByLabelText('Final QA review')).toBeTruthy()
-    expect(screen.getByText('FINAL QA REVIEW')).toBeTruthy()
-    expect(screen.getByText('Timeline coverage')).toBeTruthy()
-    expect(screen.getByText('Output integrity')).toBeTruthy()
+    expect(screen.getAllByText('FINAL QA REVIEW').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Timeline coverage').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Output integrity').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Pending evidence').length).toBe(6)
-    expect(screen.getByText(/No FFmpeg or decode validation is run from this UI/)).toBeTruthy()
+    expect(screen.getAllByText('not evaluated').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/No FFmpeg or decode validation is run from this UI/).length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Manifest & provenance' }))
     expect(screen.getByLabelText('Final manifest and provenance')).toBeTruthy()
-    expect(screen.getByText('FINAL MANIFEST')).toBeTruthy()
-    expect(screen.getByText('Output identity')).toBeTruthy()
+    expect(screen.getAllByText('FINAL MANIFEST').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Output identity').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Awaiting production output').length).toBe(6)
-    expect(screen.getByText(/does not claim that an output exists/)).toBeTruthy()
+    expect(screen.getAllByText(/does not claim that an output exists/).length).toBeGreaterThan(0)
 
-    expect(screen.getByText('BACKEND PRESERVED')).toBeTruthy()
-    expect(screen.getByText(/No project-scoped clip, FFmpeg, or final-output API/)).toBeTruthy()
+    expect(screen.getAllByText('BACKEND PRESERVED').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/No project-scoped clip, FFmpeg, or final-output API/).length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole('button', { name: /Open Exports/i }))
     expect(onNavigate).toHaveBeenCalledWith('exports')
   })

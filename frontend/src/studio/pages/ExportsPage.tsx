@@ -1,86 +1,437 @@
+import { useState } from 'react'
 import { api, exportJsonUrl, exportShotListCsvUrl } from '../../api/client'
 import { useStudio } from '../StudioState'
 
+type ExportCard = {
+  id: string
+  name: string
+  description: string
+  format: string
+  requirement: string
+  version: string
+  ready: boolean
+  href?: string
+  statusLabel: string
+  iconClass: string
+  iconText: string
+  lastExport: string
+}
+
+/** Sites Gold export catalog (mock readiness) + live JSON/CSV links when ready. */
 export function ExportsPage() {
-  const { data } = useStudio()
+  const { data, readiness } = useStudio()
+  const [scope, setScope] = useState('Full project')
+  const [running, setRunning] = useState('')
+  const [history, setHistory] = useState<{ name: string; time: string; status: string }[]>([
+    { name: 'Storyboard JSON', time: 'Live API download', status: 'Ready' },
+    { name: 'Shot List CSV', time: 'Live API download', status: 'Ready' },
+    { name: 'Model Gap Report', time: 'Planning package', status: 'Ready' },
+  ])
+  const [showBlockers, setShowBlockers] = useState(false)
+  const [blocked, setBlocked] = useState<ExportCard | null>(null)
+
   if (!data) return null
 
   const links = api.exportLinks(data.story.id)
   const jsonUrl = links.json_url || exportJsonUrl(data.story.id)
   const csvUrl = links.shot_list_csv_url || exportShotListCsvUrl(data.story.id)
 
+  const blocking = readiness?.reasons.filter((reason) => reason.blocking) ?? []
+  const totalReasons = readiness?.reasons.length ?? 0
+  const passCount = readiness ? Math.max(0, totalReasons - blocking.length) : 0
+  const readinessPct = readiness
+    ? readiness.ready
+      ? 100
+      : totalReasons
+        ? Math.round((passCount / totalReasons) * 100)
+        : 0
+    : 0
+
+  const cards: ExportCard[] = [
+    {
+      id: 'pdf',
+      name: 'Full Storyboard PDF',
+      description: 'Review-ready visual storyboard',
+      format: 'PDF',
+      requirement: links.pdf_available ? 'All shot data present' : 'Human approvals and production evidence are required',
+      version: links.pdf_available ? 'v1' : '—',
+      ready: Boolean(links.pdf_available),
+      statusLabel: links.pdf_available ? 'Ready' : 'Blocked',
+      iconClass: 'export-0',
+      iconText: 'PDF',
+      lastExport: links.pdf_available ? 'On demand' : 'Never',
+    },
+    {
+      id: 'csv',
+      name: 'Shot List CSV',
+      description: 'All generation units for spreadsheets and tracking',
+      format: 'CSV',
+      requirement: 'Shot list present',
+      version: 'v1 live',
+      ready: true,
+      href: csvUrl,
+      statusLabel: 'Ready',
+      iconClass: 'export-1',
+      iconText: 'CSV',
+      lastExport: 'On demand',
+    },
+    {
+      id: 'narration',
+      name: 'Narration Script',
+      description: 'Timed narration and voice assignments',
+      format: 'DOCX · TXT',
+      requirement: 'Resolve voice coverage gaps',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-2',
+      iconText: 'DOC',
+      lastExport: 'Never',
+    },
+    {
+      id: 'bible',
+      name: 'Character Bible',
+      description: 'Identity and wardrobe package',
+      format: 'PDF',
+      requirement: 'Human approvals and production evidence are required',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-3',
+      iconText: 'PDF',
+      lastExport: 'Never',
+    },
+    {
+      id: 'voices',
+      name: 'Voice Assignment Report',
+      description: 'Coverage, source, and consent',
+      format: 'PDF · CSV',
+      requirement: 'Human approvals and production evidence are required',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-4',
+      iconText: 'PDF',
+      lastExport: 'Never',
+    },
+    {
+      id: 'images',
+      name: 'Starting-Image Manifest',
+      description: 'Prompts, candidates, and approvals',
+      format: 'JSON · CSV',
+      requirement: 'Human approvals and production evidence are required',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-0',
+      iconText: 'JSON',
+      lastExport: 'Never',
+    },
+    {
+      id: 'json',
+      name: 'Storyboard JSON',
+      description: 'Canonical structured Phase A package',
+      format: 'JSON',
+      requirement: 'Valid hierarchy',
+      version: 'v1 live',
+      ready: true,
+      href: jsonUrl,
+      statusLabel: 'Ready',
+      iconClass: 'export-1',
+      iconText: 'JSON',
+      lastExport: 'On demand',
+    },
+    {
+      id: 'outline',
+      name: 'Chapter / Scene Outline',
+      description: 'Narrative hierarchy and timing',
+      format: 'PDF · DOCX',
+      requirement: 'Story structure present',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-2',
+      iconText: 'PDF',
+      lastExport: 'Never',
+    },
+    {
+      id: 'prompts',
+      name: 'Prompt Package',
+      description: 'Image, video, negative, and continuity prompts',
+      format: 'ZIP · JSON',
+      requirement: 'Resolve blocked shot',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-3',
+      iconText: 'ZIP',
+      lastExport: 'Never',
+    },
+    {
+      id: 'gaps',
+      name: 'Model Gap Report',
+      description: 'Installed and missing dependencies',
+      format: 'PDF · JSON',
+      requirement: 'Available now',
+      version: 'v1',
+      ready: true,
+      statusLabel: 'Ready',
+      iconClass: 'export-4',
+      iconText: 'PDF',
+      lastExport: 'Planning package',
+    },
+    {
+      id: 'workflow',
+      name: 'Workflow Assignment Report',
+      description: 'Per-shot deterministic workflow plan',
+      format: 'PDF · CSV',
+      requirement: 'Acknowledge missing checkpoint',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-0',
+      iconText: 'PDF',
+      lastExport: 'Never',
+    },
+    {
+      id: 'continuity',
+      name: 'Continuity Report',
+      description: 'Links and visual consistency checks',
+      format: 'PDF',
+      requirement: 'Fix remaining continuity gaps',
+      version: '—',
+      ready: false,
+      statusLabel: 'Blocked',
+      iconClass: 'export-1',
+      iconText: 'PDF',
+      lastExport: 'Never',
+    },
+  ]
+
+  const recordDownload = (name: string) => {
+    setHistory((prev) => [{ name, time: 'Just now', status: 'Ready' }, ...prev].slice(0, 12))
+  }
+
+  const generate = (item: ExportCard) => {
+    if (!item.ready) {
+      setBlocked(item)
+      return
+    }
+    setRunning(item.id)
+    window.setTimeout(() => {
+      setRunning('')
+      if (item.href) {
+        window.open(item.href, '_blank', 'noopener')
+      }
+      recordDownload(item.name)
+    }, 400)
+  }
+
   return (
-    <div className="panel">
-      <div className="panel-title">
+    <div className="page">
+      <div className="page-title">
         <div>
-          <h2>Planning exports</h2>
-          <p>
-            These exports contain the stored planning hierarchy for story{' '}
-            <span className="mono">{data.story.id}</span>. PDF, EDL, render package, and media outputs
-            remain unavailable because Phase 1 planning does not render.
-          </p>
+          <span className="eyebrow">PHASE A ARTIFACTS</span>
+          <h1>Exports</h1>
+          <p>Package the current structured production plan for review, handoff, or archive.</p>
+        </div>
+        <div className="page-actions">
+          <label className="inline-select">
+            Scope
+            <select value={scope} onChange={(event) => setScope(event.target.value)} aria-label="Export scope">
+              <option>Full project</option>
+              <option>Chapter 1</option>
+              <option>Selected scene</option>
+              <option>Approved shots only</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn secondary"
+            title="Export links fetch stored planning data only — no render or encode."
+          >
+            Export behavior
+          </button>
         </div>
       </div>
 
-      <div className="story-actions">
-        <a className="primary-button touch-target" href={jsonUrl}>
-          Storyboard JSON
-        </a>
-        <a className="secondary-button touch-target" href={csvUrl}>
-          Shot list CSV
-        </a>
-        <button
-          type="button"
-          className="ghost-button touch-target"
-          disabled
-          aria-disabled="true"
-          title="PDF export is a future phase"
+      <div className="export-banner">
+        <div>
+          <span className="export-ring" aria-hidden="true">{readinessPct}%</span>
+          <span>
+            <b>Production package readiness</b>
+            <small>
+              {readiness
+                ? readiness.ready
+                  ? 'Planning readiness gates pass for this story'
+                  : `${blocking.length} required gates still block the final manifest`
+                : 'Readiness not loaded for this session'}
+            </small>
+          </span>
+        </div>
+        <div
+          className="progress"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={readinessPct}
         >
-          PDF export — future phase
-        </button>
-        <button
-          type="button"
-          className="ghost-button touch-target"
-          disabled
-          aria-disabled="true"
-          title="EDL export is a future phase"
-        >
-          EDL export — future phase
-        </button>
-        <button
-          type="button"
-          className="ghost-button touch-target"
-          disabled
-          aria-disabled="true"
-          title="Render packages are unavailable while rendering is disabled"
-        >
-          Render package — disabled
+          <i style={{ width: `${readinessPct}%`, display: 'block', height: '100%' }} />
+        </div>
+        <button type="button" onClick={() => setShowBlockers((open) => !open)}>
+          {showBlockers ? 'Hide blockers' : 'View exact blockers'} →
         </button>
       </div>
 
-      <div className="notice info" style={{ marginTop: 16 }} role="status">
-        Export links point at the live API base. Opening them performs a download/fetch only — no
-        render, queue, or media encode is started.
+      {showBlockers ? (
+        <div className="panel" style={{ marginBottom: 10 }}>
+          {!blocking.length ? (
+            <p className="form-hint" style={{ margin: 0 }}>
+              No blocking readiness reasons reported.
+            </p>
+          ) : (
+            <ul className="kv-list">
+              {blocking.map((reason) => (
+                <li key={`${reason.code}-${reason.entity_id ?? 'none'}-${reason.message}`}>
+                  <span>{reason.code}</span>
+                  <strong>{reason.message}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+
+      <div className="export-layout">
+        <div className="export-grid">
+          {cards.map((item) => (
+            <article key={item.id}>
+              <header>
+                <span className={`export-icon ${item.iconClass}`} aria-hidden="true">
+                  {item.iconText}
+                </span>
+                <span className="status-pill" data-status={item.ready ? 'ready' : 'blocked'}>
+                  {item.statusLabel}
+                </span>
+              </header>
+              <h3>{item.name}</h3>
+              <p>{item.description}</p>
+              <dl>
+                <div>
+                  <dt>Format</dt>
+                  <dd>{item.format}</dd>
+                </div>
+                <div>
+                  <dt>Requirement</dt>
+                  <dd>{item.requirement}</dd>
+                </div>
+                <div>
+                  <dt>Last export</dt>
+                  <dd>{item.lastExport}</dd>
+                </div>
+                <div>
+                  <dt>Version</dt>
+                  <dd>{item.version}</dd>
+                </div>
+              </dl>
+              <footer>
+                <span>{scope}</span>
+                <button
+                  type="button"
+                  className={item.ready ? 'btn primary' : 'btn secondary'}
+                  disabled={running === item.id}
+                  onClick={() => generate(item)}
+                  title={item.ready ? `Generate ${item.name}` : item.requirement}
+                >
+                  {running === item.id ? 'Generating…' : item.ready ? 'Generate export' : 'Generate export'}
+                  {!item.ready ? ' 🔒' : ''}
+                </button>
+              </footer>
+            </article>
+          ))}
+        </div>
+
+        <aside className="history-panel">
+          <header>
+            <div>
+              <span className="eyebrow">EXPORT HISTORY</span>
+              <h2>Recent packages</h2>
+            </div>
+          </header>
+
+          {history.map((entry, index) => (
+            <button
+              type="button"
+              key={`${entry.name}-${index}`}
+              onClick={() => {
+                if (entry.name.includes('JSON')) window.open(jsonUrl, '_blank', 'noopener')
+                else if (entry.name.includes('CSV') || entry.name.includes('Shot List')) {
+                  window.open(csvUrl, '_blank', 'noopener')
+                }
+              }}
+            >
+              <span className="history-file" aria-hidden="true">
+                ↓
+              </span>
+              <span>
+                <b>{entry.name}</b>
+                <small>
+                  {entry.time} · {scope}
+                </small>
+              </span>
+              <span className="status-pill" data-status={entry.status.toLowerCase()}>
+                {entry.status}
+              </span>
+            </button>
+          ))}
+
+          <button type="button" className="btn quiet" onClick={() => setHistory([])}>
+            Clear local history
+          </button>
+          {!history.length ? <p className="history-empty">No exports in this browser session.</p> : null}
+
+          <div className="prototype-note">
+            <span aria-hidden="true">🔒</span>
+            <p>
+              <b>Prototype package</b>
+              Downloads for live JSON/CSV hit the backend. PDF, ZIP, and media packages remain simulations until those
+              phases are enabled.
+            </p>
+          </div>
+        </aside>
       </div>
 
-      <ul className="kv-list" style={{ marginTop: 16 }}>
-        <li>
-          <span>JSON</span>
-          <strong className="mono">{jsonUrl}</strong>
-        </li>
-        <li>
-          <span>CSV</span>
-          <strong className="mono">{csvUrl}</strong>
-        </li>
-        <li>
-          <span>PDF available</span>
-          <strong>{links.pdf_available ? 'Yes' : 'No'}</strong>
-        </li>
-        <li>
-          <span>Render package</span>
-          <strong>{links.render_package_available ? 'Yes' : 'No'}</strong>
-        </li>
-      </ul>
+      {blocked ? (
+        <div className="phase-modal-backdrop" role="presentation" onClick={() => setBlocked(null)}>
+          <div
+            className="phase-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="blocked-export-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <h3 id="blocked-export-title">{blocked.name} is not ready</h3>
+              <button type="button" aria-label="Close" onClick={() => setBlocked(null)}>
+                ×
+              </button>
+            </header>
+            <div className="phase-iteration-form">
+              <p>{blocked.requirement}</p>
+              {blocking.slice(0, 4).map((reason) => (
+                <div key={reason.code} className="form-hint">
+                  <b>{reason.code}</b> — {reason.message}
+                </div>
+              ))}
+              <div className="modal-actions">
+                <button type="button" className="primary-button" onClick={() => setBlocked(null)}>
+                  Return to exports
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
