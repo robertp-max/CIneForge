@@ -782,7 +782,12 @@ def _version_count(db: Session, phase_id: UUID) -> int:
 
 
 def _phase_read(db: Session, phase: ProductionPhase) -> ProductionPhaseRead:
-    version = _latest_version(db, phase.id)
+    # Phase 1: prefer the latest *script package* even if a baseline/snapshot
+    # was retained later — UI needs package fields, not an empty narrative shell.
+    if phase.phase_number == 1:
+        version = _latest_phase_one_package(db, phase.id) or _latest_version(db, phase.id)
+    else:
+        version = _latest_version(db, phase.id)
     qa = _latest_qa(db, version.id) if version is not None else None
     latest = None
     if version is not None:

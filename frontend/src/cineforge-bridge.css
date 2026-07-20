@@ -4,13 +4,6 @@
  * Does not reintroduce the legacy dashboard look.
  */
 
-/* PIXEL html/body: lock font stack to Sites Inter → system UI (gold-globals).
- * gold-ai-studio-theme loads between globals and this bridge; keep parity. */
-html,
-body {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-}
-
 #root {
   height: 100%;
 }
@@ -57,14 +50,13 @@ body {
   border: 1px solid var(--line-2);
 }
 
-/* Map old CineForge button utilities onto Gold .btn language.
-   Primary = blue mint (kill green #d3e3fd from gold-globals). */
+/* Map old CineForge button utilities onto Gold .btn language */
 .primary-button {
   height: 32px;
   border-radius: 7px;
-  border: 1px solid #d3e3fd;
-  background: #d3e3fd;
-  color: #041e49;
+  border: 1px solid #e0f5e9;
+  background: #e0f5e9;
+  color: #152019;
   font-weight: 650;
   font-size: 9px;
   display: inline-flex;
@@ -91,17 +83,19 @@ body {
   white-space: nowrap;
 }
 
-/* Kill green .btn.primary — blue mint fill */
+.btn.primary {
+  background: #e0f5e9;
+  border-color: #e0f5e9;
+  color: #152019;
+  font-weight: 650;
+}
+
+/* AI Studio theme uses blue mint — keep primary buttons aligned */
 .primary-button,
-.btn.primary,
-button.primary-button,
-button.btn.primary,
-a.primary-button,
-a.btn.primary {
+.btn.primary {
   background: #d3e3fd;
   border-color: #d3e3fd;
   color: #041e49;
-  font-weight: 650;
 }
 
 .page-heading-row {
@@ -135,113 +129,28 @@ a.btn.primary {
   max-width: 700px;
 }
 
-/* Modal / workspace shell only.
-   Do NOT restyle Sites history chrome here — gold-ai-studio-theme.css owns
-   .phase-iteration-bar (sticky glass bar), .viewing-history, .phase-history-banner,
-   and .phase-comparison. Early bridge overrides flattened them to 9px panels. */
+/* Production history UI kept from prior work — restyle to Gold surfaces */
+.production-contract,
+.phase-iteration-bar,
+.phase-history-banner,
+.phase-comparison,
 .phase-modal,
-.phase-workspace {
+.phase-workspace,
+.studio-commandbar {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 9px;
 }
 
-/* =============================================================================
-   Studio chrome (styles.css not loaded by Gold main.tsx)
-   PIXEL: Sites topbar owns crumbs + Save draft / Preview animatic.
-   Local commandbar is metadata-only under the Sites chrome.
-   ============================================================================= */
-
-/* Kill green topbar phase chip (.phase / PHASE A) — not part of live chrome. */
-.topbar .phase,
-.crumbs .phase {
-  display: none !important;
+.production-phase-rail > button.current {
+  border-color: color-mix(in srgb, var(--mint) 55%, #303033);
+  background: color-mix(in srgb, var(--mint) 12%, #1b1d1f);
 }
 
-.studio.page {
-  display: grid;
-  gap: 14px;
-  align-content: start;
+.phase-history-banner {
+  border-color: color-mix(in srgb, var(--purple) 45%, #303033);
+  background: color-mix(in srgb, var(--purple) 10%, #1c1e20);
 }
-
-/* Slim project meta strip — actions moved to AppShell .top-actions (Sites). */
-.studio-commandbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid #2a2d30;
-  border-radius: 9px;
-  background: #17191b;
-}
-
-.studio-commandbar > div:first-child {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.studio-commandbar strong,
-.studio-commandbar small {
-  display: block;
-}
-
-.studio-commandbar strong {
-  color: var(--text, #e8eaed);
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: -0.2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.studio-commandbar small {
-  margin-top: 2px;
-  color: var(--muted, #9aa0a6);
-  font-size: 7px;
-  line-height: 1.35;
-}
-
-.studio-commandbar .eyebrow {
-  margin-bottom: 1px;
-  font-size: 7px;
-  letter-spacing: 1.1px;
-  color: #8ab4f8;
-}
-
-.command-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* Sites overview jumps straight into the seven-phase contract — hide the
-   redundant page-level Overview header (title + Continue review) for parity. */
-.studio > .studio-header {
-  display: none;
-}
-
-/* Sites overview has no status banner under the command chrome.
-   Keep the live region for a11y but do not spend vertical space. */
-.studio-message {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* PIXEL: rail .current is gold-globals mint (not gold-ai-studio blue).
-   Authoritative rules live in the production-phase-rail block + late type scale. */
 
 .phase-modal-backdrop {
   position: fixed;
@@ -288,22 +197,6 @@ a.btn.primary {
   min-height: 100%;
 }
 
-/*
- * PIXEL: match Sites gold-globals .page padding.
- * gold-ai-studio-theme.css widens this to 28px 32px 42px; restore Sites density.
- * Sites source: .page { padding: 22px 24px 34px } (horizontal 24px).
- * Related Sites page-title: margin-bottom 18px / gap 24px.
- */
-.page {
-  min-height: 100%;
-  padding: 22px 24px 34px;
-}
-
-.page-title {
-  margin-bottom: 18px;
-  gap: 24px;
-}
-
 /* Sidebar scrim for mobile */
 .sidebar-scrim {
   position: fixed;
@@ -313,98 +206,10 @@ a.btn.primary {
   background: rgba(0, 0, 0, 0.45);
 }
 
-/*
- * PIXEL AppShell sidebar → Sites gold-ai-studio-theme
- * ----------------------------------------------------------------
- * Sites markup: <button><svg 18×18/><span>Label</span><em>?</em></button>
- * PIXEL markup: <button><span aria-hidden>glyph</span><span>Label</span><em>?</em>
- *
- * gold-globals / gold-ai-studio-theme assume the SVG icon slot. Without these
- * overrides, every span gets flex:1 + 13px type, active-tint only hits svg, and
- * the ≤1180px rail hides all spans (icons vanish). CSS only — no TSX changes.
- */
-.sidebar nav button > span[aria-hidden='true'],
-.sidebar-bottom > button:not(.gpu):not(.user) > span[aria-hidden='true'] {
-  flex: 0 0 18px;
-  width: 18px;
-  min-width: 18px;
-  max-width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
-  font-size: 13px;
-  line-height: 1;
-  letter-spacing: 0;
-  opacity: 0.95;
-}
-
-.sidebar nav button > span:not([aria-hidden='true']),
-.sidebar-bottom > button:not(.gpu):not(.user) > span:not([aria-hidden='true']) {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 13px;
-}
-
-/* Sites: .sidebar nav button.active svg { color: #a8c7fa } */
-.sidebar nav button.active > span[aria-hidden='true'],
-.sidebar-bottom > button.active > span[aria-hidden='true'] {
-  color: #a8c7fa;
-  opacity: 1;
-}
-
-/* brand-mark glyph sits in the Sites 30×30 SVG slot */
-.brand-mark {
-  flex: 0 0 30px;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  line-height: 1;
-}
-
-/* Keep badge from stretching when icon slot is fixed */
-.sidebar nav button > em {
-  flex: 0 0 auto;
-}
-
-/* Icon-rail (Sites ≤1180px): SVGs stay visible; re-show PIXEL icon spans */
-@media (max-width: 1180px) {
-  .sidebar nav button > span[aria-hidden='true'],
-  .sidebar-bottom > button:not(.gpu):not(.user) > span[aria-hidden='true'] {
-    display: inline-grid !important;
-  }
-
-  .sidebar nav button > span:not([aria-hidden='true']),
-  .sidebar-bottom > button:not(.gpu):not(.user) > span:not([aria-hidden='true']) {
-    display: none !important;
-  }
-
-  .brand-mark {
-    margin: 0 auto;
-  }
-}
-
-/* Mobile drawer restores full labels (Sites gold-globals) */
-@media (max-width: 900px) {
-  .sidebar nav button > span[aria-hidden='true'],
-  .sidebar-bottom > button:not(.gpu):not(.user) > span[aria-hidden='true'] {
-    display: inline-grid !important;
-  }
-
-  .sidebar nav button > span:not([aria-hidden='true']),
-  .sidebar-bottom > button:not(.gpu):not(.user) > span:not([aria-hidden='true']) {
-    display: block !important;
-  }
-
-  .brand-mark {
-    margin: 0;
-  }
-}
-
-/* Project cover utilities used by Projects.tsx.
- * Height/type metrics come from gold-globals (142px cover); do not min-height
- * or reposition here — gold-ai-studio-theme may inflate them; PIXEL block restores. */
+/* Project cover utilities used by Projects.tsx */
 .project-cover {
   position: relative;
+  min-height: 128px;
   width: 100%;
   border: 0;
   overflow: hidden;
@@ -418,51 +223,11 @@ a.btn.primary {
 }
 
 .cover-initials {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
   z-index: 2;
   font-weight: 700;
-}
-
-/*
- * Plan-readiness bar used by Projects.tsx.
- * Missing from gold-globals (not in Sites CSS pack) — keep Sites-dense metrics.
- */
-.project-progress {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #2b2e31;
-  margin-top: 6px;
-}
-
-.project-progress > i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #54d99b, #76e3ca);
-}
-
-/* Hyphenated data-status values from Projects.tsx status slugs */
-.status-pill[data-status='in-progress'],
-.status-pill[data-status='in progress'] {
-  color: #9abdf7;
-  background: #1d293b;
-  border-color: #293f5f;
-}
-
-.status-pill[data-status='setup'] {
-  color: #9abdf7;
-  background: #1d293b;
-  border-color: #293f5f;
-}
-
-/* Keep cover "Current project" chip readable over hero imagery */
-.project-cover > em {
-  z-index: 2;
-  backdrop-filter: blur(8px);
-}
-
-.project-cover > .status-pill {
-  z-index: 2;
 }
 
 /* Wizard / forms still used by create project */
@@ -618,35 +383,13 @@ a.btn.primary {
   color: inherit;
 }
 
-/* Portrait residual class names — fill Gold .portrait rail (132×194 / large 177), never invent 4:3. */
 .character-card-portrait,
 .selected-character-portrait {
-  position: relative;
-  overflow: hidden;
-  min-height: 0;
-  aspect-ratio: auto;
+  aspect-ratio: 4 / 3;
 }
 
-.character-card-portrait img,
-.selected-character-portrait img,
-.character-card-portrait .managed-asset-image,
-.selected-character-portrait .managed-asset-image {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  object-position: center top;
-}
-
-/* When used outside a .portrait rail, match Gold .portrait.large density */
 .selected-character-portrait {
-  height: 177px;
-  min-height: 177px;
-  max-height: 177px;
-  border-radius: 8px;
-  background: #111;
+  max-height: 360px;
 }
 
 .managed-asset-frame .avatar {
@@ -679,7 +422,7 @@ a.btn.primary {
   color: var(--mint);
 }
 
-/* Phase media galleries (CineForge layout not present in Gold CSS) */
+/* Phase media galleries (CineForge class names not present in Gold CSS) */
 .phase-media-layout {
   display: grid;
   min-width: 0;
@@ -696,52 +439,27 @@ a.btn.primary {
   padding: 15px;
 }
 
-/*
- * Phase 6 starting-frame gallery — Gold Sites pixel contract:
- *   .phase-frame-grid + .frame-art + .frame-N + .has-image
- * gold-globals owns grid metrics, frame-N art, and has-image overlays.
- * Do not restyle .phase-frame-grid here (avoids fighting Gold).
- * .phase-start-frame-grid is a legacy alias with the same Sites metrics.
- */
 .phase-start-frame-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(115px, 1fr));
-  gap: 7px;
-  margin-top: 10px;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 13px;
 }
 
 .phase-start-frame-grid article {
   min-width: 0;
-  position: relative;
-  border: 1px solid #2f3538;
-  border-radius: 7px;
-  background: #151719;
-  padding: 5px;
+  border: 1px solid #30363a;
+  border-radius: 8px;
+  background: #16181a;
+  padding: 6px;
 }
 
-/* Gold frame tiles inside Phase 6: 16:9, keep frame-N art, absolute media */
-.phase-frame-grid article > .frame-art,
-.phase-start-frame-grid article > .frame-art {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: auto;
-  min-height: 0;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  border-radius: 5px;
-  color: #7c8781;
-}
-
-/* Legacy plain div tiles (no .frame-art) — dark empty state only */
-.phase-start-frame-grid article > div:not(.frame-art):not(.status-pill):not(.managed-asset-frame) {
-  position: relative;
+.phase-start-frame-grid article > div {
   display: grid;
-  width: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   place-items: center;
-  border-radius: 5px;
+  border-radius: 6px;
   background: linear-gradient(145deg, #29312d, #202426);
   color: #7c8781;
   font: 800 0.68rem ui-monospace, monospace;
@@ -749,77 +467,34 @@ a.btn.primary {
 
 .phase-start-frame-grid .managed-asset-frame {
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   min-height: 0;
 }
 
-/* has-image: Gold absolute cover + gradient caption veil (reinforce over any residual rules) */
-.phase-frame-grid .frame-art.has-image:before,
-.phase-start-frame-grid .frame-art.has-image:before {
-  display: none;
-}
-
-.phase-frame-grid .frame-art.has-image > img,
-.phase-start-frame-grid .frame-art.has-image > img,
-.phase-start-frame-grid .managed-asset-frame img {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: block;
+.phase-start-frame-grid img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
-  background: transparent;
-  border: 0;
 }
 
-.phase-frame-grid .frame-art.has-image:after,
-.phase-start-frame-grid .frame-art.has-image:after {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 50%, rgba(5, 6, 7, 0.72));
-  pointer-events: none;
-}
-
-.phase-frame-grid .frame-art > span,
-.phase-start-frame-grid .frame-art > span {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  z-index: 3;
-  border-radius: 3px;
-  background: rgba(6, 7, 8, 0.72);
-  padding: 3px 5px;
-  font-size: 7px;
-  font-weight: 700;
-  color: #c8d0cb;
-}
-
-.phase-frame-grid article > b,
-.phase-frame-grid article > small,
-.phase-start-frame-grid article > b,
-.phase-start-frame-grid article > small {
+.phase-start-frame-grid b,
+.phase-start-frame-grid small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.phase-frame-grid article > b,
-.phase-start-frame-grid article > b {
-  margin-top: 5px;
+.phase-start-frame-grid b {
+  margin-top: 6px;
   color: #bbc3bf;
-  font-size: 7px;
+  font-size: 0.61rem;
 }
 
-.phase-frame-grid article > small,
-.phase-start-frame-grid article > small {
+.phase-start-frame-grid small {
   margin-top: 2px;
   color: #646d69;
-  font-size: 6px;
+  font-size: 0.54rem;
 }
 
 .phase-nine-panel-grid {
@@ -840,7 +515,6 @@ a.btn.primary {
 }
 
 .phase-nine-panel-grid article > div {
-  position: relative;
   display: grid;
   aspect-ratio: 4 / 5;
   overflow: hidden;
@@ -850,28 +524,17 @@ a.btn.primary {
   color: #68736d;
 }
 
-.phase-nine-panel-grid article > div.has-reference {
-  background: #111;
-  padding: 0;
-}
-
 .phase-nine-panel-grid .managed-asset-frame {
-  position: absolute;
-  inset: 0;
   border: 0;
   border-radius: 6px;
   min-height: 0;
-  aspect-ratio: auto;
+  aspect-ratio: 4 / 5;
 }
 
 .phase-nine-panel-grid img {
-  position: absolute;
-  inset: 0;
   width: 100%;
   height: 100%;
-  display: block;
   object-fit: cover;
-  object-position: center top;
 }
 
 .phase-nine-panel-grid b,
@@ -892,7 +555,6 @@ a.btn.primary {
 }
 
 .phase-character-avatar {
-  position: relative;
   display: grid;
   width: 72px;
   height: 72px;
@@ -901,19 +563,12 @@ a.btn.primary {
   border: 1px solid #3b4c43;
   border-radius: 12px;
   background: #26352e;
-  color: #b8c9e6;
+  color: #abd0bb;
   font-size: 1.05rem;
   font-weight: 850;
 }
 
-.phase-character-avatar.has-image {
-  background: #111;
-  padding: 0;
-}
-
 .phase-character-avatar .managed-asset-frame {
-  position: absolute;
-  inset: 0;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -923,13 +578,9 @@ a.btn.primary {
 }
 
 .phase-character-avatar img {
-  position: absolute;
-  inset: 0;
   width: 100%;
   height: 100%;
-  display: block;
   object-fit: cover;
-  object-position: center top;
 }
 
 .panel-title {
@@ -977,18 +628,24 @@ a.btn.primary {
   text-align: right;
 }
 
-/* status-pill base density is Sites (gold-globals). Do not re-inflate here. */
-
-@media (max-width: 1500px) {
-  /* Mirror Gold Sites .phase-frame-grid breakpoint for the legacy alias */
-  .phase-start-frame-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+.status-pill {
+  align-self: start;
+  border: 1px solid #365646;
+  border-radius: 999px;
+  background: #19261f;
+  color: var(--mint);
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 @media (max-width: 1050px) {
   .phase-media-layout {
     grid-template-columns: 1fr;
+  }
+
+  .phase-start-frame-grid {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
   }
 }
 
@@ -1006,356 +663,63 @@ a.btn.primary {
 
 /* Phase workspaces from styles.css (not loaded by Gold main.tsx) */
 
-/* PIXEL: .production-phase-rail buttons = gold-globals.css exactly.
- * Bridge loads last; defeats gold-ai-studio-theme (blue current, 92px/14px/ inflated type). */
-.production-phase-rail {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(145px, 1fr));
-  gap: 7px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  margin: 0;
-  padding: 1px 1px 5px;
-  scrollbar-width: thin;
-  scrollbar-color: #3a3e43 transparent;
-  scroll-snap-type: none;
-}
-.production-phase-rail::-webkit-scrollbar { height: 5px; }
-.production-phase-rail::-webkit-scrollbar-thumb { background: #3a3e43; border-radius: 9px; }
-
-.production-phase-rail > button {
-  position: relative; /* CineForge iteration badge anchor (functional; not in gold) */
-  min-width: 145px;
-  min-height: 72px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #17191b;
-  display: grid;
-  grid-template-columns: 25px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  padding: 10px;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  box-shadow: none;
-  transform: none;
-  transition: none;
-  scroll-snap-align: none;
-}
-
-.production-phase-rail > button:hover {
-  border-color: #4a5568;
-  background: #1b1f1d;
-  transform: none;
-}
-
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"] {
-  border-color: #5b7aa8;
-  background: #1a2434;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.07);
-}
-
-.production-phase-rail > button > span {
-  width: 24px;
-  height: 24px;
-  border: 1px solid #3b4140;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #8c9691;
-  font-size: 8px;
-  font-weight: 400;
-  flex: none;
-}
-
-.production-phase-rail > button.current > span,
-.production-phase-rail > button[aria-current="step"] > span {
-  border-color: #4c8d6b;
-  background: #224331;
-  color: #a8c7fa;
-}
-
-.production-phase-rail b,
-.production-phase-rail small,
-.production-phase-rail > button b,
-.production-phase-rail > button small {
-  display: block;
-}
-
-.production-phase-rail b,
-.production-phase-rail > button b {
-  min-height: 0;
-  font-size: 7px;
-  line-height: 1.35;
-  color: #c9cdcb;
-}
-
-.production-phase-rail small,
-.production-phase-rail > button small {
-  margin-top: 4px;
-  color: #6f7874;
-  font-size: 6px;
-  text-transform: none;
-}
-
-.production-phase-rail > button.current small,
-.production-phase-rail > button[aria-current="step"] small {
-  color: #78b793;
-}
+.production-phase-rail { display: grid; grid-template-columns: repeat(7, minmax(145px, 1fr)); gap: 7px; overflow-x: auto; margin: 0; padding: 2px 0 9px; scrollbar-width: thin; scrollbar-color: #3b4741 transparent; scroll-snap-type: x proximity; }
+.production-phase-rail > button { display: flex; min-width: 145px; min-height: 74px; align-items: flex-start; gap: 9px; border: 1px solid #2d3134; border-radius: 10px; background: #181a1c; color: inherit; padding: 10px; cursor: pointer; text-align: left; scroll-snap-align: start; transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
+.production-phase-rail > button:hover { border-color: #46504b; background: #1d2120; transform: translateY(-1px); }
+.production-phase-rail > button:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.production-phase-rail > button > span { display: grid; width: 27px; height: 27px; flex: 0 0 auto; place-items: center; border: 1px solid #3b4145; border-radius: 50%; color: #8a9297; font-size: 0.67rem; font-weight: 800; }
+.production-phase-rail > button b, .production-phase-rail > button small { display: block; }
+.production-phase-rail > button b { min-height: 38px; color: #aeb4b8; font-size: 0.66rem; line-height: 1.35; }
+.production-phase-rail > button small { margin-top: 4px; color: #6f777c; font-size: 0.59rem; text-transform: capitalize; }
+.production-phase-rail > button.current { border-color: #4b8769; background: linear-gradient(145deg, #1b2b23, #19211d); box-shadow: inset 0 0 0 1px rgba(88, 221, 161, 0.08); }
+.production-phase-rail > button.current > span { border-color: #4d9a70; background: #214733; color: var(--mint); }
+.production-phase-rail > button.current b { color: #e0ebe5; }
+.production-phase-rail > button.current small { color: #8fc4a7; }
 .production-phase-panel { min-width: 0; outline: none; }
+.production-phase-panel > .phase-one-complete-message { margin-bottom: 14px; }
 
-/* === PIXEL: .phase-empty = Gold Sites gold-globals (exact).
-   Aliases: .phase-one-empty (Phase 1) and .phase-design-empty (legacy).
-   Theme (.phase-workspace p { 11px !important }) is beaten in the late PIXEL block. */
-.phase-empty,
-.phase-one-empty,
-.panel.phase-one-empty,
-.phase-design-empty {
-  min-height: 110px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin: 0;
-  padding: 18px;
-  border: 1px dashed #39413d;
-  border-radius: 8px;
-  background: #171a18;
-  text-align: left;
-  box-shadow: none;
-}
-.phase-empty > span,
-.phase-one-empty > span,
-.phase-design-empty > span {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  /* AI studio blue — not forest-green #223229 / #8bc4a4 */
-  background: #24344f;
-  color: #a8c7fa;
-}
-.phase-empty h3,
-.phase-empty b,
-.phase-empty p,
-.phase-one-empty h3,
-.phase-one-empty b,
-.phase-one-empty p,
-.phase-design-empty h3,
-.phase-design-empty b,
-.phase-design-empty p {
-  margin: 0;
-}
-.phase-empty b,
-.phase-empty h3,
-.phase-one-empty b,
-.phase-one-empty h3,
-.phase-design-empty b,
-.phase-design-empty h3 {
-  font-size: 9px;
-  font-weight: 650;
-  color: inherit;
-}
-.phase-empty p,
-.phase-one-empty p,
-.phase-design-empty p {
-  max-width: 540px;
-  margin-top: 4px;
-  color: #737c77;
-  font-size: 7px;
-  line-height: 1.5;
-}
+.phase-one-complete-message { display: flex; align-items: center; gap: 13px; border: 1px solid #3b7055; border-radius: 11px; background: linear-gradient(90deg, #192a21, #1a2420); padding: 14px 16px; }
+.phase-one-complete-message > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #2b6145; color: #b9f0d2; }
+.phase-one-complete-message b { color: #dcece3; }
+.phase-one-complete-message p { margin: 4px 0 0; color: #8da397; font-size: 0.72rem; }
 
-/* Phase 1 metrics use Gold Sites .phase-metrics.six / .phase-metric (see PIXEL block).
-   Keep QA tint utilities on .phase-metric values.
-   Kill green mint on .qa-pass — force AI Studio blue (#a8c7fa). */
-.phase-metric .qa-pass,
-.phase-one-metrics .qa-pass,
-.qa-pass {
-  color: #a8c7fa !important;
-}
-.phase-metric .qa-fail,
-.phase-one-metrics .qa-fail,
-.qa-fail {
-  color: #f0a19c;
-}
+.phase-one-empty { display: flex; align-items: center; gap: 14px; }
+.phase-one-empty > span { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #25292c; color: #858d92; }
+.phase-one-empty h3, .phase-one-empty p { margin: 0; }
+.phase-one-empty p { margin-top: 5px; color: var(--muted); }
 
-/*
- * Map .phase-one-review-panel / .phase-one-document → Gold Sites .phase-document
- * (compact 7–8px type, mint eyebrows/labels, tight grid padding).
- */
-.phase-one-review-panel,
-.panel.phase-one-review-panel {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding: 13px;
-  border: 1px solid #2e3336;
-  border-radius: 9px;
-  background: #181a1c;
-  overflow: hidden;
-}
-.phase-one-review-panel > .panel-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0;
-  padding: 0 0 10px;
-  border-bottom: 1px solid #2b3033;
-}
-.phase-one-review-panel > .panel-title .eyebrow {
-  display: block;
-  color: #8ab0e8;
-  font-size: 7px;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-}
-.phase-one-review-panel > .panel-title h2 {
-  margin: 4px 0 0;
-  font-size: 16px;
-  letter-spacing: -0.3px;
-  color: #e8ecea;
-}
-.phase-one-review-panel > .panel-title p {
-  margin: 5px 0 0;
-  color: #9aa29e;
-  font-size: 8px;
-  line-height: 1.6;
-}
-.phase-one-document {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.phase-one-document > section {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.phase-one-document > section > span,
-.phase-one-document .phase-one-lists section > span,
-.phase-one-document details summary,
-.phase-one-document .phase-one-speech b {
-  display: block;
-  color: #8ab0e8;
-  font-size: 7px;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-}
-.phase-one-document > section h3 {
-  margin: 4px 0 0;
-  font-size: 16px;
-  color: #e8ecea;
-}
-.phase-one-document > section p {
-  margin: 5px 0 0;
-  color: #9aa29e;
-  font-size: 8px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-.phase-one-document details {
-  margin: 0;
-  padding-top: 10px;
-  border: 0;
-  border-top: 1px solid #2b3033;
-}
-.phase-one-document summary {
-  cursor: pointer;
-  margin: 0;
-  padding: 0;
-  color: #8ab0e8;
-  font-size: 7px;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-  list-style: none;
-}
-.phase-one-document summary::-webkit-details-marker { display: none; }
-.phase-one-prose,
-.phase-one-document pre {
-  margin: 5px 0 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #9aa29e;
-  font: inherit;
-  font-size: 8px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.phase-one-document pre {
-  max-height: 560px;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #3a4540 transparent;
-}
-/* Grid cards ≈ Gold .phase-document-grid article */
-.phase-one-speech {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
-  border: 0;
-}
-.phase-one-speech > div {
-  min-width: 0;
-  border: 1px solid #2b3033;
-  border-radius: 7px;
-  background: #151719;
-  padding: 10px;
-}
-.phase-one-speech > div:first-child { border: 1px solid #2b3033; }
-.phase-one-speech p {
-  margin: 5px 0 0;
-  color: #9aa29e;
-  font-size: 8px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-.phase-one-lists {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 0;
-  border: 0;
-}
-.phase-one-lists section {
-  min-width: 0;
-  margin: 0;
-  padding: 10px;
-  border: 1px solid #2b3033;
-  border-radius: 7px;
-  background: #151719;
-}
-.phase-one-lists section + section { border-left: 1px solid #2b3033; }
-.phase-one-lists ol,
-.phase-one-lists ul {
-  margin: 5px 0 0;
-  padding-left: 16px;
-}
-.phase-one-lists li {
-  margin-top: 5px;
-  color: #9aa29e;
-  font-size: 8px;
-  line-height: 1.5;
-}
+.phase-one-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: #17191b; }
+.phase-one-metrics article { min-width: 0; border-left: 1px solid var(--line); padding: 12px 14px; }
+.phase-one-metrics article:first-child { border: 0; }
+.phase-one-metrics span, .phase-one-metrics b { display: block; }
+.phase-one-metrics span { color: #717980; font-size: 0.65rem; text-transform: uppercase; }
+.phase-one-metrics b { overflow: hidden; margin-top: 5px; color: #dfe3e5; font-size: 0.95rem; text-overflow: ellipsis; white-space: nowrap; }
+.phase-one-metrics .qa-pass { color: var(--mint); }
+.phase-one-metrics .qa-fail { color: #f0a19c; }
+
+.phase-one-review-panel { padding: 0; }
+.phase-one-review-panel > .panel-title { padding: 18px 20px 14px; }
+.phase-one-review-panel > .panel-title h2 { margin: 4px 0; }
+.phase-one-document { border-top: 1px solid var(--line); }
+.phase-one-document > section { border-bottom: 1px solid #2b2f32; padding: 16px 20px; }
+.phase-one-document > section > span, .phase-one-document .phase-one-lists section > span { color: #78b494; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.12em; }
+.phase-one-document > section h3 { margin: 7px 0 0; font-size: 1.2rem; }
+.phase-one-document > section p { margin: 7px 0 0; color: #bec4c7; line-height: 1.65; }
+.phase-one-document details { border-bottom: 1px solid #2b2f32; }
+.phase-one-document summary { cursor: pointer; color: #d4d8da; padding: 13px 20px; font-size: 0.8rem; font-weight: 800; }
+.phase-one-prose, .phase-one-document pre { margin: 0; border-top: 1px solid #292d30; background: #16181a; color: #b7bdc1; padding: 18px 20px; font: inherit; font-size: 0.76rem; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.phase-one-document pre { max-height: 560px; overflow: auto; color: #ced3d5; scrollbar-width: thin; scrollbar-color: #3a4540 transparent; }
+.phase-one-speech { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #292d30; }
+.phase-one-speech > div { border-left: 1px solid #292d30; padding: 16px 20px; }
+.phase-one-speech > div:first-child { border: 0; }
+.phase-one-speech p { color: #aeb5b8; font-size: 0.76rem; line-height: 1.65; white-space: pre-wrap; }
+.phase-one-lists { gap: 0; border-top: 0; }
+.phase-one-lists section { padding: 18px 20px; }
+.phase-one-lists section + section { border-left: 1px solid #292d30; }
+.phase-one-lists li { margin-top: 8px; color: #aeb5b8; font-size: 0.74rem; line-height: 1.5; }
 
 .phase-one-editor { display: grid; gap: 14px; border-top: 1px solid var(--line); padding: 20px; }
-/* Sites phase field labels = 7px mint uppercase (PIXEL block reasserts under .studio). */
-.phase-one-editor label { display: grid; gap: 6px; color: #8ab0e8; font-size: 7px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; }
+.phase-one-editor label { display: grid; gap: 6px; color: #c6cbce; font-size: 0.72rem; font-weight: 800; }
 .phase-one-editor input, .phase-one-editor textarea { width: 100%; border: 1px solid #393e42; border-radius: 8px; background: #191c1e; color: #e1e4e5; padding: 10px 11px; }
 .phase-one-editor textarea { min-height: 86px; resize: vertical; line-height: 1.5; }
 .phase-one-editor textarea.tall { min-height: 180px; }
@@ -1366,7 +730,7 @@ a.btn.primary {
 .phase-one-evidence .panel { padding: 18px; }
 .phase-qa-checks { display: grid; gap: 8px; margin: 13px 0 0; padding: 0; list-style: none; }
 .phase-qa-checks li { display: flex; gap: 9px; border: 1px solid #30353a; border-radius: 8px; padding: 9px; }
-.phase-qa-checks li > span { display: grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #24344f; color: #9bb6df; font-size: 0.7rem; }
+.phase-qa-checks li > span { display: grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #27302c; color: #80b899; font-size: 0.7rem; }
 .phase-qa-checks li.failed > span { background: #3b2627; color: #e99894; }
 .phase-qa-checks b { color: #c8cdcf; font-size: 0.72rem; }
 .phase-qa-checks p { margin: 3px 0 0; color: #7f878c; font-size: 0.67rem; line-height: 1.45; }
@@ -1380,22 +744,22 @@ a.btn.primary {
 .baseline-result p, .baseline-result small { color: #8f879a; font-size: 0.68rem; line-height: 1.45; }
 
 /* Seven-phase UI/UX workspaces. Later phases are inspectable without invoking production. */
-.phase-preview-workspace { display: grid; min-width: 0; gap: 12px; }
+.phase-preview-workspace { display: grid; min-width: 0; gap: 14px; }
 .phase-preview-header { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 24px; border: 1px solid #30373a; border-radius: 13px; background: linear-gradient(135deg, #1c2120, #181a1c 62%); padding: 20px; }
 .phase-preview-header > div:first-child { min-width: 0; }
 .phase-preview-header h2 { margin: 7px 0 6px; color: #edf1ef; font-size: clamp(1.25rem, 2vw, 1.65rem); }
 .phase-preview-header p { max-width: 820px; margin: 0; color: #929b97; font-size: 0.78rem; line-height: 1.6; }
 .phase-preview-header-meta { display: grid; min-width: 190px; flex: 0 0 auto; justify-items: end; gap: 7px; }
 .phase-preview-header-meta > small { color: #737c78; font-size: 0.64rem; text-transform: capitalize; }
-.design-available-pill, .phase-source-pill { display: inline-flex; align-items: center; border: 1px solid #4a5f7d; border-radius: 999px; background: #1e2a3c; color: #a8c7fa; padding: 6px 10px; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.design-available-pill, .phase-source-pill { display: inline-flex; align-items: center; border: 1px solid #47765e; border-radius: 999px; background: #1c3025; color: #9ad1b2; padding: 6px 10px; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
 .phase-source-pill { border-color: #4f485d; background: #26232d; color: #b5a8c9; }
 .phase-preview-actions, .phase-footer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .phase-preview-actions button { min-height: 34px; border: 1px solid #383f3c; border-radius: 7px; background: #202523; color: #bac3be; padding: 6px 9px; font-size: 0.65rem; font-weight: 750; }
-.phase-preview-actions button:hover { border-color: #5b7aa8; color: #e4eaf4; }
+.phase-preview-actions button:hover { border-color: #52715f; color: #e0ebe5; }
 
-.phase-design-disclosure { display: flex; align-items: center; gap: 12px; border: 1px solid #3d4a5c; border-radius: 10px; background: #1b2320; padding: 11px 13px; }
-.phase-design-disclosure > span { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #24344f; color: #9bb6df; }
-.phase-design-disclosure b { color: #d0d8e6; font-size: 0.72rem; }
+.phase-design-disclosure { display: flex; align-items: center; gap: 12px; border: 1px solid #3d4c45; border-radius: 10px; background: #1b2320; padding: 11px 13px; }
+.phase-design-disclosure > span { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #263a30; color: #8fc7a7; }
+.phase-design-disclosure b { color: #cfddd5; font-size: 0.72rem; }
 .phase-design-disclosure p { margin: 3px 0 0; color: #7f8e86; font-size: 0.67rem; line-height: 1.45; }
 
 .phase-workspace-metrics { display: grid; overflow: hidden; border: 1px solid #303539; border-radius: 11px; background: #17191b; }
@@ -1410,37 +774,39 @@ a.btn.primary {
 
 .phase-subheading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .phase-subheading > div { min-width: 0; }
-.phase-subheading > span, .phase-subheading > div > span { color: #8ab0e8; font-size: 0.59rem; font-weight: 850; letter-spacing: 0.11em; }
-.phase-subheading h3,
-.phase-subheading h4 { margin: 5px 0 3px; color: #dfe4e1; font-size: 0.95rem; }
+.phase-subheading > span, .phase-subheading > div > span { color: #73b18f; font-size: 0.59rem; font-weight: 850; letter-spacing: 0.11em; }
+.phase-subheading h3 { margin: 5px 0 3px; color: #dfe4e1; font-size: 0.95rem; }
 .phase-subheading p { margin: 0; color: #7c8581; font-size: 0.68rem; line-height: 1.5; }
 .phase-subheading > b { flex: 0 0 auto; color: #a5afaa; font-size: 0.72rem; }
 .phase-evidence-pill { display: inline-flex; width: fit-content; align-items: center; border: 1px solid #414a46; border-radius: 999px; background: #202624; color: #9da7a2; padding: 4px 7px; font-size: 0.58rem; font-style: normal; text-transform: capitalize; }
-/* .phase-design-empty → Sites .phase-empty (defined with PIXEL block above). */
+.phase-design-empty { display: flex; min-height: 140px; align-items: center; justify-content: center; gap: 12px; border: 1px dashed #3a4144; border-radius: 10px; background: #181a1c; padding: 24px; text-align: left; }
+.phase-design-empty > span { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #252a2d; color: #7b858a; }
+.phase-design-empty b { color: #c4cbce; }
+.phase-design-empty p { max-width: 580px; margin: 4px 0 0; color: #747d82; font-size: 0.7rem; line-height: 1.5; }
 
-.phase-segmentation-layout, .phase-prompt-layout, .phase-location-layout, .phase-media-layout, .phase-assembly-layout { display: grid; min-width: 0; gap: 10px; }
-.phase-segmentation-layout { grid-template-columns: 235px minmax(0, 1fr); }
-.phase-scene-browser, .phase-shot-planner, .phase-character-list, .phase-character-profile, .phase-nine-panel, .phase-location-catalog, .phase-location-profile, .phase-key-assets, .phase-key-assets-panel, .phase-package-list, .phase-prompt-inspector, .phase-workflow-evidence, .phase-media-layout > section, .phase-media-summary, .phase-voice-board, .phase-mapping-board, .phase-preview-monitor, .phase-assembly-timeline, .phase-final-qa, .phase-manifest-preview { min-width: 0; border: 1px solid #303539; border-radius: 11px; background: #191b1d; padding: 15px; }
+.phase-segmentation-layout, .phase-prompt-layout, .phase-location-layout, .phase-media-layout, .phase-assembly-layout { display: grid; min-width: 0; gap: 12px; }
+.phase-segmentation-layout { grid-template-columns: 260px minmax(0, 1fr); }
+.phase-scene-browser, .phase-shot-planner, .phase-character-list, .phase-character-profile, .phase-nine-panel, .phase-location-catalog, .phase-location-profile, .phase-key-assets-panel, .phase-package-list, .phase-prompt-inspector, .phase-workflow-evidence, .phase-media-layout > section, .phase-media-summary, .phase-voice-board, .phase-mapping-board, .phase-preview-monitor, .phase-assembly-timeline, .phase-final-qa, .phase-manifest-preview { min-width: 0; border: 1px solid #303539; border-radius: 11px; background: #191b1d; padding: 15px; }
 .phase-scene-list, .phase-package-list { display: grid; max-height: 530px; overflow-y: auto; margin-top: 11px; gap: 5px; scrollbar-width: thin; scrollbar-color: #3b4741 transparent; }
-.phase-scene-list button, .phase-package-list > button, .phase-character-list > button, .phase-location-list > button, .phase-location-cards > button { display: grid; width: 100%; min-width: 0; align-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.phase-scene-list button, .phase-package-list > button, .phase-character-list > button, .phase-location-cards > button { display: grid; width: 100%; min-width: 0; align-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .phase-scene-list button { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding: 8px; }
-.phase-scene-list button:hover, .phase-scene-list button.active, .phase-package-list > button:hover, .phase-package-list > button.active, .phase-character-list > button:hover, .phase-character-list > button.active, .phase-location-list > button:hover, .phase-location-list > button.active, .phase-location-cards > button:hover, .phase-location-cards > button.active { border-color: #3d4f6a; background: #202b26; }
+.phase-scene-list button:hover, .phase-scene-list button.active, .phase-package-list > button:hover, .phase-package-list > button.active, .phase-character-list > button:hover, .phase-character-list > button.active, .phase-location-cards > button:hover, .phase-location-cards > button.active { border-color: #405149; background: #202b26; }
 .phase-scene-list button > span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 7px; background: #252a2d; color: #858e93; font-size: 0.63rem; font-weight: 800; }
 .phase-scene-list b, .phase-scene-list small, .phase-package-list b, .phase-package-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .phase-scene-list b, .phase-package-list b { color: #c5ccca; font-size: 0.69rem; }
 .phase-scene-list small, .phase-package-list small { margin-top: 3px; color: #68716d; font-size: 0.59rem; }
 .phase-shot-planner { display: grid; align-content: start; gap: 13px; }
-.phase-mini-timeline { display: flex; width: 100%; min-height: 35px; gap: 3px; margin: 10px 0; }
-.phase-mini-timeline span { display: grid; min-width: 28px; place-items: center; border-radius: 5px; background: #284b39; color: #a6d1b8; font-size: 7px; }
+.phase-mini-timeline { display: flex; width: 100%; min-height: 35px; overflow: hidden; gap: 2px; border-radius: 7px; background: #131517; padding: 3px; }
+.phase-mini-timeline span { display: grid; min-width: 30px; place-items: center; border-radius: 5px; background: linear-gradient(135deg, #2e5d47, #244336); color: #b9dec9; font-size: 0.57rem; font-weight: 800; }
 .phase-shot-table-wrap { max-height: 430px; }
-.phase-shot-table td { max-width: 330px; color: #9da5a1; font-size: 7px; line-height: 1.45; }
+.phase-shot-table td { max-width: 330px; color: #9da5a1; font-size: 0.67rem; line-height: 1.45; }
 .phase-shot-table td b, .phase-shot-table td small { display: block; }
-.phase-shot-table td b { color: #d4d9d7; font-size: 8px; }
-.phase-shot-table td small { margin-top: 2px; color: #68716d; font-size: 6px; }
+.phase-shot-table td b { color: #d4d9d7; }
+.phase-shot-table td small { margin-top: 3px; color: #6f7874; }
 
 .phase-preview-footer { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.5fr) auto; align-items: center; gap: 18px; border: 1px solid #30363a; border-radius: 11px; background: #191c1d; padding: 15px; }
 .phase-preview-footer.compact { grid-template-columns: minmax(220px, 1fr) auto; }
-.phase-preview-footer > div:first-child > span { color: #8ab0e8; font-size: 0.59rem; font-weight: 850; letter-spacing: 0.1em; }
+.phase-preview-footer > div:first-child > span { color: #70a98b; font-size: 0.59rem; font-weight: 850; letter-spacing: 0.1em; }
 .phase-preview-footer > div:first-child > b { display: block; margin-top: 5px; color: #cbd2ce; font-size: 0.76rem; }
 .phase-preview-footer > div:first-child > p { margin: 3px 0 0; color: #727b77; font-size: 0.65rem; }
 .phase-preview-footer ul { margin: 0; padding: 0; list-style: none; }
@@ -1448,21 +814,19 @@ a.btn.primary {
 .phase-preview-footer li:first-child { border-top: 0; }
 .phase-preview-footer li b { color: #aeb6b2; text-align: right; }
 
-/* Sites gold-globals: 220px cast rail + gap 10px (not legacy 250/12) */
-.phase-character-layout { display: grid; min-width: 0; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
+.phase-character-layout { display: grid; min-width: 0; grid-template-columns: 250px minmax(0, 1fr); gap: 12px; }
 .phase-character-list { display: grid; align-content: start; max-height: 600px; overflow-y: auto; gap: 6px; scrollbar-width: thin; }
 .phase-character-list > button { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 9px; padding: 8px; }
-.phase-character-list > button > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; background: linear-gradient(145deg, #315a46, #283b32); color: #c5d4ec; font-size: 0.68rem; font-weight: 850; }
+.phase-character-list > button > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; background: linear-gradient(145deg, #315a46, #283b32); color: #c1ddcd; font-size: 0.68rem; font-weight: 850; }
 .phase-character-list b, .phase-character-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .phase-character-list b { color: #cbd1ce; font-size: 0.7rem; }
 .phase-character-list small { color: #707975; font-size: 0.59rem; }
-.phase-character-list i { color: #8ab0e8; font-size: 0.6rem; font-style: normal; }
+.phase-character-list i { color: #76aa8d; font-size: 0.6rem; font-style: normal; }
 .phase-character-profile { display: grid; align-content: start; gap: 14px; }
 .phase-character-hero { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 13px; }
-.phase-character-avatar { position: relative; display: grid; width: 72px; height: 72px; overflow: hidden; place-items: center; border: 1px solid #3b4c43; border-radius: 12px; background: #26352e; color: #b8c9e6; font-size: 1.05rem; font-weight: 850; }
-.phase-character-avatar.has-image { background: #111; padding: 0; }
-.phase-character-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; object-position: center top; }
-.phase-character-hero > div:nth-child(2) > span { color: #8ab0e8; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.1em; }
+.phase-character-avatar { display: grid; width: 72px; height: 72px; overflow: hidden; place-items: center; border: 1px solid #3b4c43; border-radius: 12px; background: #26352e; color: #abd0bb; font-size: 1.05rem; font-weight: 850; }
+.phase-character-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.phase-character-hero > div:nth-child(2) > span { color: #72aa8b; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.1em; }
 .phase-character-hero h3 { margin: 5px 0 3px; font-size: 1.15rem; }
 .phase-character-hero p { margin: 0; color: #7c8581; font-size: 0.69rem; }
 .phase-character-facts, .phase-profile-field-grid, .phase-prompt-support-grid { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; border: 1px solid #2e3436; border-radius: 9px; }
@@ -1471,8 +835,8 @@ a.btn.primary {
 .phase-character-facts article:nth-child(odd), .phase-profile-field-grid article:nth-child(odd), .phase-prompt-support-grid article:nth-child(odd) { border-left: 0; }
 .phase-character-facts span, .phase-profile-field-grid span, .phase-prompt-support-grid span { color: #6eaa89; font-size: 0.58rem; font-weight: 800; text-transform: uppercase; }
 .phase-character-facts p, .phase-profile-field-grid p, .phase-prompt-support-grid p { margin: 5px 0 0; color: #929a96; font-size: 0.67rem; line-height: 1.5; }
-.phase-continuity-note { border-left: 3px solid #5b7aa8; background: #1d2521; padding: 10px 12px; }
-.phase-continuity-note span { color: #8ab0e8; font-size: 0.57rem; font-weight: 850; }
+.phase-continuity-note { border-left: 3px solid #4c7d63; background: #1d2521; padding: 10px 12px; }
+.phase-continuity-note span { color: #78af91; font-size: 0.57rem; font-weight: 850; }
 .phase-continuity-note p { margin: 5px 0; color: #a5ada9; font-size: 0.68rem; line-height: 1.5; }
 .phase-continuity-note small { color: #707975; }
 .phase-nine-panel { grid-column: 1 / -1; }
@@ -1484,195 +848,41 @@ a.btn.primary {
 .phase-nine-panel-grid b { margin-top: 6px; color: #b8c0bc; font-size: 0.59rem; }
 .phase-nine-panel-grid small { margin-top: 2px; color: #626b67; font-size: 0.53rem; }
 
-/* Phase 4 location catalog — Gold Sites density (.phase-location-list / .phase-key-assets).
-   Residual .phase-location-cards / .phase-key-assets-panel remain as aliases. */
-.phase-location-layout {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.2fr);
-  gap: 10px;
-}
-.phase-location-catalog,
-.phase-location-profile,
-.phase-key-assets,
-.phase-key-assets-panel {
-  min-width: 0;
-}
-.phase-location-list,
-.phase-location-cards {
-  display: grid;
-  gap: 3px;
-  margin-top: 9px;
-}
-.phase-location-list > button,
-.phase-location-cards > button {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  grid-template-columns: 29px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: inherit;
-  padding: 7px;
-  text-align: left;
-  cursor: pointer;
-}
-.phase-location-list > button:hover,
-.phase-location-list > button.active,
-.phase-location-cards > button:hover,
-.phase-location-cards > button.active {
-  border-color: transparent;
-  background: #292b2e;
-}
-.phase-location-list > button > span,
-.phase-location-cards > button > span {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  border-radius: 6px;
-  background: #262b2d;
-  color: #75807a;
-  font-size: 7px;
-  font-weight: 800;
-}
-.phase-location-list > button.active > span,
-.phase-location-cards > button.active > span {
-  background: #24344f;
-  color: #a8c7fa;
-}
-.phase-location-list b,
-.phase-location-list small,
-.phase-location-cards b,
-.phase-location-cards small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.phase-location-list b,
-.phase-location-cards b {
-  color: #d4d9d7;
-  font-size: 8px;
-  font-weight: 650;
-}
-.phase-location-list small,
-.phase-location-cards small {
-  margin-top: 2px;
-  color: #67706c;
-  font-size: 7px;
-}
-.phase-location-list i,
-.phase-location-cards i {
-  color: #65706a;
-  font-size: 7px;
-  font-style: normal;
-}
-.phase-location-profile {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  min-width: 0;
-}
-.phase-location-profile > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.phase-location-profile > header > div {
-  min-width: 0;
-}
-.phase-location-profile > header span:not(.status-pill) {
-  color: #8ab0e8;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-.phase-location-profile > header h4 {
-  margin: 4px 0 3px;
-  font-size: 14px;
-}
-.phase-location-profile > header p {
-  margin: 0;
-  color: #747d78;
-  font-size: 10px;
-  line-height: 1.45;
-}
-/* Residual key-asset grid alias → Sites .phase-key-assets > div */
-.phase-key-assets > div,
-.phase-key-asset-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 10px;
-}
-.phase-key-assets article,
-.phase-key-asset-grid article {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 25px minmax(0, 1fr);
-  gap: 7px;
-  border: 1px solid #2f3538;
-  border-radius: 7px;
-  background: #151719;
-  padding: 8px;
-}
-.phase-key-assets article > span,
-.phase-key-asset-grid article > span {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 5px;
-  background: #28242f;
-  color: #aa9cbc;
-  font-size: 6px;
-}
-.phase-key-assets article b,
-.phase-key-asset-grid b {
-  color: #c2c9c5;
-  font-size: 7px;
-}
-.phase-key-assets article p,
-.phase-key-asset-grid p {
-  margin: 3px 0 0;
-  color: #68716d;
-  font-size: 6px;
-  line-height: 1.4;
-}
-.phase-key-assets article small,
-.phase-key-asset-grid small {
-  grid-column: 1 / -1;
-  color: #685f74;
-  font-size: 6px;
-  text-transform: uppercase;
-}
+.phase-location-layout { grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr); }
+.phase-location-cards { display: grid; gap: 6px; margin-top: 12px; }
+.phase-location-cards > button { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 9px; padding: 9px; }
+.phase-location-cards > button > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 7px; background: #282d2f; color: #828b8f; font-size: 0.63rem; }
+.phase-location-cards b, .phase-location-cards small { display: block; }
+.phase-location-cards b { color: #c7ceca; font-size: 0.7rem; }
+.phase-location-cards small { margin-top: 3px; color: #6f7774; font-size: 0.59rem; }
+.phase-location-cards i { color: #76817b; font-style: normal; }
+.phase-location-profile { display: grid; align-content: start; gap: 14px; }
+.phase-key-asset-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+.phase-key-asset-grid article { display: grid; min-width: 0; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; border: 1px solid #30363a; border-radius: 8px; background: #17191b; padding: 10px; }
+.phase-key-asset-grid article > span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 6px; background: #28242f; color: #aa9cbc; font-size: 0.62rem; }
+.phase-key-asset-grid b { color: #c2c9c5; font-size: 0.68rem; }
+.phase-key-asset-grid p { margin: 4px 0 0; color: #6f7874; font-size: 0.61rem; line-height: 1.4; }
+.phase-key-asset-grid small { grid-column: 1 / -1; color: #685f74; font-size: 0.55rem; text-transform: uppercase; }
 
-.phase-prompt-layout { grid-template-columns: 260px minmax(0, 1fr); }
+.phase-prompt-layout { grid-template-columns: 280px minmax(0, 1fr); }
 .phase-package-list { padding: 12px; }
 .phase-package-list > button { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
-.phase-package-list > button > span { color: #8ab0e8; font: 700 0.62rem ui-monospace, SFMono-Regular, Consolas, monospace; }
+.phase-package-list > button > span { color: #79ad90; font: 700 0.62rem ui-monospace, SFMono-Regular, Consolas, monospace; }
 .phase-package-list > button > i { color: #555e5a; font-style: normal; }
-.phase-package-list > button > i.has-record { color: #8ab0e8; }
+.phase-package-list > button > i.has-record { color: #62c58f; }
 .phase-prompt-inspector { display: grid; align-content: start; gap: 13px; }
 .phase-inline-tabs { display: flex; max-width: 100%; overflow-x: auto; gap: 5px; border-bottom: 1px solid #30363a; padding-bottom: 8px; }
 .phase-inline-tabs button { min-height: 35px; flex: 0 0 auto; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #7f8884; padding: 7px 11px; font-size: 0.65rem; font-weight: 800; text-transform: capitalize; }
-/* Active tabs: blue AI studio (not forest green) — matches gold-ai-studio-theme */
-.phase-inline-tabs button:hover, .phase-inline-tabs button.active { border-color: #4b6389; background: #223047; color: #d9e6fa; }
+.phase-inline-tabs button:hover, .phase-inline-tabs button.active { border-color: #3d5a4b; background: #202a25; color: #b9d5c5; }
 .phase-inline-tabs button:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
 .phase-prompt-copy { min-height: 145px; border: 1px solid #30363a; border-radius: 8px; background: #151719; padding: 13px; }
-.phase-prompt-copy > span { color: #8ab0e8; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.09em; }
+.phase-prompt-copy > span { color: #74ad8e; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.09em; }
 .phase-prompt-copy p { margin: 8px 0 0; color: #b5bcb8; font: 0.72rem/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
 .phase-workflow-state-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .phase-workflow-state-grid article { display: flex; gap: 9px; border: 1px solid #30363a; border-radius: 8px; background: #17191b; padding: 10px; }
 .workflow-state-dot { width: 9px; height: 9px; flex: 0 0 auto; margin-top: 4px; border-radius: 50%; background: #6e7772; }
-.workflow-state-dot.available { background: #8ab0e8; }
-.workflow-state-dot.admitted { background: #81c995; box-shadow: 0 0 0 3px rgba(168, 199, 250, 0.12); }
+.workflow-state-dot.available { background: #73b88e; }
+.workflow-state-dot.admitted { background: #67c995; box-shadow: 0 0 0 3px rgba(103, 201, 149, 0.12); }
 .workflow-state-dot.benchmark-required { background: #d2a865; }
 .workflow-state-dot.blocked { background: #c27b71; }
 .workflow-state-dot.unavailable { background: #875f63; }
@@ -1682,8 +892,14 @@ a.btn.primary {
 
 .phase-media-tabs, .phase-assembly-tabs { border: 1px solid #30363a; border-radius: 9px; background: #191b1d; padding: 6px; }
 .phase-media-layout { grid-template-columns: minmax(0, 1fr) 290px; }
-/* phase-start-frame-grid / phase-frame-grid tile CSS lives above (Gold Sites has-image contract). */
-.phase-media-summary > span { color: #8ab0e8; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.1em; }
+.phase-start-frame-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; margin-top: 13px; }
+.phase-start-frame-grid article { min-width: 0; border: 1px solid #30363a; border-radius: 8px; background: #16181a; padding: 6px; }
+.phase-start-frame-grid article > div { display: grid; aspect-ratio: 16 / 9; overflow: hidden; place-items: center; border-radius: 6px; background: linear-gradient(145deg, #29312d, #202426); color: #7c8781; font: 800 0.68rem ui-monospace, monospace; }
+.phase-start-frame-grid img { width: 100%; height: 100%; object-fit: cover; }
+.phase-start-frame-grid b, .phase-start-frame-grid small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phase-start-frame-grid b { margin-top: 6px; color: #bbc3bf; font-size: 0.61rem; }
+.phase-start-frame-grid small { margin-top: 2px; color: #646d69; font-size: 0.54rem; }
+.phase-media-summary > span { color: #74ac8d; font-size: 0.58rem; font-weight: 850; letter-spacing: 0.1em; }
 .phase-media-summary h3 { margin: 6px 0 12px; }
 .phase-media-summary ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .phase-media-summary li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 1px solid #2e3436; border-radius: 8px; background: #17191b; padding: 8px; }
@@ -1695,7 +911,7 @@ a.btn.primary {
 .phase-voice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 13px; }
 .phase-voice-grid article { min-width: 0; border: 1px solid #30363a; border-radius: 9px; background: #17191b; padding: 12px; }
 .phase-audio-wave { display: flex; height: 30px; align-items: center; gap: 3px; margin-bottom: 8px; }
-.phase-audio-wave i { width: 3px; border-radius: 9px; background: #6b8fc4; }
+.phase-audio-wave i { width: 3px; border-radius: 9px; background: #4f9a70; }
 .phase-audio-wave i:nth-child(1), .phase-audio-wave i:nth-child(6) { height: 8px; }
 .phase-audio-wave i:nth-child(2), .phase-audio-wave i:nth-child(5) { height: 18px; }
 .phase-audio-wave i:nth-child(3) { height: 28px; }
@@ -1718,12 +934,12 @@ a.btn.primary {
 .phase-monitor-screen p { margin: 4px 0 0; color: #68716d; font-size: 0.64rem; }
 .phase-monitor-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; color: #737c78; font: 0.58rem ui-monospace, monospace; }
 .phase-monitor-controls > div { height: 4px; border-radius: 999px; background: #32383b; }
-.phase-monitor-controls i { display: block; width: 0; height: 100%; background: #8ab0e8; }
+.phase-monitor-controls i { display: block; width: 0; height: 100%; background: #64bb88; }
 .phase-assembly-timeline { display: grid; align-content: start; gap: 9px; }
 .assembly-track { display: grid; min-width: 0; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 8px; }
 .assembly-track > b { color: #68716d; font-size: 0.56rem; letter-spacing: 0.08em; }
 .assembly-track > div { display: flex; min-width: 0; min-height: 40px; overflow: hidden; gap: 2px; border-radius: 6px; background: #131517; padding: 3px; }
-.assembly-track > div span { display: grid; min-width: 18px; place-items: center; overflow: hidden; border-radius: 4px; background: #2a3a52; color: #9bb6df; font: 0.5rem ui-monospace, monospace; }
+.assembly-track > div span { display: grid; min-width: 18px; place-items: center; overflow: hidden; border-radius: 4px; background: #294a39; color: #9dc8af; font: 0.5rem ui-monospace, monospace; }
 .assembly-track.audio > div span { background: #33314b; color: #bcb5d5; }
 .assembly-track.empty > div span { width: 100%; background: #222629; color: #59625e; }
 .phase-final-qa-grid, .phase-manifest-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
@@ -1771,19 +987,18 @@ a.btn.primary {
   .project-preview { position: relative; top: auto; display: grid; grid-template-columns: 250px 1fr; }
   .project-preview > dl, .creation-boundary { grid-column: 1 / -1; }
   .preview-copy { align-self: center; }
-  .phase-metrics.six { grid-template-columns: repeat(3, 1fr); }
-  .phase-metrics.six .phase-metric:nth-child(4) { border-top: 1px solid var(--line); border-left: 0; }
-  .phase-metrics.six .phase-metric:nth-child(n + 5) { border-top: 1px solid var(--line); }
+  .phase-one-metrics { grid-template-columns: repeat(3, 1fr); }
+  .phase-one-metrics article:nth-child(4) { border-top: 1px solid var(--line); border-left: 0; }
+  .phase-one-metrics article:nth-child(n + 5) { border-top: 1px solid var(--line); }
   .phase-workspace-metrics.five { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .phase-workspace-metrics.five .phase-workspace-metric:nth-child(4) { border-top: 1px solid #2d3235; border-left: 0; }
   .phase-workspace-metrics.five .phase-workspace-metric:nth-child(n + 5) { border-top: 1px solid #2d3235; }
   .phase-segmentation-layout, .phase-prompt-layout, .phase-character-layout, .phase-location-layout, .phase-media-layout, .phase-assembly-layout { grid-template-columns: 1fr; }
   .phase-scene-browser, .phase-package-list, .phase-character-list { max-height: 300px; }
   .phase-nine-panel { grid-column: auto; }
-  .phase-key-assets > div,
   .phase-key-asset-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .phase-media-summary { order: -1; }
-  /* phase-frame-grid / phase-start-frame-grid breakpoints: Gold Sites (1500→3, 620→1) at file end */
+  .phase-start-frame-grid { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
   .phase-voice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .phase-preview-footer { grid-template-columns: 1fr; }
   .phase-preview-footer > button { justify-self: start; }
@@ -1817,15 +1032,16 @@ a.btn.primary {
   .wizard-error { margin-right: 20px; margin-left: 20px; }
   .production-contract-heading { display: grid; }
   .phase-count-pill { justify-self: start; }
-  .phase-metrics.six { grid-template-columns: 1fr 1fr; }
-  .phase-metrics.six .phase-metric:nth-child(odd) { border-left: 0; }
-  .phase-metrics.six .phase-metric:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .phase-one-metrics { grid-template-columns: 1fr 1fr; }
+  .phase-one-metrics article:nth-child(odd) { border-left: 0; }
+  .phase-one-metrics article:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .phase-one-speech, .phase-one-lists { grid-template-columns: 1fr; }
-  .phase-one-review-panel > .panel-title { align-items: stretch; flex-direction: column; }
+  .phase-one-speech > div, .phase-one-lists section + section { border-top: 1px solid #292d30; border-left: 0; }
+  .phase-one-review-panel > .panel-title { align-items: stretch; }
   .phase-one-editor-actions { flex-direction: column-reverse; }
   .phase-one-progress-card li > span { display: grid; }
   .production-phase-rail { grid-template-columns: repeat(7, minmax(245px, 78vw)); margin-right: -14px; padding-right: 14px; }
-  .production-phase-rail > button { min-height: 82px; }
+  .production-phase-rail > button { min-width: 0; min-height: 82px; }
   .phase-preview-header { display: grid; gap: 14px; padding: 16px; }
   .phase-preview-header-meta { min-width: 0; justify-items: start; }
   .phase-preview-actions { justify-content: flex-start; }
@@ -1844,4285 +1060,93 @@ a.btn.primary {
   .phase-character-facts, .phase-profile-field-grid, .phase-prompt-support-grid { grid-template-columns: 1fr; }
   .phase-character-facts article, .phase-profile-field-grid article, .phase-prompt-support-grid article { border-top: 1px solid #2e3436; border-left: 0; }
   .phase-character-facts article:first-child, .phase-profile-field-grid article:first-child, .phase-prompt-support-grid article:first-child { border-top: 0; }
-  .phase-nine-panel-grid { grid-template-columns: repeat(9, minmax(108px, 1fr)); }
-  .phase-key-assets > div, .phase-key-asset-grid, .phase-start-frame-grid, .phase-voice-grid, .phase-workflow-state-grid, .phase-final-qa-grid, .phase-manifest-grid { grid-template-columns: 1fr; }
-  .phase-inline-tabs button { min-height: 44px; }
-  .phase-preview-actions button, .phase-footer-actions button { min-height: 44px; }
-  .phase-footer-actions { width: 100%; justify-content: stretch; }
-  .phase-footer-actions button { flex: 1 1 160px; }
-  .phase-preview-footer.compact { grid-template-columns: 1fr; }
-  .phase-monitor-screen { min-height: 190px; flex-direction: column; }
-  .assembly-track { grid-template-columns: 50px minmax(0, 1fr); }
-  .phase-final-qa-grid article { grid-template-columns: 27px minmax(0, 1fr); }
-  .phase-final-qa-grid small { grid-column: 2; }
-}
 
-/* =============================================================================
-   Sites density aliases — map residual CineForge class names onto Gold metrics/cards
-   ============================================================================= */
-
-/* Metrics: Sites Gold (.phase-metrics / .phase-metric); legacy aliases retained */
-.phase-workspace-metrics,
-.phase-metrics {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid #2d3235;
-  border-radius: 8px;
-  background: #17191b;
-}
-
-.phase-metrics.six {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-}
-
-.phase-workspace-metrics.five,
-.phase-metrics.five {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.phase-workspace-metrics.four,
-.phase-metrics.four {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.phase-workspace-metric,
-.phase-metric {
-  min-width: 0;
-  min-height: 72px;
-  border-left: 1px solid #2d3235;
-  padding: 10px 12px;
-}
-
-.phase-workspace-metric:first-child,
-.phase-metric:first-child {
-  border-left: 0;
-}
-
-.phase-workspace-metric > span,
-.phase-workspace-metric > strong,
-.phase-workspace-metric > small,
-.phase-metric > span,
-.phase-metric > strong,
-.phase-metric > small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.phase-workspace-metric > span,
-.phase-metric > span {
-  color: #737b77;
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.phase-workspace-metric > strong,
-.phase-metric > strong {
-  margin-top: 5px;
-  color: #d9dddb;
-  font-size: 15px;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.phase-workspace-metric > small,
-.phase-metric > small {
-  margin-top: 3px;
-  color: #606965;
-  font-size: 10px;
-  white-space: normal;
-}
-
-/* Phase 2/3 cards denser to match Sites metric-grid / list density */
-.phase-preview-workspace.phase-workspace {
-  gap: 12px;
-  border: 0;
-  background: transparent;
-  padding: 0;
-}
-
-.phase-preview-header {
-  padding: 14px 16px;
-  border-radius: 11px;
-  gap: 16px;
-}
-
-.phase-preview-header h2 {
-  margin: 5px 0 4px;
-  font-size: clamp(1.05rem, 1.6vw, 1.35rem);
-}
-
-.phase-preview-header p {
-  font-size: 0.72rem;
-  line-height: 1.5;
-}
-
-/* Phase 2–4 side panels: Sites density (catalog uses Gold .phase-location-list) */
-.phase-scene-browser,
-.phase-package-list,
-.phase-character-list,
-.phase-location-catalog {
-  padding: 10px;
-}
-
-.phase-scene-list button,
-.phase-package-list > button,
-.phase-character-list > button,
-.phase-location-list > button,
-.phase-location-cards > button {
-  min-height: 42px;
-  padding: 7px 8px;
-}
-
-.phase-shot-planner,
-.phase-character-profile,
-.phase-prompt-inspector,
-.phase-location-profile,
-.phase-key-assets,
-.phase-key-assets-panel {
-  padding: 12px;
-}
-
-/* Residual field grid → Sites .phase-fact-grid density */
-.phase-profile-field-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  overflow: hidden;
-  border: 1px solid #2d3235;
-  border-radius: 7px;
-  margin-top: 12px;
-}
-.phase-profile-field-grid article {
-  min-width: 0;
-  border-top: 1px solid #2d3235;
-  border-left: 1px solid #2d3235;
-  padding: 9px;
-}
-.phase-profile-field-grid article:nth-child(-n + 2) { border-top: 0; }
-.phase-profile-field-grid article:nth-child(odd) { border-left: 0; }
-.phase-profile-field-grid span {
-  color: #8ab0e8;
-  font-size: 10px;
-  font-weight: 750;
-}
-.phase-profile-field-grid p {
-  margin: 4px 0 0;
-  color: #858e89;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-/* Table density — Gold Sites .phase-table-wrap compact 7–8px (+ residual shot-table aliases) */
-.phase-table-wrap,
-.phase-shot-table-wrap {
+/* Assembly lane readability (phase 7) */
+.assembly-track > div span {
+  flex: 1 1 0;
+  min-width: 28px;
   max-width: 100%;
-  max-height: 430px;
-  overflow: auto;
-  border: 1px solid #2d3235;
-  border-radius: 7px;
-}
-
-.phase-table-wrap table,
-.phase-shot-table-wrap table,
-.phase-shot-table {
-  width: 100%;
-  min-width: 690px;
-  border-collapse: collapse;
-}
-
-.phase-table-wrap th,
-.phase-table-wrap td,
-.phase-shot-table th,
-.phase-shot-table td {
-  border-top: 1px solid #292e31;
-  padding: 8px;
-  text-align: left;
-  font-size: 7px;
-  vertical-align: top;
-  color: #9da5a1;
-  line-height: 1.45;
-}
-
-.phase-table-wrap thead th,
-.phase-shot-table thead th {
-  border-top: 0;
-  background: #1c1f21;
-  color: #747d78;
-  font-size: 6px;
-  text-transform: uppercase;
-}
-
-.phase-table-wrap td b,
-.phase-table-wrap td small,
-.phase-shot-table td b,
-.phase-shot-table td small {
-  display: block;
-}
-
-.phase-table-wrap td b,
-.phase-shot-table td b {
-  color: #d4d9d7;
-  font-size: 8px;
-}
-
-.phase-table-wrap td small,
-.phase-shot-table td small {
-  margin-top: 2px;
-  color: #68716d;
-  font-size: 6px;
-}
-
-/* Nine-panel: Sites uses .phase-nine-panel > div; keep legacy grid class too */
-.phase-nine-panel > div:not(.phase-subheading):not(header),
-.phase-nine-panel-grid {
-  display: grid;
-  grid-template-columns: repeat(9, minmax(88px, 1fr));
-  gap: 6px;
-  overflow-x: auto;
-  margin-top: 10px;
-  padding-bottom: 3px;
-}
-
-.phase-nine-panel article {
-  min-width: 88px;
-  border: 1px solid #2e3437;
-  border-radius: 7px;
-  background: #151719;
-  padding: 5px;
-}
-
-.phase-nine-panel article > span,
-.phase-nine-panel article > div {
-  position: relative;
-  display: grid;
-  aspect-ratio: 4 / 5;
-  overflow: hidden;
-  place-items: center;
-  border-radius: 5px;
-  background: linear-gradient(145deg, #29312d, #202426);
-  color: #768079;
-  font-size: 9px;
-  font-weight: 800;
-}
-
-.phase-nine-panel article > span.has-reference,
-.phase-nine-panel article > div.has-reference {
-  position: relative;
-  background: #111;
-  padding: 0;
-}
-
-.phase-nine-panel article > span img,
-.phase-nine-panel article > div img,
-.phase-nine-panel-grid article img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  object-position: center top;
-}
-
-.phase-nine-panel article b,
-.phase-nine-panel article small {
-  display: block;
-}
-
-.phase-nine-panel article b {
-  margin-top: 5px;
-  font-size: 7px;
-  color: #b8c0bc;
-}
-
-.phase-nine-panel article small {
-  margin-top: 2px;
-  color: #616a66;
-  font-size: 6px;
-}
-
-/* Character profile portrait — Sites uses header > span.has-reference; CineForge uses .phase-character-avatar */
-.phase-character-profile > header > span.has-reference,
-.phase-character-profile .phase-character-avatar.has-image {
-  position: relative;
-  overflow: hidden;
-  background: #111;
-  padding: 0;
-}
-
-.phase-character-profile > header > span.has-reference img,
-.phase-character-profile .phase-character-avatar img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  object-position: center top;
-}
-
-/* Footer density for residual .phase-preview-footer */
-.phase-preview-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid #30363a;
-  border-radius: 11px;
-  background: #191c1d;
-  padding: 12px 14px;
-}
-
-.phase-preview-footer.compact {
-  display: flex;
-}
-
-.phase-preview-footer > div:first-child > span {
-  color: #8ab0e8;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.1em;
-}
-
-.phase-preview-footer > div:first-child > b {
-  display: block;
-  margin-top: 3px;
-  color: #cbd2ce;
-  font-size: 12px;
-}
-
-.phase-preview-footer > div:first-child > p {
-  margin: 3px 0 0;
-  color: #727b77;
-  font-size: 10px;
-}
-
-.phase-preview-footer ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 220px;
-}
-
-.phase-preview-footer li {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  border-top: 1px solid #2c3133;
-  padding: 5px 0;
-  color: #7e8783;
-  font-size: 10px;
-}
-
-.phase-preview-footer li:first-child {
-  border-top: 0;
-}
-
-.phase-preview-footer li b {
-  color: #aeb6b2;
-  text-align: right;
-}
-
-/* Assembly lane readability (phase 7) — visual duration bars, not labeled text cells */
-.assembly-track {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.assembly-track > b {
-  color: #68716d;
-  font-size: 0.56rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.assembly-track > .assembly-lane,
-.assembly-track > div {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  min-width: 0;
-  min-height: 36px;
-  overflow: hidden;
-  gap: 2px;
-  border-radius: 6px;
-  background: #131517;
-  padding: 3px;
-}
-
-/* Clip cells: keep inline flex-grow duration geometry; hide glyphs so bars stay visual */
-.assembly-track > div > span,
-.assembly-track .assembly-clip {
-  display: block !important;
-  /* Do not force flex:1 — duration is set inline (flexGrow / flex shorthand) */
-  flex-shrink: 1;
-  flex-basis: 0;
-  min-width: 0 !important;
-  max-width: none;
-  min-height: 30px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #2a3a52;
-  color: transparent;
-  font-size: 0;
-  line-height: 0;
   white-space: nowrap;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.assembly-track.audio > div > span,
-.assembly-track.audio .assembly-clip {
-  background: #33314b;
-  color: transparent;
-}
-
-.assembly-track.empty > div > span,
-.assembly-track > div > span.empty-lane,
-.assembly-track .empty-lane {
-  display: flex !important;
-  flex: 1 1 100% !important;
-  width: 100%;
-  min-width: 100% !important;
-  align-items: center;
-  justify-content: flex-start;
-  background: #222629;
-  color: #59625e !important;
-  font: 500 0.52rem / 1.2 ui-monospace, SFMono-Regular, Consolas, monospace !important;
-  padding: 0 8px;
-}
-
-@media (max-width: 1050px) {
-  .phase-workspace-metrics.five,
-  .phase-metrics.five {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .phase-workspace-metrics.five .phase-workspace-metric:nth-child(4),
-  .phase-metrics.five .phase-metric:nth-child(4) {
-    border-top: 1px solid #2d3235;
-    border-left: 0;
-  }
-
-  .phase-workspace-metrics.five .phase-workspace-metric:nth-child(n + 5),
-  .phase-metrics.five .phase-metric:nth-child(n + 5) {
-    border-top: 1px solid #2d3235;
-  }
-}
-
-@media (max-width: 720px) {
-  .phase-workspace-metrics.five,
-  .phase-workspace-metrics.four,
-  .phase-metrics.five,
-  .phase-metrics.four {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .phase-workspace-metric,
-  .phase-metric {
-    border-top: 1px solid #2d3235;
-  }
-
-  .phase-workspace-metric:nth-child(-n + 2),
-  .phase-metric:nth-child(-n + 2) {
-    border-top: 0;
-  }
-
-  .phase-workspace-metric:nth-child(odd),
-  .phase-metric:nth-child(odd) {
-    border-left: 0;
-  }
-
-  .phase-workspace-metrics.five .phase-workspace-metric:nth-child(3),
-  .phase-metrics.five .phase-metric:nth-child(3) {
-    border-top: 1px solid #2d3235;
-  }
-
-  .phase-workspace-metrics.five .phase-workspace-metric:nth-child(4),
-  .phase-metrics.five .phase-metric:nth-child(4) {
-    border-left: 1px solid #2d3235;
-  }
-}
-
-/* =============================================================================
-   Studio planning pages (stack-form / split-2 / storyboard editor)
-   Gold CSS styles .form-stack, not the CineForge .stack-form class names.
-   Bare inputs also fall through to browser-white without these rules.
-   ============================================================================= */
-
-.stack-form {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  max-width: none;
-  width: 100%;
-}
-
-.split-2 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  min-width: 0;
-}
-
-.stack-form > .split-2,
-.panel > .split-2 {
-  min-width: 0;
-}
-
-.stack-form label,
-.panel label,
-.inspector label {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  /* Sites gold-globals form labels = 8px (not AI-studio 11–12px inflation). */
-  font-size: 8px;
-  color: var(--soft, #c9cdd1);
-}
-
-.stack-form input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']),
-.stack-form textarea,
-.stack-form select,
-.panel input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']),
-.panel textarea,
-.panel select,
-.inspector input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']),
-.inspector textarea,
-.inspector select,
-.form-stack input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']),
-.form-stack textarea,
-.form-stack select {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  border: 1px solid var(--line, #2b2e32);
-  border-radius: 7px;
-  background: #1d2022;
-  color: var(--text, #eef0f2);
-  padding: 8px 10px;
-  font: inherit;
-  box-sizing: border-box;
-}
-
-.stack-form textarea,
-.panel textarea,
-.inspector textarea,
-.form-stack textarea {
-  min-height: 88px;
-  resize: vertical;
-  line-height: 1.45;
-}
-
-.stack-form input[type='checkbox'],
-.stack-form input[type='radio'],
-.panel input[type='checkbox'],
-.panel input[type='radio'],
-.inspector input[type='checkbox'],
-.inspector input[type='radio'] {
-  width: 18px;
-  min-width: 18px;
-  height: 18px;
-  min-height: 18px;
-  margin: 0;
-  accent-color: var(--mint, #a8c7fa);
-  background: #1d2022;
-}
-
-.stack-form input[type='file'],
-.panel input[type='file'],
-.form-stack input[type='file'] {
-  width: 100%;
-  min-height: 36px;
-  padding: 6px 0;
-  color: var(--muted, #858a92);
-  background: transparent;
-  border: 0;
-}
-
-.checkbox-row {
-  display: grid !important;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 10px;
-}
-
-.form-hint {
-  margin: 0;
-  color: var(--muted, #858a92);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 0.82em;
-  overflow-wrap: anywhere;
-}
-
-.eyebrow {
-  display: block;
-  font-size: 10px;
-  letter-spacing: 1.2px;
-  color: var(--mint, #a8c7fa);
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
-.page-actions,
-.story-actions,
-.inline-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.story-actions a,
-.story-actions button {
-  text-decoration: none;
-}
-
-.notice {
-  border-radius: 9px;
-  padding: 12px 14px;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.notice.info {
-  border: 1px solid rgba(168, 199, 250, 0.28);
-  background: rgba(168, 199, 250, 0.07);
-  color: #c8f6e1;
-}
-
-.notice.warning {
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  background: rgba(245, 158, 11, 0.1);
-  color: #ffe4ae;
-}
-
-.notice.success {
-  border: 1px solid rgba(71, 209, 140, 0.35);
-  background: rgba(71, 209, 140, 0.1);
-  color: #a8f3cd;
-}
-
-.notice.error {
-  border: 1px solid rgba(255, 101, 122, 0.35);
-  background: rgba(255, 101, 122, 0.1);
-  color: #ffb3bf;
-}
-
-.truth-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  border: 1px solid var(--line, #2b2e32);
-  padding: 5px 10px;
-  font-size: 11px;
-  color: var(--muted, #858a92);
-  background: rgba(255, 255, 255, 0.03);
-  white-space: nowrap;
-}
-
-.truth-pill.unknown {
-  border-color: rgba(245, 158, 11, 0.35);
-  color: var(--amber, #efb85c);
-}
-
-.truth-pill.verified {
-  border-color: rgba(71, 209, 140, 0.35);
-  color: var(--mint, #a8c7fa);
-}
-
-.truth-pill.blocked {
-  border-color: rgba(255, 101, 122, 0.35);
-  color: var(--red, #f17874);
-}
-
-.danger-button {
-  height: 32px;
-  border-radius: 7px;
-  border: 1px solid #5a3333;
-  background: #2a1d1e;
-  color: #ef9b98;
-  font-size: 9px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--line, #2b2e32);
-  border-radius: 8px;
-  background: #151719;
-}
-
-.table-wrap table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 640px;
-}
-
-.table-wrap th,
-.table-wrap td {
-  border-bottom: 1px solid #292c30;
-  padding: 10px 12px;
-  text-align: left;
-  vertical-align: top;
-  font-size: 12px;
-}
-
-.table-wrap th {
-  color: #6f747c;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: #1c1e20;
-}
-
-.table-wrap td {
-  color: var(--muted, #858a92);
-}
-
-.table-wrap tr:last-child td {
-  border-bottom: 0;
-}
-
-.table-wrap select,
-.table-wrap input:not([type='checkbox']) {
-  min-width: 120px;
-  min-height: 32px;
-}
-
-.mode-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
-  margin: 10px 0 8px;
-}
-
-.mode-option {
-  border: 1px solid var(--line, #2b2e32);
-  border-radius: 10px;
-  background: #151719;
-  color: var(--muted, #858a92);
-  padding: 12px;
-  text-align: left;
-  min-height: 64px;
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.mode-option[aria-pressed='true'],
-.mode-option.selected {
-  border-color: color-mix(in srgb, var(--mint, #a8c7fa) 55%, #303033);
-  color: var(--text, #eef0f2);
-  background: color-mix(in srgb, var(--mint, #a8c7fa) 10%, #1b1d1f);
-}
-
-.mode-option small {
-  display: block;
-  margin-top: 2px;
-  color: var(--dim, #62676f);
-  font-size: 10px;
-  word-break: break-word;
-}
-
-.people-grid article.selected-card,
-.card-grid article.selected-card,
-.selected-card {
-  border-color: color-mix(in srgb, var(--mint, #a8c7fa) 45%, #303033);
-  box-shadow: 0 0 0 1px rgba(168, 199, 250, 0.12);
-}
-
-/* =============================================================================
-   PIXEL: CharactersPage portraits — Gold Sites density
-   Gold globals already define:
-     .character-grid { 2-col, gap 9px }
-     .character-grid > button { 132px | 1fr, min-height 194px }
-     .portrait { min-height 194px, radial placeholder }
-     .portrait.large { height/min-height 177px, radius 8px }
-     .portrait.has-image { background #111; padding 10px }
-   Bridge only removes residual people-grid/4:3 overrides and fills managed frames.
-   ============================================================================= */
-
-/* If dual-classed with people-grid (legacy), keep Gold character-grid metrics */
-.people-grid.character-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-
-/* Article residual path (Voices still uses people-grid articles; characters use buttons) */
-.character-grid > article {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 9px;
-  overflow: hidden;
-  text-align: left;
-  display: grid;
-  grid-template-columns: 132px 1fr;
-  min-height: 194px;
-  gap: 0;
-  padding: 0;
-}
-
-.character-grid > article.selected-card,
-.character-grid > button.selected {
-  border-color: #66598d;
-  box-shadow: 0 0 0 1px rgba(166, 138, 240, 0.13);
-}
-
-/* ManagedAssetImage / residual frames inside a portrait rail fill the rail */
-.portrait .managed-asset-frame,
-.portrait .character-card-portrait,
-.portrait .selected-character-portrait,
-.character-grid .managed-asset-frame {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  aspect-ratio: auto !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-/* Drawer large portrait: never stretch past Gold 177px */
-.entity-drawer > .portrait.large,
-.entity-drawer .portrait.large {
-  height: 177px;
-  min-height: 177px;
-  max-height: 177px;
-  border-radius: 8px;
-}
-
-.disabled-action-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.disabled-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  border: 1px solid var(--line, #2b2e32);
-  border-radius: 10px;
-  background: #16191b;
-  padding: 12px 14px;
-  flex-wrap: wrap;
-}
-
-.disabled-action p {
-  margin: 4px 0 0;
-  color: var(--muted, #858a92);
-  font-size: 11px;
-}
-
-/* Functional storyboard editor — Gold sets .storyboard-layout { display:block } for Sites mock */
-.storyboard-layout {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  gap: 14px;
-  align-items: start;
-  min-width: 0;
-}
-
-.storyboard-layout > * {
-  min-width: 0;
-}
-
-.storyboard-layout .toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-  color: var(--muted, #858a92);
-  font-size: 12px;
-}
-
-.storyboard-layout .toolbar > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.storyboard-layout .chapter-group {
-  border: 1px solid var(--line, #2b2e32);
-  border-radius: 10px;
-  background: var(--panel, #17191b);
-  margin-bottom: 12px;
-  overflow: hidden;
-}
-
-.storyboard-layout .chapter-group > header {
-  display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  background: #1c1e20;
-  padding: 12px 14px;
-  border-bottom: 1px solid #292c30;
-}
-
-.storyboard-layout .chapter-group > header span {
-  color: var(--mint, #a8c7fa);
-  font: 700 11px ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-
-.storyboard-layout .chapter-group > header b {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 13px;
-}
-
-.storyboard-layout .chapter-group > header small {
-  color: var(--muted, #858a92);
-  font-size: 11px;
-}
-
-.storyboard-layout .chapter-group section {
-  border-top: 1px solid #292c30;
-  padding: 12px 14px;
-}
-
-.storyboard-layout .scene-name {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-  color: var(--blue, #77a7f4);
-  font: 700 11px ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-
-.storyboard-layout .scene-name small {
-  color: var(--muted, #858a92);
-  font-weight: 500;
-}
-
-.storyboard-layout .shot-row,
-.storyboard-layout .shot-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 7px;
-  padding: 0;
-  overflow: visible;
-}
-
-.storyboard-layout .shot-card {
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid #2b2e32;
-  border-radius: 7px;
-  background: #181a1c;
-  padding: 0;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  display: grid;
-  align-content: start;
-  gap: 0;
-  overflow: hidden;
-}
-
-.storyboard-layout .shot-card:hover,
-.storyboard-layout .shot-card.selected {
-  border-color: #5b7aa8;
-  background: #1a2520;
-  box-shadow: 0 0 0 1px rgba(168, 199, 250, 0.12);
-}
-
-/* Gold Sites frame thumbs: .frame-art + optional mediaUrls img via .has-image */
-.storyboard-layout .shot-card > .frame-art {
-  position: relative;
-  height: 67px;
-  border-radius: 0;
-  overflow: hidden;
-  background: #2b3235;
-}
-
-.storyboard-layout .shot-card > .frame-art.has-image:before {
-  display: none;
-}
-
-.storyboard-layout .shot-card > .frame-art > img {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.storyboard-layout .shot-card > .frame-art.has-image:after {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 50%, rgba(5, 6, 7, 0.72));
-  pointer-events: none;
-}
-
-.storyboard-layout .shot-card > .frame-art > span {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  z-index: 3;
-  display: inline-block;
-  background: rgba(6, 7, 8, 0.72);
-  padding: 3px 5px;
-  border-radius: 3px;
-  font-size: 7px;
-  font-weight: 700;
-  color: #eef0f2;
-  min-width: 0;
-  overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: calc(100% - 12px);
+  font-size: 0.48rem !important;
 }
-
-.storyboard-layout .shot-card > div:last-child {
-  padding: 7px;
-  display: grid;
-  gap: 0;
-  min-width: 0;
-}
-
-.storyboard-layout .shot-card > div:last-child > span {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  color: #777c83;
-}
-
-.storyboard-layout .shot-card > div:last-child > span > code,
-.storyboard-layout .shot-card > div:last-child > span > b {
-  display: inline;
-  font-size: 7px;
-  font-weight: 700;
-  color: #777c83;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.storyboard-layout .shot-card > div:last-child > strong {
-  display: block;
-  margin: 5px 0 7px;
-  color: var(--text, #eef0f2);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.storyboard-layout .shot-card > div:last-child > small {
-  display: block;
-  color: var(--muted, #858a92);
-  font-size: 8px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.storyboard-layout .inspector {
-  position: sticky;
-  top: 12px;
-  align-self: start;
-  border: 1px solid var(--line, #2b2e32);
-  border-radius: 10px;
-  background: var(--panel, #17191b);
-  padding: 14px;
-  max-height: calc(100dvh - 120px);
-  overflow: auto;
-}
-
-.storyboard-layout .inspector > h2 {
-  margin: 0 0 8px;
-  font-size: 14px;
-}
-
-.inspector-tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--line, #2b2e32);
-  margin: 10px 0 12px;
-  padding-bottom: 8px;
-}
-
-.inspector-tabs button {
-  border: 0;
-  background: transparent;
-  color: var(--muted, #858a92);
-  padding: 7px 10px;
-  border-radius: 7px;
-  min-height: 32px;
-  cursor: pointer;
-}
-
-.inspector-tabs button[aria-selected='true'] {
-  color: var(--mint, #a8c7fa);
-  background: rgba(168, 199, 250, 0.08);
-  font-weight: 700;
-}
-
-/* Image toolbar free-text search (Gold only styles select; match Sites control density) */
-.image-toolbar input:not([type='checkbox']):not([type='radio']):not([type='file']) {
-  min-height: 0;
-  height: 33px;
-  min-width: 140px;
-  margin: 0;
-  border: 1px solid #30343a;
-  border-radius: 6px;
-  background: #1d2022;
-  color: #d5d8db;
-  padding: 8px;
-  font-size: 9px;
-}
-
-/* Export cards (planning downloads) */
-.export-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px;
-  margin: 12px 0;
-}
-
-.export-grid article {
-  border: 1px solid var(--line, #2b2e32);
-  background: var(--panel, #17191b);
-  border-radius: 9px;
-  padding: 14px;
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-
-.export-grid article header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.export-grid h3 {
-  margin: 4px 0 0;
-  font-size: 13px;
-}
-
-.export-grid p {
-  margin: 0;
-  color: var(--muted, #858a92);
-  font-size: 11px;
-  line-height: 1.4;
-  min-height: 32px;
-}
-
-.export-grid footer {
-  border-top: 1px solid #292c30;
-  padding-top: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.export-grid .export-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  background: #202f3b;
-  color: #75a9d3;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.export-grid .export-icon.export-json {
-  background: #2b263c;
-  color: #aa8fe8;
-}
-
-.export-grid .export-icon.export-csv {
-  background: #21352b;
-  color: #69c99a;
-}
-
-.export-grid .export-icon.export-future {
-  background: #292c30;
-  color: #8a9098;
-}
-
-.kv-list .mono {
-  max-width: 55%;
-  text-align: right;
-}
-
-@media (max-width: 1050px) {
-  .split-2 {
-    grid-template-columns: 1fr;
-  }
-
-  .storyboard-layout {
-    grid-template-columns: 1fr !important;
-  }
-
-  .storyboard-layout .inspector {
-    position: static;
-    max-height: none;
-  }
-}
-
-@media (max-width: 620px) {
-  .mode-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .export-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .storyboard-layout .shot-row,
-  .storyboard-layout .shot-strip {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* === PIXEL: status-pill density = Gold Sites (wins cascade over residual theme) === */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: start;
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 7px;
-  line-height: 1;
-  white-space: nowrap;
-  border: 1px solid transparent;
-}
-
-/* === PIXEL ALIASES: local names -> Gold Sites phase system === */
-
-/* === PIXEL: .phase-empty match Gold empty (gold-globals exact).
-   Beats gold-ai-studio-theme `.phase-workspace p { font-size:11px !important }`. */
-.phase-workspace .phase-empty,
-.phase-workspace .phase-one-empty,
-.phase-workspace .phase-design-empty,
-.production-phase-panel .phase-empty,
-.production-phase-panel .phase-one-empty,
-.phase-empty,
-.phase-one-empty,
-.panel.phase-one-empty,
-.phase-design-empty {
-  min-height: 110px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 10px !important;
-  margin: 0 !important;
-  padding: 18px !important;
-  border: 1px dashed #39413d !important;
-  border-radius: 8px !important;
-  background: #171a18 !important;
-  text-align: left !important;
-  box-shadow: none !important;
-}
-.phase-workspace .phase-empty > span,
-.phase-workspace .phase-one-empty > span,
-.phase-workspace .phase-design-empty > span,
-.production-phase-panel .phase-empty > span,
-.production-phase-panel .phase-one-empty > span,
-.phase-empty > span,
-.phase-one-empty > span,
-.phase-design-empty > span {
-  display: grid !important;
-  width: 34px !important;
-  height: 34px !important;
-  flex: 0 0 auto !important;
-  place-items: center !important;
-  border-radius: 50% !important;
-  /* AI studio blue — kill forest-green empty circles */
-  background: #24344f !important;
-  color: #a8c7fa !important;
-}
-.phase-workspace .phase-empty b,
-.phase-workspace .phase-empty h3,
-.phase-workspace .phase-one-empty b,
-.phase-workspace .phase-one-empty h3,
-.phase-workspace .phase-design-empty b,
-.phase-empty b,
-.phase-empty h3,
-.phase-one-empty b,
-.phase-one-empty h3,
-.phase-design-empty b,
-.phase-design-empty h3 {
-  margin: 0 !important;
-  font-size: 9px !important;
-  font-weight: 650 !important;
-  color: inherit !important;
-  line-height: 1.35 !important;
-}
-.phase-workspace .phase-empty p,
-.phase-workspace .phase-one-empty p,
-.phase-workspace .phase-design-empty p,
-.production-phase-panel .phase-empty p,
-.production-phase-panel .phase-one-empty p,
-.phase-empty p,
-.phase-one-empty p,
-.phase-design-empty p {
-  max-width: 540px !important;
-  margin: 4px 0 0 !important;
-  color: #737c77 !important;
-  font-size: 7px !important;
-  line-height: 1.5 !important;
-}
-
-/* Sites purple disclosure (gold-globals). Reassert after theme:
-   - theme previously blue-washed border/background with notice-card
-   - .phase-workspace p { font-size:11px !important } blows up Sites 7px copy */
-.phase-preview-disclosure {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  border: 1px solid #37334b;
-  border-radius: 8px;
-  background: #211f2d;
-  color: #a68af0; /* Sites --purple, not theme #c58af9 */
-  padding: 9px 11px;
-}
-.phase-preview-disclosure > span {
-  font-size: 18px;
-  line-height: 1;
-}
-.phase-preview-disclosure b,
-.phase-preview-disclosure p {
-  display: block;
-  margin: 0;
-}
-.phase-preview-disclosure b {
-  font-size: 8px;
-}
-.phase-preview-disclosure p {
-  margin-top: 3px;
-  color: #9691a8;
-  font-size: 7px !important;
-  line-height: 1.5 !important;
-}
-
-.phase-workspace-metrics { display: grid; overflow: hidden; border: 1px solid #2d3235; border-radius: 8px; background: #17191b; }
-.phase-workspace-metrics.five { grid-template-columns: repeat(5, 1fr); }
-.phase-workspace-metrics.four { grid-template-columns: repeat(4, 1fr); }
-.phase-workspace-metric { min-width: 0; border-left: 1px solid #2d3235; padding: 10px; }
-.phase-workspace-metric:first-child { border-left: 0; }
-.phase-workspace-metric > span { display: block; color: #737b77; font-size: 7px; }
-.phase-workspace-metric > strong { display: block; margin-top: 5px; color: #d9dddb; font-size: 15px; overflow-wrap: anywhere; }
-.phase-workspace-metric > small { display: block; margin-top: 3px; color: #606965; font-size: 6px; }
-
-.phase-preview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid #292d30; padding: 2px 2px 13px; }
-.phase-preview-header h2, .phase-workspace-header h2, .phase-workspace-header h3 { margin: 5px 0 4px; font-size: 17px; letter-spacing: -.3px; }
-.phase-preview-header p, .phase-workspace-header p { max-width: 790px; margin: 0; color: #818985; font-size: 8px; line-height: 1.5; }
-.phase-workspace-meta, .phase-preview-header-meta { min-width: 155px; display: grid; justify-items: end; gap: 5px; }
-.phase-workspace-meta-pill, .design-available-pill {
-  border: 1px solid #4a5f7d; border-radius: 999px; background: #213229; color: #9bb6df;
-  padding: 4px 7px; font-size: 7px; font-weight: 750;
-}
-/* Phase 1 no longer dual-classifies with .phase-one-metrics; Gold .phase-metric rules apply. */
-
-/* Force Gold Sites phase-workspace density (globals: padding 14px, gap 12px).
-   Overrides gold-ai-studio-theme padding:18px / radius:18px. */
-.phase-workspace,
-.production-phase-panel .phase-workspace {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: #151719;
-}
-/* Body base under .studio is set in PIXEL SITES TYPE SCALE (9px) below. */
-
-/* =============================================================================
-   P02 Overview + production phases — residual CineForge class names
-   (styles.css is not loaded; Gold CSS does not define these Overview diagnostics)
-   ============================================================================= */
-
-.touch-target {
-  min-height: 44px;
-  min-width: 44px;
-}
-
-/* Planning metrics strip on Overview diagnostics */
-.studio-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 9px;
-}
-
-.studio-metrics article {
-  min-width: 0;
-  min-height: 78px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: var(--panel, #17191b);
-  padding: 12px 14px;
-}
-
-.studio-metrics span,
-.studio-metrics strong {
-  display: block;
-}
-
-.studio-metrics span {
-  color: var(--muted);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.studio-metrics strong {
-  margin-top: 7px;
-  color: var(--mint);
-  font-size: 1.2rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Duration alignment bar */
-.progress-bar {
-  height: 8px;
-  margin-top: 14px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.progress-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--mint), var(--amber, #efb85c));
-}
-
-/* Safety posture chips */
-.feature-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.feature-list li {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.02);
-  padding: 7px 11px;
-  font-size: 0.72rem;
-}
-
-/*
- * Gold Sites .gate-list targets button rows.
- * Overview readiness uses <ul class="gate-list"><li>… — restore list layout
- * without breaking any future Sites button-style gate-list usage.
- */
-.panel > .gate-list,
-.backend-diagnostics .gate-list {
-  display: grid;
-  gap: 7px;
-  list-style: none;
-  margin: 0 0 16px;
-  padding: 0;
-}
-
-.panel > .gate-list > li,
-.backend-diagnostics .gate-list > li {
-  display: grid;
-  grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-  color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.45;
-}
-
-.panel > .gate-list > li:first-child,
-.backend-diagnostics .gate-list > li:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.panel > .gate-list b,
-.backend-diagnostics .gate-list b {
-  color: var(--amber);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.72rem;
-}
-
-.gate-blocking {
-  color: var(--red);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.gate-info {
-  color: var(--mint);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* Secondary marker on incomplete retained history alerts */
-.phase-legacy-incomplete {
-  border-color: #705838;
-  background: #2a241c;
-}
-
-/* Phase create/history modals — shell chrome not present in Gold theme */
-.phase-modal {
-  border: 1px solid #3a4246;
-  border-radius: 14px;
-  background: #171a1c;
-}
-
-.phase-modal > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid #2d3336;
-  padding: 14px 16px;
-}
-
-.phase-modal > header h3 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.phase-modal > header > button {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #3a4246;
-  border-radius: 8px;
-  background: #1d2123;
-  color: #cfd4d7;
-  cursor: pointer;
-}
-
-.phase-modal > .phase-iteration-form,
-.phase-modal > .phase-history-drawer {
-  padding: 16px;
-}
-
-.phase-modal > .modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  border-top: 1px solid #2d3336;
-  margin: 0;
-  padding: 12px 16px 16px;
-}
-
-/* Assembly empty lane label (Phase 7) */
-.assembly-track .empty-lane,
-.empty-lane {
-  display: grid;
+.assembly-track > div span.empty-lane {
   width: 100%;
-  min-height: 28px;
-  place-items: center;
-  border-radius: 4px;
+  min-width: 100%;
   background: #222629;
   color: #59625e;
-  font-size: 0.55rem;
-  text-align: center;
-  padding: 0 6px;
 }
 
+/* --- responsive phase rail (Sites-like, no bloat) --- */
+@media (max-width: 1200px) {
+  .production-phase-rail {
+    grid-template-columns: repeat(7, minmax(160px, 1fr)) !important;
+  }
+  .phase-metrics.six,
+  .phase-one-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
 @media (max-width: 900px) {
-  .panel > .gate-list > li,
-  .backend-diagnostics .gate-list > li {
-    grid-template-columns: 1fr;
-    gap: 4px;
+  .production-phase-rail {
+    grid-template-columns: repeat(7, minmax(200px, 78vw)) !important;
+    overflow-x: auto !important;
   }
-
-  .gate-blocking,
-  .gate-info {
-    justify-self: start;
+  .phase-metrics.six,
+  .phase-metrics.five,
+  .phase-one-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
-}
-
-@media (max-width: 720px) {
-  .studio-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .phase-workspace-header,
+  .phase-preview-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
   }
-}
-
-@media (max-width: 480px) {
-  .studio-metrics {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* =============================================================================
-   PIXEL: Sites type scale under .studio
-   Gold Sites dense UI (gold-globals): body 9px · labels 7–8px · titles 11–17px.
-     · form field labels (form-stack / wizard / routing / stack-form) = 8px
-     · meta chips / status-pill / phase eyebrows / table th = 7px
-   Scoped to .studio so projects home / shell keep the AI workbench scale.
-   !important + .studio prefix beat gold-ai-studio-theme 10–14px inflations.
-   ============================================================================= */
-
-.studio {
-  font-size: 9px;
-  line-height: 1.45;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-}
-
-/* Body — default reading / control text (Sites .btn / crumbs = 9px).
-   phase-footer is excluded — matches Gold AI studio theme (see block below). */
-.studio p:not(.phase-footer p),
-.studio li,
-.studio td,
-.studio dd,
-.studio button:not(.icon-button):not(.phase-footer button):not(.phase-footer .btn),
-.studio .btn:not(.phase-footer .btn),
-.studio .primary-button,
-.studio .secondary-button,
-.studio .ghost-button,
-.studio input:not([type='checkbox']):not([type='radio']),
-.studio textarea,
-.studio select,
-.studio .studio-message,
-.studio .form-hint,
-.studio .notice,
-.studio .studio-commandbar strong,
-.studio .phase-empty b {
-  font-size: 9px !important;
-  line-height: 1.45 !important;
-}
-
-/* Form field labels — Sites gold-globals .form-stack / .wizard-form / routing = 8px.
-   Beats theme .phase-iteration-form label { 10px } and residual stack-form inflation. */
-.studio label,
-.studio .form-stack label,
-.studio .form-grid label,
-.studio .stack-form label,
-.studio .wizard-form label,
-.studio .routing-controls > label,
-.studio .panel label,
-.studio .inspector label,
-.studio .phase-version-nav label,
-.studio .phase-iteration-form label {
-  font-size: 8px !important;
-}
-
-/* Meta / chips / eyebrows / dense phase chrome (Sites status-pill, phase, th = 7px) */
-.studio .eyebrow,
-.studio small,
-.studio th,
-.studio dt,
-.studio .status-pill,
-.studio .status-badge,
-.studio .truth-pill,
-.studio .readiness-chip,
-.studio .phase,
-.studio .workspace-chip,
-.studio .phase-count-pill,
-.studio .design-available-pill,
-.studio .phase-source-pill,
-.studio .phase-evidence-pill,
-.studio .studio-commandbar .eyebrow,
-.studio .studio-commandbar small,
-.studio .phase-metric span,
-.studio .phase-metric small,
-.studio .phase-workspace-metric > span,
-.studio .phase-workspace-metric > small,
-.studio .phase-workspace-header .eyebrow,
-.studio .phase-workspace-meta > span,
-.studio .phase-workspace-meta > small,
-.studio .phase-subheading span,
-.studio .phase-subheading > div > span,
-.studio .phase-list > header span,
-.studio .phase-list > header b,
-.studio .phase-inspector > header span,
-.studio .phase-prompt-copy > span,
-.studio .panel-head p,
-.studio .phase-document > div > span,
-.studio .phase-document details summary,
-.studio .phase-document-grid span,
-.studio .phase-fact-grid span,
-.studio .phase-fact-grid p,
-.studio .phase-inline-tabs button,
-.studio .segmented button,
-.studio .filter-row button,
-.studio .phase-one-document > section > span,
-.studio .phase-one-document summary,
-.studio .studio-metrics span,
-.studio .phase-version-nav label > span,
-.studio .phase-iteration-form label > span,
-.studio .phase-one-editor label,
-.studio .nav-label,
-.studio .production-phase-rail > button small {
-  font-size: 7px !important;
-}
-
-/* Titles ladder 11–17px (Sites panel-head 11 → workspace header 17) */
-.studio h4,
-.studio .panel-head h2,
-.studio .empty h3 {
-  font-size: 11px !important;
-  letter-spacing: -0.2px;
-  line-height: 1.25 !important;
-}
-
-.studio h3,
-.studio .panel-title h3,
-.studio .phase-inspector > header h4,
-.studio .phase-character-profile h4,
-.studio .phase-nine-panel h4,
-.studio .phase-subheading h4,
-.studio .phase-subheading h3,
-.studio .phase-prompt-inspector h4,
-.studio .phase-location-profile h4 {
-  font-size: 12px !important;
-  letter-spacing: -0.2px;
-  line-height: 1.25 !important;
-}
-
-.studio h2,
-.studio .panel-title h2,
-.studio .phase-one-document > section h3 {
-  font-size: 14px !important;
-  letter-spacing: -0.3px;
-  line-height: 1.2 !important;
-}
-
-/* Sites phase-document title is 16px (within 11–17 ladder) */
-.studio .phase-document h4 {
-  font-size: 16px !important;
-  letter-spacing: -0.3px;
-  line-height: 1.2 !important;
-}
-
-.studio h1,
-.studio .page-header h1,
-.studio .page-title h1 {
-  font-size: 17px !important;
-  line-height: 1.15 !important;
-  letter-spacing: -0.35px;
-  font-weight: 610;
-}
-
-/* Primary workspace / production section titles (Sites 17px) */
-.studio .phase-workspace-header h2,
-.studio .phase-workspace-header h3,
-.studio .phase-preview-header h2,
-.studio .phase-one-review-panel > .panel-title h2 {
-  font-size: 17px !important;
-  letter-spacing: -0.3px !important;
-  line-height: 1.2 !important;
-  margin: 5px 0 4px !important;
-}
-
-/* Contract heading title: Sites 20px is outside the 11–17 ladder — cap at 17 */
-.studio .production-contract-heading h2 {
-  font-size: 17px !important;
-  letter-spacing: -0.35px !important;
-  line-height: 1.15 !important;
-}
-
-/* Empty-state titles stay body-weight (Sites .phase-empty b = 9px) */
-.studio .phase-empty b,
-.studio .phase-empty h3,
-.studio .phase-one-empty b,
-.studio .phase-one-empty h3,
-.studio .phase-design-empty b,
-.studio .phase-design-empty h3 {
-  font-size: 9px !important;
-  line-height: 1.35 !important;
-}
-
-/* Empty / disclosure supporting copy is label-scale 7px (not body 9) */
-.studio .phase-empty p,
-.studio .phase-one-empty p,
-.studio .phase-design-empty p,
-.studio .phase-preview-disclosure p {
-  font-size: 7px !important;
-  line-height: 1.5 !important;
-}
-
-/* Display metric values stay Sites 15px (not body) */
-.studio .phase-metric strong,
-.studio .phase-metric b,
-.studio .phase-workspace-metric > strong,
-.studio .phase-one-metrics.phase-metrics article b,
-.studio .phase-one-metrics.phase-metrics article strong,
-.studio .studio-metrics strong,
-.studio .overview-strip > div:not(.overview-actions) b {
-  font-size: 15px !important;
-  line-height: 1.2 !important;
-}
-
-/* Supporting body where Sites uses 8px denser than body 9 */
-.studio .phase-workspace-header p,
-.studio .phase-preview-header p,
-.studio .phase-one-review-panel > .panel-title p,
-.studio .phase-document p,
-.studio .phase-one-document > section p,
-.studio .phase-one-prose,
-.studio .phase-one-document pre {
-  font-size: 8px !important;
-  line-height: 1.5 !important;
-}
-
-/* Contract heading copy is Sites body 9px (not the denser 8px phase header copy) */
-.studio .production-contract-heading p {
-  font-size: 9px !important;
-  line-height: 1.5 !important;
-}
-
-.studio .phase-metric small,
-.studio .phase-workspace-metric > small {
-  font-size: 6px !important;
-}
-
-/* === PIXEL: .production-contract-heading (ProductionPhases → Sites density)
-   gold-ai-studio-theme enlarges the title (24px), forces body copy to 11px !important,
-   and widens gap to 16px. Restore Sites density: flex-end row, 20px gap, 20px title,
-   9px copy. Keep AI-studio blue count pill (no forest-green wash). */
-.production-contract {
-  display: grid;
-  gap: 12px;
-  /* Stay borderless page content — not a nested panel (see earlier note). */
-  border: 0;
-  background: transparent;
-  border-radius: 0;
-  box-shadow: none;
-}
-.production-contract-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 4px 2px;
-  border-bottom: 0;
-}
-.production-contract-heading h2 {
-  margin: 6px 0 4px;
-  font-size: 20px;
-  letter-spacing: -0.45px;
-}
-.production-contract-heading p {
-  max-width: 820px;
-  margin: 0;
-  color: var(--muted);
-  /* !important beats gold-ai-studio-theme .production-contract-heading p { 11px !important } */
-  font-size: 9px !important;
-  line-height: 1.5 !important;
-}
-.production-contract-heading .eyebrow {
-  display: block;
-  font-size: 8px;
-  letter-spacing: 1.35px;
-  color: var(--mint);
-  font-weight: 750;
-}
-/* Blue AI-studio count pill (Sites density; kills gold-globals / residual green). */
-.phase-count-pill {
-  flex: 0 0 auto;
-  border: 1px solid #3b4f6e;
-  border-radius: 999px;
-  background: #1d2b42;
-  color: #a8c7fa;
-  padding: 6px 9px;
-  font-size: 8px;
-  font-weight: 750;
-}
-@media (max-width: 620px) {
-  .production-contract-heading {
-    display: grid;
-    align-items: start;
-  }
-  .phase-count-pill {
-    justify-self: start;
-  }
-}
-
-.phase-workspace { display: grid; gap: 12px; border: 1px solid var(--line,#2e3336); border-radius: 11px; background: #151719; padding: 14px; }
-.phase-metrics { display: grid; overflow: hidden; border: 1px solid #2d3235; border-radius: 8px; background: #17191b; }
-.phase-metrics.six { grid-template-columns: repeat(6, 1fr); }
-.phase-metrics.five { grid-template-columns: repeat(5, 1fr); }
-.phase-metrics.four { grid-template-columns: repeat(4, 1fr); }
-.phase-metric { min-width: 0; border-left: 1px solid #2d3235; padding: 10px; }
-.phase-metric:first-child { border-left: 0; }
-.phase-metric span { display: block; color: #737b77; font-size: 7px; text-transform: none; letter-spacing: 0; }
-.phase-metric strong, .phase-metric b { display: block; margin-top: 5px; color: #d9dddb; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
-.phase-metric small { display: block; margin-top: 3px; color: #606965; font-size: 6px; }
-.phase-workspace-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid #292d30; padding: 2px 2px 13px; }
-.phase-workspace-header h3 { margin: 5px 0 4px; font-size: 17px; letter-spacing: -.3px; color: #e8ecea; }
-.phase-workspace-header p { max-width: 790px; margin: 0; color: #818985; font-size: 8px; line-height: 1.5; }
-.phase-workspace-header .eyebrow { color: #8ab0e8; font-size: 7px; font-weight: 800; letter-spacing: .7px; }
-
-/* Phase 1 document panel → Gold .phase-document (wins over gold-ai-studio-theme 11px inflation) */
-.phase-document {
-  display: grid;
-  gap: 9px;
-  border: 1px solid #2e3336;
-  border-radius: 9px;
-  background: #181a1c;
-  padding: 13px;
-}
-.phase-document > div > span,
-.phase-document details summary,
-.phase-document-grid span {
-  color: #8ab0e8 !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-.phase-document h4 { margin: 4px 0 0; font-size: 16px; }
-.phase-document p {
-  margin: 5px 0 0;
-  color: #9aa29e !important;
-  font-size: 8px !important;
-  line-height: 1.6 !important;
-  white-space: pre-wrap;
-}
-.phase-document details { border-top: 1px solid #2b3033; padding-top: 10px; }
-.phase-document details summary { cursor: pointer; }
-.phase-document-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.phase-document-grid article {
-  border: 1px solid #2b3033;
-  border-radius: 7px;
-  background: #151719;
-  padding: 10px;
-}
-
-.panel.phase-one-review-panel,
-.phase-one-review-panel {
-  display: grid !important;
-  gap: 9px !important;
-  padding: 13px !important;
-  border: 1px solid #2e3336 !important;
-  border-radius: 9px !important;
-  background: #181a1c !important;
-  overflow: hidden;
-}
-.phase-one-review-panel > .panel-title {
-  margin: 0 !important;
-  padding: 0 0 10px !important;
-  border-bottom: 1px solid #2b3033;
-}
-.phase-one-review-panel > .panel-title .eyebrow {
-  color: #8ab0e8 !important;
-  font-size: 7px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.7px !important;
-  text-transform: uppercase;
-}
-.phase-one-review-panel > .panel-title h2 {
-  margin: 4px 0 0 !important;
-  font-size: 16px !important;
-  letter-spacing: -0.3px;
-  color: #e8ecea;
-}
-.phase-one-review-panel > .panel-title p {
-  margin: 5px 0 0 !important;
-  color: #9aa29e !important;
-  font-size: 8px !important;
-  line-height: 1.6 !important;
-}
-.phase-one-document,
-.phase-one-review-panel .phase-one-document {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  overflow: visible;
-}
-.phase-one-document > section {
-  padding: 0 !important;
-  border: 0 !important;
-}
-.phase-one-document > section > span,
-.phase-one-document .phase-one-lists section > span,
-.phase-one-document details summary,
-.phase-one-document .phase-one-speech b {
-  color: #8ab0e8 !important;
-  font-size: 7px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.7px !important;
-  text-transform: uppercase;
-}
-.phase-one-document > section h3 {
-  margin: 4px 0 0 !important;
-  font-size: 16px !important;
-  color: #e8ecea;
-}
-.phase-workspace .phase-one-document > section p,
-.phase-one-document > section p,
-.phase-workspace .phase-one-document .phase-one-speech p,
-.phase-one-document .phase-one-speech p,
-.phase-workspace .phase-one-prose,
-.phase-one-prose,
-.phase-one-document pre {
-  margin: 5px 0 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
-  color: #9aa29e !important;
-  font-size: 8px !important;
-  line-height: 1.6 !important;
-  white-space: pre-wrap;
-}
-.phase-one-document details {
-  padding-top: 10px !important;
-  border: 0 !important;
-  border-top: 1px solid #2b3033 !important;
-}
-.phase-one-document summary {
-  padding: 0 !important;
-  cursor: pointer;
-}
-.phase-one-speech,
-.phase-one-lists {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  border: 0 !important;
-}
-.phase-one-speech > div,
-.phase-one-lists section {
-  padding: 10px !important;
-  border: 1px solid #2b3033 !important;
-  border-radius: 7px;
-  background: #151719;
-}
-.phase-one-lists section + section { border-left: 1px solid #2b3033 !important; }
-.phase-one-lists li {
-  margin-top: 5px;
-  color: #9aa29e !important;
-  font-size: 8px !important;
-  line-height: 1.5;
-}
-.phase-one-editor {
-  gap: 10px;
-  padding: 4px 0 0 !important;
-  border-top: 1px solid #2b3033;
-}
-.phase-one-editor label {
-  color: #8ab0e8;
-  /* Sites dense field label (7px); !important beats .studio label 8px form scale. */
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-}
-
-/* gold-globals rail type: b 7px / small 6px / span 8px
- * .studio + !important beats gold-ai-studio-theme (12/10) and residual bridge. */
-.production-phase-rail > button b,
-.studio .production-phase-rail > button b {
-  font-size: 7px !important;
-  min-height: 0 !important;
-  line-height: 1.35 !important;
-  color: #c9cdcb !important;
-}
-.production-phase-rail > button small,
-.studio .production-phase-rail > button small {
-  font-size: 6px !important;
-  color: #6f7874 !important;
-  text-transform: none !important;
-}
-.production-phase-rail > button.current small,
-.production-phase-rail > button[aria-current="step"] small,
-.studio .production-phase-rail > button.current small,
-.studio .production-phase-rail > button[aria-current="step"] small {
-  color: #78b793 !important;
-}
-.production-phase-rail > button > span,
-.studio .production-phase-rail > button > span {
-  width: 24px !important;
-  height: 24px !important;
-  font-size: 8px !important;
-  font-weight: 400 !important;
-  color: #8c9691 !important;
-  border-color: #3b4140 !important;
-}
-.production-phase-rail > button.current > span,
-.production-phase-rail > button[aria-current="step"] > span,
-.studio .production-phase-rail > button.current > span,
-.studio .production-phase-rail > button[aria-current="step"] > span {
-  border-color: #4c8d6b !important;
-  background: #224331 !important;
-  color: #a8c7fa !important;
-}
-
-/* gold-globals rail chrome — restate with .studio so theme cannot reassert */
-.production-phase-rail > button,
-.studio .production-phase-rail > button {
-  min-width: 145px !important;
-  min-height: 72px !important;
-  border: 1px solid var(--line) !important;
-  border-radius: 8px !important;
-  background: #17191b !important;
-  display: grid !important;
-  grid-template-columns: 25px minmax(0, 1fr) !important;
-  gap: 8px !important;
-  align-items: start !important;
-  padding: 10px !important;
-  text-align: left !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-.production-phase-rail > button:hover,
-.studio .production-phase-rail > button:hover {
-  border-color: #4a5568 !important;
-  background: #1b1f1d !important;
-  transform: none !important;
-}
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"],
-.studio .production-phase-rail > button.current,
-.studio .production-phase-rail > button[aria-current="step"] {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.07) !important;
-}
-.production-phase-rail,
-.studio .production-phase-rail {
-  gap: 7px !important;
-  padding: 1px 1px 5px !important;
-  scrollbar-color: #3a3e43 transparent !important;
-}
-@media (max-width: 1500px) {
-  .production-phase-rail,
-  .studio .production-phase-rail {
-    grid-template-columns: repeat(7, minmax(170px, 1fr)) !important;
+  .phase-workspace-meta,
+  .phase-preview-header-meta {
+    justify-items: start !important;
+    min-width: 0 !important;
   }
 }
 @media (max-width: 620px) {
-  .production-phase-rail > button,
-  .studio .production-phase-rail > button {
-    min-height: 82px !important;
+  .app-shell { display: block !important; }
+  .phase-metrics.six,
+  .phase-metrics.five,
+  .phase-metrics.four,
+  .phase-one-metrics {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .phase-one-metrics article,
+  .phase-metric {
+    border-left: 0 !important;
+    border-top: 1px solid #2d3235 !important;
+  }
+  .phase-one-metrics article:nth-child(-n+2),
+  .phase-metric:nth-child(-n+2) {
+    border-top: 0 !important;
   }
 }
 
-/* Phase shot tables — Sites compact type scale (gold-globals .phase-table-wrap) */
-.phase-table-wrap,
-.phase-shot-table-wrap {
-  max-width: 100%;
-  overflow: auto;
-  border: 1px solid #2d3235;
-  border-radius: 7px;
-}
-.phase-table-wrap table,
-.phase-shot-table-wrap table,
-.phase-shot-table {
-  width: 100%;
-  min-width: 690px;
-  border-collapse: collapse;
-}
-.phase-table-wrap th,
-.phase-table-wrap td,
-.phase-shot-table th,
-.phase-shot-table td {
-  border-top: 1px solid #292e31;
-  padding: 8px;
-  text-align: left;
-  font-size: 7px !important;
-  vertical-align: top;
-  color: #9da5a1;
-  line-height: 1.45;
-}
-.phase-table-wrap thead th,
-.phase-shot-table thead th {
-  border-top: 0;
-  background: #1c1f21;
-  color: #747d78;
-  font-size: 6px !important;
-  text-transform: uppercase;
-}
-.phase-table-wrap td b,
-.phase-shot-table td b {
-  display: block;
-  color: #d4d9d7;
-  font-size: 8px !important;
-}
-.phase-table-wrap td small,
-.phase-shot-table td small {
-  display: block;
-  margin-top: 2px;
-  color: #68716d;
-  font-size: 6px !important;
-}
-
-/* === PIXEL Phase 2: segmentation layout / phase-list / phase-inspector density (Gold) ===
-   gold-ai-studio-theme loosens these; restore Sites gold-globals values last. */
-.phase-segmentation-layout,
-.phase-prompt-layout,
-.phase-character-layout,
-.phase-location-layout,
-.phase-assembly-layout {
-  display: grid;
-  gap: 10px;
-}
-.phase-segmentation-layout {
-  grid-template-columns: 235px minmax(0, 1fr);
-}
-
-.phase-list {
-  min-width: 0;
-  max-height: 430px;
-  overflow: auto;
-  border: 1px solid #2e3336;
-  border-radius: 8px;
-  background: #17191b;
-  padding: 7px;
-  scrollbar-width: thin;
-  scrollbar-color: #393e42 transparent;
-}
-.phase-list > header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 5px 5px 8px;
-}
-.phase-list > header span,
-.phase-inspector > header span {
-  color: #8ab0e8 !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-.phase-list > header b {
-  font-size: 7px !important;
-  color: #7e8782;
-  font-weight: 650;
-}
-.phase-list > button,
-.phase-location-list > button {
-  width: 100%;
-  min-height: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  display: grid;
-  grid-template-columns: 29px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 7px;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-.phase-list > button:hover,
-.phase-list > button.active,
-.phase-location-list > button:hover,
-.phase-location-list > button.active {
-  background: #292b2e;
-}
-.phase-list > button > span,
-.phase-location-list > button > span {
-  width: 27px;
-  height: 27px;
-  border-radius: 6px;
-  background: #262b2d;
-  display: grid;
-  place-items: center;
-  color: #75807a;
-  font-size: 7px !important;
-}
-.phase-list > button.active > span,
-.phase-location-list > button.active > span {
-  background: #24344f;
-  color: #a8c7fa;
-}
-.phase-list b,
-.phase-list small,
-.phase-location-list b,
-.phase-location-list small {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.phase-list b,
-.phase-location-list b {
-  font-size: 8px !important;
-  color: #d4d9d7;
-  font-weight: 650;
-}
-.phase-list small,
-.phase-location-list small {
-  margin-top: 2px;
-  color: #67706c;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-.phase-list i,
-.phase-location-list i {
-  color: #65706a;
-  font-size: 7px !important;
-  font-style: normal;
-}
-
-.phase-inspector {
-  min-width: 0;
-  border: 1px solid #2e3336;
-  border-radius: 8px;
-  background: #181a1c;
-  padding: 12px;
-}
-.phase-inspector > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.phase-inspector > header h4 {
-  margin: 4px 0 3px;
-  font-size: 12px !important;
-  color: #e8ecea;
-  font-weight: 650;
-}
-.phase-inspector > header p,
-.phase-inspector > header > div > p {
-  margin: 0;
-  color: #747d78;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-.phase-inspector > header > b {
-  font-size: 8px !important;
-  color: #87918c;
-  font-weight: 650;
-}
-
-.phase-mini-timeline {
-  display: flex;
-  min-height: 35px;
-  gap: 3px;
-  margin: 10px 0;
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-}
-.phase-mini-timeline span {
-  display: grid;
-  min-width: 28px;
-  place-items: center;
-  border-radius: 5px;
-  background: #284b39;
-  color: #a6d1b8;
-  font-size: 7px !important;
-  font-weight: 800;
-}
-
-.phase-table-wrap {
-  max-width: 100%;
-  overflow: auto;
-  border: 1px solid #2d3235;
-  border-radius: 7px;
-}
-.phase-table-wrap table {
-  width: 100%;
-  min-width: 690px;
-  border-collapse: collapse;
-}
-.phase-table-wrap th,
-.phase-table-wrap td {
-  border-top: 1px solid #292e31;
-  padding: 8px;
-  text-align: left;
-  font-size: 7px !important;
-  vertical-align: top;
-  color: #9da5a1;
-  line-height: 1.45;
-}
-.phase-table-wrap thead th {
-  border-top: 0;
-  background: #1c1f21;
-  color: #747d78;
-  font-size: 6px !important;
-  text-transform: uppercase;
-}
-.phase-table-wrap td b,
-.phase-table-wrap td small {
-  display: block;
-}
-.phase-table-wrap td b {
-  font-size: 8px !important;
-  color: #d4d9d7;
-}
-.phase-table-wrap td small {
-  margin-top: 2px;
-  color: #68716d;
-  font-size: 6px !important;
-  line-height: 1.45 !important;
-}
-
-@media (max-width: 1050px) {
-  .phase-segmentation-layout,
-  .phase-prompt-layout,
-  .phase-character-layout,
-  .phase-location-layout,
-  .phase-assembly-layout {
-    grid-template-columns: 1fr;
-  }
-  .phase-list {
-    max-height: 300px;
-  }
-}
-
-/* =============================================================================
-   Phase 2 segmentation density — beat gold-ai-studio-theme inflation so the
-   Sites Gold layout (compact metrics, 235px structure list, tight table rows)
-   matches the reference screenshot density. Scoped to .phase-segmentation-layout
-   / :has() so other phase workspaces keep the AI-studio theme scale.
-   ============================================================================= */
-
-.phase-workspace:has(.phase-segmentation-layout) {
-  gap: 10px !important;
-  padding: 12px 14px !important;
+/* Force horizontal metrics even if older class names used */
+.phase-one-metrics {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  overflow: hidden !important;
+  border: 1px solid var(--line, #2e3336) !important;
   border-radius: 11px !important;
-  border: 1px solid var(--line, #2b2e32);
-  background: #151719;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-header {
-  gap: 14px;
-  padding: 0 0 10px;
-  border-bottom: 1px solid #292d30;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-header h3 {
-  margin: 4px 0 3px;
-  font-size: 17px !important;
-  letter-spacing: -0.3px;
-  font-weight: 600;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-header p {
-  max-width: 790px;
-  margin: 0;
-  color: #818985;
-  font-size: 8px !important;
-  line-height: 1.5 !important;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-meta {
-  min-width: 140px;
-  gap: 5px;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-meta > span,
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-meta-pill {
-  border: 1px solid #4a5f7d;
-  border-radius: 999px;
-  background: #213229;
-  color: #9bb6df;
-  padding: 4px 7px;
-  font-size: 7px !important;
-  font-weight: 750;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-workspace-meta > small {
-  color: #68726d;
-  font-size: 7px !important;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 5px;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-header-actions .btn {
-  min-height: 28px;
-  height: 28px;
-  padding: 0 9px;
-  font-size: 10px;
-}
-
-/* Sites purple disclosure (gold-globals) — keep phase-2 scoped rules on-pixel */
-.phase-workspace:has(.phase-segmentation-layout) .phase-preview-disclosure {
-  gap: 9px;
-  border: 1px solid #37334b;
-  border-radius: 8px;
-  background: #211f2d;
-  color: #a68af0;
-  padding: 9px 11px;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-preview-disclosure b {
-  font-size: 8px !important;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-preview-disclosure p {
-  margin-top: 3px;
-  color: #9691a8;
-  font-size: 7px !important;
-  line-height: 1.5 !important;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-metrics {
-  border-radius: 8px !important;
-  border: 1px solid #2d3235;
-  background: #17191b;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-metric {
-  min-height: 0 !important;
-  min-width: 0;
-  padding: 10px !important;
-  border-left: 1px solid #2d3235;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-metric:first-child {
-  border-left: 0;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-metric > span {
-  color: #737b77;
-  font-size: 7px !important;
-  font-weight: 650;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-metric > strong {
-  display: block;
-  margin-top: 5px;
-  color: #d9dddb;
-  font-size: 15px !important;
-  overflow-wrap: anywhere;
-}
-
-.phase-workspace:has(.phase-segmentation-layout) .phase-metric > small {
-  display: block;
-  margin-top: 3px;
-  color: #606965;
-  font-size: 6px !important;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Gold globals: gap 10px, structure column 235px */
-.phase-segmentation-layout {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 235px minmax(0, 1fr) !important;
-  gap: 10px !important;
-}
-
-/* Gold .phase-list density */
-.phase-segmentation-layout .phase-list {
-  min-width: 0;
-  max-height: 430px;
-  overflow: auto;
-  border: 1px solid #2e3336;
-  border-radius: 8px !important;
   background: #17191b !important;
-  padding: 7px !important;
-  scrollbar-width: thin;
-  scrollbar-color: #393e42 transparent;
 }
-
-.phase-segmentation-layout .phase-list > header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 5px 5px 8px;
-}
-
-.phase-segmentation-layout .phase-list > header span {
-  color: #8ab0e8 !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.phase-segmentation-layout .phase-list > header b {
-  font-size: 7px !important;
-  color: #7e8782;
-  font-weight: 650;
-}
-
-.phase-segmentation-layout .phase-list > button {
-  width: 100%;
-  min-height: 0 !important;
-  border: 0;
-  border-radius: 6px !important;
-  background: none;
-  display: grid;
-  grid-template-columns: 29px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 7px !important;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-
-.phase-segmentation-layout .phase-list > button:hover,
-.phase-segmentation-layout .phase-list > button.active {
-  background: #292b2e !important;
-}
-
-.phase-segmentation-layout .phase-list > button > span {
-  width: 27px;
-  height: 27px;
-  border-radius: 6px;
-  background: #262b2d;
-  display: grid;
-  place-items: center;
-  color: #75807a;
-  font-size: 7px !important;
-  font-weight: 800;
-}
-
-.phase-segmentation-layout .phase-list > button.active > span {
-  background: #24344f;
-  color: #a8c7fa;
-}
-
-.phase-segmentation-layout .phase-list b,
-.phase-segmentation-layout .phase-list small {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.phase-segmentation-layout .phase-list b {
-  font-size: 8px !important;
-  color: #d4d9d7;
-  font-weight: 650;
-}
-
-.phase-segmentation-layout .phase-list small {
-  margin-top: 2px;
-  color: #67706c;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-
-/* Gold .phase-inspector density */
-.phase-segmentation-layout .phase-inspector {
-  min-width: 0;
-  border: 1px solid #2e3336;
-  border-radius: 8px !important;
-  background: #181a1c !important;
-  padding: 12px !important;
-}
-
-.phase-segmentation-layout .phase-inspector > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.phase-segmentation-layout .phase-inspector > header span {
-  color: #8ab0e8 !important;
-  font-size: 7px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.phase-segmentation-layout .phase-inspector > header h4 {
-  margin: 4px 0 3px;
-  font-size: 12px !important;
-  color: #dfe4e1;
-  font-weight: 650;
-}
-
-.phase-segmentation-layout .phase-inspector > header p {
-  margin: 0;
-  color: #747d78;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-
-.phase-segmentation-layout .phase-inspector > header > b {
-  flex: 0 0 auto;
-  font-size: 8px !important;
-  color: #87918c;
-  font-weight: 650;
-}
-
-/* Gold .phase-mini-timeline — freestanding chips, gap 3px */
-.phase-segmentation-layout .phase-mini-timeline {
-  display: flex;
-  min-height: 35px;
-  overflow: visible;
-  gap: 3px;
-  margin: 10px 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-}
-
-.phase-segmentation-layout .phase-mini-timeline span {
-  display: grid;
-  min-width: 28px;
-  place-items: center;
-  border-radius: 5px;
-  background: #284b39;
-  color: #a6d1b8;
-  font-size: 7px !important;
-  font-weight: 800;
-}
-
-.phase-segmentation-layout .phase-table-wrap {
-  max-width: 100%;
-  max-height: 360px;
-  overflow: auto;
-  border: 1px solid #2d3235;
-  border-radius: 7px !important;
-  border-color: #2d3235 !important;
-  background: transparent;
-}
-
-.phase-segmentation-layout .phase-table-wrap table {
-  width: 100%;
-  min-width: 640px;
-  border-collapse: collapse;
-}
-
-/* Sites gold-globals: cell 7px, header 6px, shot id (b) 8px, meta (small) 6px */
-.phase-segmentation-layout .phase-table-wrap th,
-.phase-segmentation-layout .phase-table-wrap td {
-  border-top: 1px solid #292e31;
-  padding: 8px !important;
-  text-align: left;
-  vertical-align: top;
-  font-size: 7px !important;
-  color: #9da5a1;
-  line-height: 1.45;
-}
-
-.phase-segmentation-layout .phase-table-wrap thead th {
-  border-top: 0;
-  background: #1c1f21;
-  color: #747d78;
-  font-size: 6px !important;
-  text-transform: uppercase;
-  letter-spacing: 0;
-  font-weight: 700;
-}
-
-.phase-segmentation-layout .phase-table-wrap td b,
-.phase-segmentation-layout .phase-table-wrap td small {
-  display: block;
-}
-
-.phase-segmentation-layout .phase-table-wrap td b {
-  color: #d4d9d7;
-  font-size: 8px !important;
-}
-
-.phase-segmentation-layout .phase-table-wrap td small {
-  margin-top: 2px;
-  color: #68716d;
-  font-size: 6px !important;
-}
-
-/* Keep purpose column dense — multi-line prose was blowing row height (Gold: plain td text) */
-.phase-segmentation-layout .phase-table-wrap td:nth-child(2) {
-  max-width: 260px;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  line-height: 1.35;
-}
-
-/* Table pills: Sites status-pill 7px / 3×6; no wrap in cells */
-.phase-segmentation-layout .phase-table-wrap .status-pill {
-  font-size: 7px !important;
-  padding: 3px 6px;
-  white-space: nowrap;
-}
-
-/* === PIXEL phase-footer = Gold live (Sites + AI studio theme) ===
-   Computed from cineforge-storyboard-studio.teejay1784.chatgpt.site
-   Beats dense .studio type-scale and any earlier residual footer rules. */
-.studio .phase-footer,
-.phase-workspace .phase-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-top: 1px solid #303033;
-  padding: 16px 2px 0;
-  margin: 0;
-  border-left: 0;
-  border-right: 0;
-  border-bottom: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.studio .phase-footer > div > span,
-.phase-workspace .phase-footer > div > span {
-  color: #a8c7fa !important;
-  font-size: 10px !important;
-  font-weight: 800;
-  letter-spacing: 0.7px;
-}
-
-.studio .phase-footer > div > b,
-.studio .phase-footer b,
-.phase-workspace .phase-footer > div > b,
-.phase-workspace .phase-footer b {
-  display: block;
-  margin-top: 3px;
-  font-size: 12px !important;
-  font-weight: 700;
-  color: #f1f3f4;
-  line-height: 1.5 !important;
-}
-
-.studio .phase-footer > div > p,
-.studio .phase-footer p,
-.phase-workspace .phase-footer > div > p,
-.phase-workspace .phase-footer p {
-  display: block;
-  margin: 3px 0 0;
-  color: #707975;
-  font-size: 11px !important;
-  font-weight: 400;
-  line-height: 1.55 !important;
-}
-
-.studio .phase-footer .btn,
-.studio .phase-footer button,
-.phase-workspace .phase-footer .btn,
-.phase-workspace .phase-footer button {
-  flex: 0 0 auto;
-  min-height: 38px !important;
-  height: 38px !important;
-  font-size: 12px !important;
-  line-height: 1.2 !important;
-  border-radius: 999px;
-  padding: 0 16px;
-}
-
-@media (max-width: 1050px) {
-  .phase-segmentation-layout {
-    grid-template-columns: 1fr !important;
-  }
-
-  .phase-segmentation-layout .phase-list {
-    max-height: 300px;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metrics.five {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metrics.five .phase-metric:nth-child(4) {
-    border-left: 0;
-    border-top: 1px solid #2d3235;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metrics.five .phase-metric:nth-child(n + 5) {
-    border-top: 1px solid #2d3235;
-  }
-}
-
-@media (max-width: 620px) {
-  .phase-workspace:has(.phase-segmentation-layout) {
-    padding: 10px !important;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-workspace-header,
-  .phase-workspace:has(.phase-segmentation-layout) .phase-footer {
-    display: grid;
-    justify-items: start;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-workspace-meta {
-    min-width: 0;
-    justify-items: start;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-header-actions {
-    justify-content: flex-start;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metrics.five {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metric {
-    border-top: 1px solid #2d3235;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metric:nth-child(-n + 2) {
-    border-top: 0;
-  }
-
-  .phase-workspace:has(.phase-segmentation-layout) .phase-metric:nth-child(odd) {
-    border-left: 0;
-  }
-}
-
-
-/* === Phases 4-7 display hardening (wins over earlier bridge + gold collisions) === */
-
-/* Location boards — Gold Sites two-column density */
-.phase-location-layout {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.2fr);
-  gap: 10px;
-}
-
-.phase-location-list,
-.phase-location-cards {
-  display: grid;
-  gap: 3px;
-  margin-top: 9px;
-}
-
-.phase-location-list > button,
-.phase-location-cards > button {
-  min-height: 0 !important;
-  border: 0 !important;
-  border-radius: 6px;
-  padding: 7px !important;
-  grid-template-columns: 29px minmax(0, 1fr) auto;
-  gap: 8px;
-}
-
-.phase-location-list > button:hover,
-.phase-location-list > button.active,
-.phase-location-cards > button:hover,
-.phase-location-cards > button.active {
-  border-color: transparent !important;
-  background: #292b2e !important;
-}
-
-.phase-location-list > button > span,
-.phase-location-cards > button > span {
-  width: 27px;
-  height: 27px;
-  border-radius: 6px;
-  background: #262b2d;
-  color: #75807a;
-  font-size: 7px !important;
-}
-
-.phase-location-list > button.active > span,
-.phase-location-cards > button.active > span {
-  background: #24344f;
-  color: #a8c7fa;
-}
-
-.phase-location-list b,
-.phase-location-cards b {
-  font-size: 8px !important;
-  color: #d4d9d7;
-  font-weight: 650;
-}
-
-.phase-location-list small,
-.phase-location-cards small {
-  margin-top: 2px;
-  color: #67706c;
-  font-size: 7px !important;
-  line-height: 1.45 !important;
-}
-
-.phase-location-list i,
-.phase-location-cards i {
-  color: #65706a;
-  font-size: 7px !important;
-  font-style: normal;
-}
-
-/* Profile fact grid — Sites .phase-fact-grid (+ residual .phase-profile-field-grid) */
-.phase-fact-grid,
-.phase-profile-field-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid #2d3235;
-  border-radius: 7px;
-  margin-top: 12px;
-}
-
-.phase-fact-grid article,
-.phase-profile-field-grid article {
-  min-width: 0;
-  border-top: 1px solid #2d3235;
-  border-left: 1px solid #2d3235;
-  padding: 9px;
-}
-
-.phase-fact-grid article:nth-child(-n + 2),
-.phase-profile-field-grid article:nth-child(-n + 2) { border-top: 0; }
-.phase-fact-grid article:nth-child(odd),
-.phase-profile-field-grid article:nth-child(odd) { border-left: 0; }
-.phase-fact-grid article > span,
-.phase-profile-field-grid article > span {
-  display: block;
-  color: #8ab0e8;
-  font-size: 7px !important;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-}
-.phase-fact-grid article > p,
-.phase-profile-field-grid article > p {
-  margin: 4px 0 0;
-  color: #858e89;
-  font-size: 7px !important;
-  line-height: 1.5;
-}
-
-/* Key-asset registry — Sites .phase-key-assets > div (+ residual grid) */
-.phase-key-assets > div,
-.phase-key-asset-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 10px;
-}
-
-.phase-key-assets article,
-.phase-key-asset-grid article {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 25px minmax(0, 1fr);
-  gap: 7px;
-  border: 1px solid #2f3538;
-  border-radius: 7px;
-  background: #151719;
-  padding: 8px;
-}
-
-.phase-key-assets article > span,
-.phase-key-asset-grid article > span {
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
-  background: #28242f;
-  color: #aa9cbc;
-  font-size: 6px !important;
-}
-
-.phase-key-assets article b,
-.phase-key-asset-grid article b {
-  font-size: 7px !important;
-}
-
-.phase-key-assets article p,
-.phase-key-asset-grid article p {
-  margin: 3px 0 0;
-  color: #68716d;
-  font-size: 6px !important;
-  line-height: 1.4;
-}
-
-.phase-key-assets article small,
-.phase-key-asset-grid article small {
-  grid-column: 1 / -1;
-  color: #685f74;
-  font-size: 6px !important;
-  text-transform: uppercase;
-}
-
-/*
- * Frame grids — final Gold Sites pixel contract (Phase 6).
- * Metrics match gold-globals .phase-frame-grid; do not force a flat tile
- * background (that kills .frame-N art). has-image uses absolute cover + veil.
- */
-.phase-frame-grid,
-.phase-start-frame-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(115px, 1fr));
-  gap: 7px;
-  margin-top: 10px;
-}
-
-.phase-frame-grid article,
-.phase-start-frame-grid article {
-  min-width: 0;
-  position: relative;
-  border: 1px solid #2f3538;
-  border-radius: 7px;
-  background: #151719;
-  padding: 5px;
-}
-
-.phase-frame-grid article > .frame-art,
-.phase-start-frame-grid article > .frame-art {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 5px;
-  color: #7c8781;
-  /* background left to .frame-art / .frame-N from gold-globals */
-}
-
-.phase-start-frame-grid article > div:not(.frame-art):not(.status-pill):not(.managed-asset-frame) {
-  position: relative;
-  display: grid;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  place-items: center;
-  border-radius: 5px;
-  background: linear-gradient(145deg, #29312d, #1a1e20);
-  color: #7c8781;
-}
-
-.phase-frame-grid .frame-art.has-image > img,
-.phase-start-frame-grid .frame-art.has-image > img,
-.phase-start-frame-grid article > div:not(.frame-art) img {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  background: transparent;
-  border: 0;
-}
-
-.phase-frame-grid .frame-art.has-image:before,
-.phase-start-frame-grid .frame-art.has-image:before {
-  display: none;
-}
-
-.phase-frame-grid .frame-art.has-image:after,
-.phase-start-frame-grid .frame-art.has-image:after {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 50%, rgba(5, 6, 7, 0.72));
-  pointer-events: none;
-}
-
-.phase-frame-grid .frame-art > span,
-.phase-start-frame-grid .frame-art > span {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  z-index: 3;
-  border-radius: 3px;
-  background: rgba(6, 7, 8, 0.72);
-  padding: 3px 5px;
-  font-size: 7px;
-  font-weight: 700;
-  color: #c8d0cb;
-}
-
-.phase-frame-grid article > b,
-.phase-start-frame-grid article > b {
-  display: block;
-  margin-top: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 7px;
-}
-
-.phase-frame-grid article > small,
-.phase-start-frame-grid article > small {
-  display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #646d69;
-  font-size: 6px;
-}
-
-/* Assembly tracks — final override so clips never render as concatenated text */
-.phase-assembly-layout {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr);
-  gap: 10px;
-}
-
-.phase-assembly-timeline {
-  display: grid !important;
-  min-width: 0;
-  align-content: start;
-  gap: 8px;
-}
-
-.assembly-track {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.assembly-track > b {
-  color: #68716d;
-  font-size: 0.56rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.assembly-track > .assembly-lane,
-.assembly-track > div {
-  display: flex !important;
-  flex-wrap: nowrap !important;
+.phase-one-metrics article {
   min-width: 0 !important;
-  min-height: 36px;
-  overflow: hidden !important;
-  gap: 2px;
-  border-radius: 5px;
-  background: #131517;
-  padding: 3px;
+  border-left: 1px solid var(--line, #2e3336) !important;
+  padding: 12px 14px !important;
 }
-
-/* PIXEL Phase 7: visual duration segments — preserve inline flex duration, hide glyphs */
-.assembly-track .assembly-clip,
-.assembly-track > div > span:not(.empty-lane) {
+.phase-one-metrics article:first-child { border-left: 0 !important; }
+.phase-one-metrics span { display: block !important; color: #717980 !important; font-size: 0.65rem !important; }
+.phase-one-metrics b,
+.phase-one-metrics strong {
   display: block !important;
-  flex-shrink: 1;
-  flex-basis: 0;
-  min-width: 0 !important;
-  min-height: 30px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #2a3a52;
-  color: transparent !important;
-  font-size: 0 !important;
-  line-height: 0 !important;
-  white-space: nowrap;
-  text-overflow: clip;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.assembly-track.audio .assembly-clip,
-.assembly-track.audio > div > span:not(.empty-lane) {
-  background: #33314b;
-  color: transparent !important;
-}
-
-.assembly-track .empty-lane {
-  display: flex !important;
-  flex: 1 1 100% !important;
-  align-items: center;
-  min-width: 100% !important;
-  min-height: 30px;
-  border-radius: 4px;
-  background: #222629 !important;
-  color: #59625e !important;
-  padding: 0 8px;
-  font-size: 0.52rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-@media (max-width: 1500px) {
-  /* Gold Sites: phase-frame-grid collapses to 3 columns under 1500px */
-  .phase-frame-grid,
-  .phase-start-frame-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 1050px) {
-  .phase-location-layout,
-  .phase-assembly-layout {
-    grid-template-columns: 1fr !important;
-  }
-
-  .phase-key-assets > div,
-  .phase-key-asset-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .phase-fact-grid,
-  .phase-profile-field-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .phase-fact-grid article,
-  .phase-profile-field-grid article {
-    border-left: 0;
-    border-top: 1px solid #2d3235;
-  }
-
-  .phase-fact-grid article:first-child,
-  .phase-profile-field-grid article:first-child {
-    border-top: 0;
-  }
-}
-
-@media (max-width: 720px) {
-  .phase-key-asset-grid,
-  .phase-profile-field-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .assembly-track {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 620px) {
-  /* Gold Sites: single column frame grid on narrow viewports */
-  .phase-frame-grid,
-  .phase-start-frame-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-
-/* Gold .phase-timeline — Phase 7 assembly tracks (visual duration segments) */
-.phase-timeline {
-  display: grid !important;
-  min-width: 0;
-  align-content: start;
-  gap: 8px;
-}
-
-.phase-timeline > .assembly-track,
-.phase-timeline > div.assembly-track {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-/* Legacy gold shape: .phase-timeline > div > section > span */
-.phase-timeline > div:not(.assembly-track) {
-  display: grid !important;
-  min-width: 0;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.phase-timeline > div:not(.assembly-track) > b {
-  color: #68716d;
-  font-size: 0.56rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.phase-timeline > div:not(.assembly-track) > section {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  min-width: 0 !important;
-  min-height: 36px;
-  overflow: hidden !important;
-  gap: 2px;
-  border-radius: 5px;
-  background: #131517;
-  padding: 3px;
-}
-
-/* PIXEL Phase 7 .phase-timeline clips: visual bars (title carries identity) */
-.phase-timeline > div:not(.assembly-track) > section > span[title] {
-  display: block !important;
-  flex-shrink: 1;
-  flex-basis: 0;
-  min-width: 0 !important;
-  min-height: 30px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #2a3a52;
-  color: transparent !important;
-  font-size: 0 !important;
-  line-height: 0 !important;
-  white-space: nowrap;
-  text-overflow: clip;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.phase-timeline > div.audio:not(.assembly-track) > section > span[title] {
-  background: #33314b;
-  color: transparent !important;
-}
-
-/* Empty / message lanes (no title) keep a single readable label */
-.phase-timeline > div.empty:not(.assembly-track) > section > span,
-.phase-timeline > div:not(.assembly-track) > section > span:not([title]) {
-  display: flex !important;
-  flex: 1 1 100% !important;
-  align-items: center;
-  justify-content: flex-start;
-  min-width: 100% !important;
-  min-height: 30px;
-  background: #222629 !important;
-  color: #59625e !important;
-  font: 500 6px / 1.2 ui-monospace, SFMono-Regular, Consolas, monospace !important;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 0 8px;
-  box-sizing: border-box;
-}
-
-/* =============================================================================
-   PIXEL Projects page — match Sites card density (gold-globals)
-   gold-ai-studio-theme widens covers, type, radii, and summary chrome.
-   Reassert Sites metrics last so Projects.tsx cards match gold-ui screenshots.
-   Sites source (gold-globals.css): .project-cover height 142px, body 13/14/11,
-   title 13px, meta/readiness 7px, counts dt 6px / dd 10px, footer 43px, grid gap 12.
-   ============================================================================= */
-
-.projects-page,
-.new-project-page {
-  max-width: 1620px;
-  margin: 0 auto;
-}
-
-.projects-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-  margin-bottom: 12px;
-}
-
-.projects-summary > div {
-  min-height: 70px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-left: 1px solid var(--line);
-}
-
-.projects-summary > div:first-child {
-  border-left: 0;
-}
-
-.projects-summary small {
-  display: block;
-  font-size: 8px !important;
-  color: var(--muted);
-}
-
-.projects-summary b {
-  display: block;
-  font-size: 18px !important;
-  font-weight: 650;
-  margin-top: 3px;
-}
-
-.summary-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-}
-
-.projects-toolbar {
-  min-height: 47px;
-  border: 1px solid var(--line);
-  background: #17191b;
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px;
-  margin-bottom: 12px;
-}
-
-.projects-search {
-  height: 31px;
-  min-height: 31px;
-  min-width: 220px;
-  max-width: 360px;
-  flex: 1;
-  border: 1px solid #30343a;
-  background: #1d2022;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  color: #70767e;
-}
-
-.projects-search input {
-  border: 0;
-  background: none;
-  color: var(--text);
-  font-size: 9px !important;
-  flex: 1;
-  min-width: 0;
-}
-
-.sort-select {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 8px !important;
-}
-
-.sort-select select {
-  height: 31px;
-  min-height: 31px;
-  border: 1px solid #30343a;
-  background: #1d2022;
-  color: #c9ccd0;
-  border-radius: 6px;
-  padding: 0 24px 0 8px;
-  font-size: 8px !important;
-}
-
-.project-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.project-card {
-  min-width: 0;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 11px;
-  overflow: hidden;
-  box-shadow: none;
-  transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
-}
-
-.project-card:hover {
-  transform: translateY(-2px);
-  border-color: #3b4146;
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
-}
-
-.project-card.current {
-  border-color: #365b49;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.08);
-}
-
-.project-cover {
-  width: 100%;
-  height: 142px !important;
-  min-height: 0;
-  border: 0;
-  position: relative;
-  overflow: hidden;
-  background: #283338;
-  text-align: left;
-}
-
-.cover-initials,
-.preview-cover > b {
-  position: absolute;
-  left: 22px;
-  bottom: 18px;
-  font-size: 28px !important;
-  font-weight: 650;
-  letter-spacing: -1.2px;
-  color: rgba(255, 255, 255, 0.94);
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.34);
-}
-
-.project-card-body {
-  padding: 13px 14px 11px !important;
-}
-
-.project-card-title {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 8px;
-}
-
-.project-card-title > button:first-child {
-  border: 0;
-  background: none;
-  text-align: left;
-  padding: 0;
-  min-width: 0;
-}
-
-.project-card-title h2 {
-  font-size: 13px !important;
-  font-weight: 650;
-  margin: 0 0 4px;
-  letter-spacing: -0.2px;
-}
-
-.project-card-title p {
-  font-size: 8px !important;
-  line-height: 1.45 !important;
-  color: var(--muted);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.project-card-title .icon-button {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
-}
-
-.project-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #7c8289;
-  font-size: 7px !important;
-  margin: 10px 0;
-}
-
-.project-meta > i {
-  width: 2px;
-  height: 2px;
-  border-radius: 50%;
-  background: #52575e;
-}
-
-.project-readiness {
-  border-top: 1px solid #292c30;
-  padding-top: 10px;
-}
-
-.project-readiness > span {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-  color: #8b9198;
-  font-size: 7px !important;
-}
-
-.project-readiness > span b {
-  font-size: 10px !important;
-  color: #d9dcde;
-}
-
-.project-progress {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #2b2e31;
-  margin-top: 6px;
-}
-
-.project-progress > i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #54d99b, #76e3ca);
-}
-
-.project-readiness small {
-  display: block;
-  text-align: right;
-  margin-top: 3px;
-  color: #60666d;
-  font-size: 7px !important;
-}
-
-.project-counts {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  margin: 10px 0 0;
-  border: 1px solid #292c30;
-  border-radius: 7px;
-  overflow: hidden;
-}
-
-.project-counts div {
-  padding: 7px 8px;
-  border-left: 1px solid #292c30;
-}
-
-.project-counts div:first-child {
-  border: 0;
-}
-
-.project-counts dt {
-  font-size: 6px !important;
-  color: #6f757c;
-}
-
-.project-counts dd {
-  font-size: 10px !important;
-  margin: 2px 0 0;
-}
-
-.project-card > footer {
-  height: 43px !important;
-  min-height: 43px;
-  border-top: 1px solid #292c30;
-  display: flex;
-  align-items: center;
-  padding: 0 14px !important;
-  color: #686e75;
-  font-size: 7px !important;
-}
-
-.project-card > footer > span:nth-child(2) {
-  margin-left: 8px;
-}
-
-.project-card > footer > button {
-  margin-left: auto;
-  border: 0;
-  background: none;
-  color: #9eb7aa;
-  font-size: 8px !important;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.project-team {
-  display: flex;
-}
-
-.project-team i {
-  width: 23px;
-  height: 23px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #304239;
-  border: 2px solid var(--panel);
-  font-size: 6px !important;
-  font-style: normal;
-  color: #bde6d0;
-  margin-left: -5px;
-}
-
-.project-team i:first-child {
-  margin-left: 0;
-}
-
-.new-project-card {
-  min-height: 366px;
-  border: 1px dashed #3b4147;
-  background: rgba(23, 25, 27, 0.48);
-  border-radius: 11px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  color: #858b92;
-  padding: 30px;
-}
-
-.new-project-card:hover {
-  border-color: #4d6f60;
-  background: #19221e;
-  color: #a6c9b8;
-}
-
-.new-project-card > span {
-  width: 48px;
-  height: 48px;
-  border-radius: 13px;
-  background: #22272a;
-  display: grid;
-  place-items: center;
-  color: var(--mint);
-  margin-bottom: 12px;
-  font-size: 1.25rem;
-}
-
-.new-project-card b {
-  font-size: 11px !important;
-  color: #c5c9cc;
-  margin-top: 0;
-}
-
-.new-project-card small {
-  font-size: 8px !important;
-  line-height: 1.5;
-  max-width: 230px;
-  margin-top: 5px;
-}
-
-/* Cover status chip — Sites compact pill over imagery */
-.project-cover > .status-pill {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  z-index: 2;
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 7px !important;
-  line-height: 1;
-  backdrop-filter: blur(8px);
-}
-
-.project-cover > em {
-  position: absolute;
-  left: 12px;
-  top: 12px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 7px !important;
-  font-style: normal;
-  color: #c6f5dc;
-  background: rgba(11, 28, 21, 0.68);
-  border: 1px solid rgba(100, 217, 157, 0.35);
-  border-radius: 4px;
-  padding: 4px 6px;
-  backdrop-filter: blur(8px);
-}
-
-.project-cover > em i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--mint);
-  box-shadow: 0 0 7px var(--mint);
-}
-
-@media (max-width: 1500px) {
-  .project-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1050px) {
-  .projects-summary {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .projects-summary > div:nth-child(3) {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-
-  .projects-summary > div:nth-child(4) {
-    border-top: 1px solid var(--line);
-  }
-
-  .projects-toolbar {
-    flex-wrap: wrap;
-  }
-
-  .projects-search {
-    max-width: none;
-  }
-
-  .projects-filter {
-    order: 3;
-    width: 100%;
-    overflow: auto;
-  }
-}
-
-@media (max-width: 760px) {
-  .project-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .projects-summary {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .projects-toolbar {
-    align-items: stretch;
-  }
-
-  .projects-search {
-    min-width: 100%;
-  }
-
-  .sort-select {
-    margin-left: 0;
-  }
-
-  .projects-filter {
-    overflow: auto;
-  }
-
-  .project-card:hover {
-    transform: none;
-  }
-}
-
-/* Phase 2 scene frame strip (fallback when full board image is unavailable) */
-.phase-segmentation-layout .phase-scene-board {
-  margin: 0;
-  max-height: 180px;
-  border-radius: 7px;
-}
-.phase-segmentation-layout .phase-scene-board img {
-  max-height: 180px;
-}
-.phase-segmentation-layout .phase-scene-board figcaption {
-  font-size: 9px;
-  padding: 3px 6px;
-}
-.phase-segmentation-layout .phase-scene-frame-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 6px;
-}
-.phase-segmentation-layout .phase-scene-frame-strip article {
-  min-width: 0;
-  border: 1px solid #2f3538;
-  border-radius: 6px;
-  background: #151719;
-  overflow: hidden;
-}
-.phase-segmentation-layout .phase-scene-frame-strip .frame-art {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  background: #121415;
-}
-.phase-segmentation-layout .phase-scene-frame-strip .frame-art img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.phase-segmentation-layout .phase-scene-frame-strip .frame-art > span {
-  position: absolute;
-  z-index: 2;
-  left: 5px;
-  bottom: 5px;
-  border-radius: 3px;
-  background: rgba(7, 8, 9, 0.78);
-  color: #c5cbc7;
-  padding: 2px 5px;
-  font-size: 9px;
-  font-weight: 750;
-}
-
-/* === KILL GREEN WASH: AI Studio theme wins (Sites published mint is blue) === */
-:root {
-  --mint: #a8c7fa !important;
-  --mint-dark: #233348 !important;
-  --blue: #a8c7fa !important;
-  --success: #81c995;
-}
-/* Kill green primary buttons (#d3e3fd / gold-globals) → blue mint */
-.primary-button,
-.btn.primary,
-button.primary-button,
-button.btn.primary,
-a.primary-button,
-a.btn.primary {
-  background: #d3e3fd !important;
-  border-color: #d3e3fd !important;
-  color: #041e49 !important;
-}
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgb(168 199 250 / 72%) !important;
-}
-/* Phase rail / current: gold-globals.css exact (mint, not AI-studio blue) */
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"],
-.studio .production-phase-rail > button.current,
-.studio .production-phase-rail > button[aria-current="step"] {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.07) !important;
-}
-.production-phase-rail > button.current > span,
-.production-phase-rail > button[aria-current="step"] > span,
-.studio .production-phase-rail > button.current > span,
-.studio .production-phase-rail > button[aria-current="step"] > span {
-  border-color: #4c8d6b !important;
-  background: #224331 !important;
-  color: #a8c7fa !important; /* gold-globals --mint literal (survives --mint remaps) */
-}
-.production-phase-rail > button.current b,
-.studio .production-phase-rail > button.current b {
-  color: #c9cdcb !important; /* gold-globals has no separate current-b color */
-}
-.production-phase-rail > button.current small,
-.production-phase-rail > button[aria-current="step"] small,
-.studio .production-phase-rail > button.current small,
-.studio .production-phase-rail > button[aria-current="step"] small {
-  color: #78b793 !important;
-}
-.phase-workspace-meta > span,
-.phase-workspace-meta-pill,
-.design-available-pill,
-.phase-count-pill {
-  border-color: #4a5f7d !important;
-  background: #1e2a3c !important;
-  color: #a8c7fa !important;
-}
-.phase-workspace-header .eyebrow,
-.phase-subheading > span,
-.phase-subheading > div > span,
-.phase-one-document > section > span,
-.phase-one-document summary {
-  color: #8ab0e8 !important;
-}
-.phase-iteration-bar.viewing-history,
-.phase-history-banner {
-  border-color: #3d4a5c !important;
-  background: #1a222e !important;
-}
-/* Solid gold-globals surfaces (no legacy gradients) */
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"],
-.studio .production-phase-rail > button.current,
-.studio .production-phase-rail > button[aria-current="step"],
-.phase-preview-header {
-  background-image: none !important;
-}
-/* phase-list / location selection: neutral AI studio, not forest green */
-.phase-list > button:hover,
-.phase-list > button.active,
-.phase-location-list > button:hover,
-.phase-location-list > button.active,
-.phase-location-cards > button:hover,
-.phase-location-cards > button.active,
-.phase-segmentation-layout .phase-list > button:hover,
-.phase-segmentation-layout .phase-list > button.active,
-.phase-prompt-layout .phase-list > button:hover,
-.phase-prompt-layout .phase-list > button.active {
-  background: #292b2e !important;
-}
-.phase-list > button.active > span,
-.phase-location-list > button.active > span,
-.phase-location-cards > button.active > span,
-.phase-segmentation-layout .phase-list > button.active > span,
-.phase-prompt-layout .prompt-list > button.active > span,
-.phase-prompt-layout .phase-list > button.active > span {
-  background: #24344f !important;
-  color: #a8c7fa !important;
-}
-
-/* === PIXEL FINAL: production-phase-rail = gold-globals.css exactly === */
-.production-phase-rail,
-.studio .production-phase-rail {
-  gap: 7px !important;
-  padding: 1px 1px 5px !important;
-  scrollbar-color: #3a3e43 transparent !important;
-}
-.production-phase-rail > button,
-.studio .production-phase-rail > button {
-  min-width: 145px !important;
-  min-height: 72px !important;
-  border: 1px solid var(--line, #2b2e32) !important;
-  border-radius: 8px !important;
-  background: #17191b !important;
-  display: grid !important;
-  grid-template-columns: 25px minmax(0, 1fr) !important;
-  gap: 8px !important;
-  align-items: start !important;
-  padding: 10px !important;
-  text-align: left !important;
-  box-shadow: none !important;
-  transform: none !important;
-  background-image: none !important;
-}
-.production-phase-rail > button:hover,
-.studio .production-phase-rail > button:hover {
-  border-color: #4a5568 !important;
-  background: #1b1f1d !important;
-  transform: none !important;
-}
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"],
-.studio .production-phase-rail > button.current,
-.studio .production-phase-rail > button[aria-current="step"] {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.07) !important;
-  background-image: none !important;
-}
-.production-phase-rail > button > span,
-.studio .production-phase-rail > button > span {
-  width: 24px !important;
-  height: 24px !important;
-  border: 1px solid #3b4140 !important;
-  border-radius: 50% !important;
-  display: grid !important;
-  place-items: center !important;
-  color: #8c9691 !important;
-  font-size: 8px !important;
-  font-weight: 400 !important;
-  background: transparent !important;
-}
-.production-phase-rail > button.current > span,
-.production-phase-rail > button[aria-current="step"] > span,
-.studio .production-phase-rail > button.current > span,
-.studio .production-phase-rail > button[aria-current="step"] > span {
-  border-color: #4c8d6b !important;
-  background: #224331 !important;
-  color: #a8c7fa !important;
-}
-.production-phase-rail b,
-.production-phase-rail > button b,
-.studio .production-phase-rail > button b {
-  display: block !important;
-  min-height: 0 !important;
-  font-size: 7px !important;
-  line-height: 1.35 !important;
-  color: #c9cdcb !important;
-}
-.production-phase-rail small,
-.production-phase-rail > button small,
-.studio .production-phase-rail > button small {
-  display: block !important;
-  margin-top: 4px !important;
-  color: #6f7874 !important;
-  font-size: 6px !important;
-  text-transform: none !important;
-}
-.production-phase-rail > button.current small,
-.production-phase-rail > button[aria-current="step"] small,
-.studio .production-phase-rail > button.current small,
-.studio .production-phase-rail > button[aria-current="step"] small {
-  color: #78b793 !important;
-}
-@media (max-width: 1500px) {
-  .production-phase-rail,
-  .studio .production-phase-rail {
-    grid-template-columns: repeat(7, minmax(170px, 1fr)) !important;
-  }
-}
-@media (max-width: 620px) {
-  .production-phase-rail,
-  .studio .production-phase-rail {
-    grid-template-columns: repeat(7, minmax(245px, 78vw)) !important;
-    margin-right: -14px !important;
-    padding-right: 14px !important;
-  }
-  .production-phase-rail > button,
-  .studio .production-phase-rail > button {
-    min-height: 82px !important;
-  }
-}
-
-/* =============================================================================
-   FINAL: kill ALL green on .production-phase-rail current chips
-   AI Studio blue (#a8c7fa / #1a2434). Last in cascade; beats gold-globals mint.
-   ============================================================================= */
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"],
-.production-phase-rail > button[aria-selected="true"],
-.studio .production-phase-rail > button.current,
-.studio .production-phase-rail > button[aria-current="step"],
-.studio .production-phase-rail > button[aria-selected="true"] {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  background-image: none !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.12) !important;
-}
-
-.production-phase-rail > button.current > span,
-.production-phase-rail > button[aria-current="step"] > span,
-.production-phase-rail > button[aria-selected="true"] > span,
-.studio .production-phase-rail > button.current > span,
-.studio .production-phase-rail > button[aria-current="step"] > span,
-.studio .production-phase-rail > button[aria-selected="true"] > span {
-  border-color: #6b8fc4 !important;
-  background: #24344f !important;
-  color: #a8c7fa !important;
-}
-
-.production-phase-rail > button.current b,
-.production-phase-rail > button[aria-current="step"] b,
-.production-phase-rail > button[aria-selected="true"] b,
-.studio .production-phase-rail > button.current b,
-.studio .production-phase-rail > button[aria-current="step"] b,
-.studio .production-phase-rail > button[aria-selected="true"] b {
-  color: #e4eaf4 !important;
-}
-
-.production-phase-rail > button.current small,
-.production-phase-rail > button[aria-current="step"] small,
-.production-phase-rail > button[aria-selected="true"] small,
-.studio .production-phase-rail > button.current small,
-.studio .production-phase-rail > button[aria-current="step"] small,
-.studio .production-phase-rail > button[aria-selected="true"] small {
-  color: #a8c7fa !important;
-}
-
-.production-phase-rail > button.current .phase-iteration-badge,
-.production-phase-rail > button[aria-current="step"] .phase-iteration-badge,
-.production-phase-rail > button[aria-selected="true"] .phase-iteration-badge,
-.studio .production-phase-rail > button.current .phase-iteration-badge,
-.studio .production-phase-rail > button[aria-current="step"] .phase-iteration-badge,
-.studio .production-phase-rail > button[aria-selected="true"] .phase-iteration-badge {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  color: #a8c7fa !important;
+  margin-top: 5px !important;
+  color: #dfe3e5 !important;
+  font-size: 0.95rem !important;
 }
