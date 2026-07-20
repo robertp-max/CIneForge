@@ -274,7 +274,9 @@ function ProjectList({
             const shots = scenes.flatMap((scene) => scene.shots)
             const characters = snapshot?.characters ?? []
             const coverUrl = projectCoverUrl({
+              projectId: project.id,
               projectName: project.name,
+              storyTitle: story?.title,
               shotTitles: shots.map((shot) => shot.title),
               firstAssetId:
                 shots.find((shot) => Boolean(shot.starting_image_asset_id))?.starting_image_asset_id ?? null,

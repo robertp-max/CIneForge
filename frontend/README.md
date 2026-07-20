@@ -9,10 +9,10 @@ npm install
 npm run dev
 ```
 
-The app defaults to `http://127.0.0.1:8000` for backend API calls. Override with:
+The app defaults to `http://127.0.0.1:8010` for backend API calls. Override with:
 
 ```powershell
-$env:VITE_CINEFORGE_API_BASE_URL="http://127.0.0.1:8000"
+$env:VITE_CINEFORGE_API_BASE_URL="http://127.0.0.1:8010"
 ```
 
 ## Build

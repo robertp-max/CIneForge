@@ -41,7 +41,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m pip install -e .[dev]
 Copy-Item .env.example .env
 .\.venv\Scripts\python scripts\create_db.py
-.\.venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8010
 ```
 
 Run tests:

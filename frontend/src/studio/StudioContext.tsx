@@ -38,8 +38,8 @@ export function StudioProvider({
   onNavigate: (page: PageId) => void
   children: ReactNode
 }) {
-  const isDemoProject =
-    selectedProjectId === 'a-new-journey' || selectedProjectId === demoAggregate.story.project_id
+  // Demo fallback only for the local demo UUID — never the legacy slug (App blocks slug studio routes).
+  const isDemoProject = selectedProjectId === demoAggregate.story.project_id
   const [projectId, setProjectId] = useState(selectedProjectId || demoAggregate.story.project_id)
   const [storyId, setStoryId] = useState(isDemoProject ? demoAggregate.story.id : '')
   const [data, setData] = useState<StoryboardAggregate | null>(isDemoProject ? demoAggregate : null)

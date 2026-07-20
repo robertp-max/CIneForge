@@ -357,6 +357,8 @@ export function CharactersPage() {
               const portraitUrl = characterPortraitUrl({
                 name: character.name,
                 assetId: displayReference?.asset_id,
+                projectId: data.story.project_id,
+                storyTitle: data.story.title,
               })
               return (
               <article key={character.id}>
@@ -427,6 +429,8 @@ export function CharactersPage() {
               const selectedPortraitUrl = characterPortraitUrl({
                 name: selectedCharacter.name,
                 assetId: selectedDisplayReference?.asset_id,
+                projectId: data.story.project_id,
+                storyTitle: data.story.title,
               })
               if (selectedPortraitUrl) {
                 return (

@@ -90,7 +90,7 @@ const unassignedShot = {
 function studioValue(saveShot = vi.fn()) {
   return {
     data: {
-      story: { id: 'story-1', project_id: 'project-1' },
+      story: { id: 'story-1', project_id: 'project-1', title: 'Verification Story' },
       chapters: [
         {
           id: 'chapter-1',
@@ -132,12 +132,14 @@ describe('ImagesPage managed starting-image truth', () => {
 
     render(<ImagesPage />)
 
-    // Gold/Sites markup: image-placeholder has-image + published static path.
+    // Managed asset wins for assigned shots (no global Transfiguration static bleed on project-1).
     const assignedHeading = await screen.findByRole('heading', { level: 3, name: 'S01A — Assigned' })
     const assignedCard = assignedHeading.closest('button')
     const unassignedCard = screen.getByRole('heading', { level: 3, name: 'S01B — Unassigned' }).closest('button')
-    expect(assignedCard?.querySelector('img')?.getAttribute('src')).toContain('/transfiguration/starting-images/S01A.webp')
+    expect(assignedCard?.querySelector('img')?.getAttribute('src')).toBe('http://assets.test/start-asset-1')
     expect(assignedCard?.textContent).toMatch(/draft|mapped/i)
+    // Unassigned on a non-Transfiguration project must not show static canon stills.
+    expect(unassignedCard?.querySelector('img')).toBeNull()
     expect(unassignedCard?.textContent).toMatch(/missing|required/i)
     expect(screen.getAllByText('assigned-frame.jpg').length).toBeGreaterThan(0)
 
@@ -145,7 +147,6 @@ describe('ImagesPage managed starting-image truth', () => {
     expect(Array.from(candidateSelect.options).map((option) => option.textContent).join(' ')).not.toContain(
       'multi-panel-board.png',
     )
-    expect(screen.getByAltText('Scene')).toBeTruthy()
   })
 
   it('clears assignment through persisted shot state', async () => {

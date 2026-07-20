@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { planningAssetContentUrl } from '../../api/client'
 
 type ManagedAssetImageProps = {
@@ -13,9 +13,8 @@ type ManagedAssetImageProps = {
 
 /**
  * Gold-compatible media frame.
- * Published Sites uses .image-placeholder/.frame-art/.portrait + direct <img>.
- * We keep managed-asset classes for CineForge pages and always paint the <img>
- * (never opacity:0) so thumbs cannot disappear if load events race.
+ * Failed state is keyed by assetId so changing the asset clears the error without
+ * a setState-in-effect (lint-safe).
  */
 const frameStyle: CSSProperties = {
   position: 'relative',
@@ -40,11 +39,8 @@ export function ManagedAssetImage({
   fit = 'cover',
   loading = 'lazy',
 }: ManagedAssetImageProps) {
+  // Only meaningful when failedId === current assetId (auto-clears on asset change).
   const [failedId, setFailedId] = useState<string | null>(null)
-
-  useEffect(() => {
-    setFailedId(null)
-  }, [assetId])
 
   if (!assetId) {
     return (

@@ -4,7 +4,8 @@ import { AppShell, type PageId, type ShellView } from './components/AppShell'
 import { Projects } from './pages/Projects'
 import { StoryboardStudio } from './pages/StoryboardStudio'
 
-const DEFAULT_PROJECT_ID = 'a-new-journey'
+/** Legacy slug only for URL rewrite — never use as an API project id. */
+const LEGACY_PROJECT_SLUG = 'a-new-journey'
 
 const PAGE_TO_ROUTE: Record<PageId, string> = {
   overview: 'overview',
@@ -44,6 +45,13 @@ type ParsedRoute = {
   canonicalPath?: string
 }
 
+function isRealProjectId(projectId: string | null | undefined): projectId is string {
+  if (!projectId) return false
+  if (projectId === LEGACY_PROJECT_SLUG) return false
+  // UUIDs (any version) or other non-slug ids from the API
+  return projectId.length >= 8 && !projectId.includes(' ')
+}
+
 function normalizeBackendStatus(value: string | undefined): string {
   const status = (value ?? 'unknown').toLowerCase()
   if (status === 'ok' || status === 'healthy' || status === 'up' || status === 'ready') return 'ok'
@@ -54,7 +62,7 @@ function normalizeBackendStatus(value: string | undefined): string {
 }
 
 function studioPath(projectId: string, page: PageId): string {
-  return `/projects/${encodeURIComponent(projectId || DEFAULT_PROJECT_ID)}/studio/${PAGE_TO_ROUTE[page]}`
+  return `/projects/${encodeURIComponent(projectId)}/studio/${PAGE_TO_ROUTE[page]}`
 }
 
 function routePath(route: AppRoute): string {
@@ -80,10 +88,14 @@ function readAppRoute(pathname = window.location.pathname): ParsedRoute {
   if (studioMatch) {
     const [, encodedProjectId, routeSegment] = studioMatch
     try {
-      const projectId = decodeURIComponent(encodedProjectId || DEFAULT_PROJECT_ID)
-      const page = ROUTE_TO_PAGE[routeSegment]
-      const route: AppRoute = { kind: 'studio', projectId, page: page ?? 'overview' }
-      return page ? { route } : { route, canonicalPath: routePath(route) }
+      const projectId = decodeURIComponent(encodedProjectId || '')
+      const page = ROUTE_TO_PAGE[routeSegment] ?? 'overview'
+      // Legacy slug URLs cannot hit the API — bounce to projects until a real id is chosen.
+      if (!isRealProjectId(projectId)) {
+        return { route: { kind: 'projects' }, canonicalPath: '/projects' }
+      }
+      const route: AppRoute = { kind: 'studio', projectId, page }
+      return ROUTE_TO_PAGE[routeSegment] ? { route } : { route, canonicalPath: routePath(route) }
     } catch {
       return { route: { kind: 'projects' }, canonicalPath: '/projects' }
     }
@@ -93,10 +105,17 @@ function readAppRoute(pathname = window.location.pathname): ParsedRoute {
 }
 
 function App() {
-  const [routeState, setRouteState] = useState<AppRoute>(() => readAppRoute().route)
+  const [routeState, setRouteState] = useState<AppRoute>(() => {
+    const parsed = readAppRoute()
+    // Canonicalize legacy / invalid studio URLs during first paint — no effect setState.
+    if (parsed.canonicalPath && window.location.pathname !== parsed.canonicalPath) {
+      window.history.replaceState(parsed.route, '', parsed.canonicalPath)
+    }
+    return parsed.route
+  })
   const [backendStatus, setBackendStatus] = useState('checking')
-  const [projectName, setProjectName] = useState('A New Journey')
-  const [selectedProjectId, setSelectedProjectId] = useState(DEFAULT_PROJECT_ID)
+  const [projectName, setProjectName] = useState('Select a project')
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [projectCount, setProjectCount] = useState(0)
 
   const navigateTo = useCallback((route: AppRoute, options?: { replace?: boolean }) => {
@@ -110,7 +129,14 @@ function App() {
 
   const navigateStudio = useCallback(
     (page: PageId) => {
-      const projectId = routeState.kind === 'studio' ? routeState.projectId : selectedProjectId
+      const projectId =
+        routeState.kind === 'studio' && isRealProjectId(routeState.projectId)
+          ? routeState.projectId
+          : selectedProjectId
+      if (!isRealProjectId(projectId)) {
+        navigateTo({ kind: 'projects' })
+        return
+      }
       navigateTo({ kind: 'studio', projectId, page })
     },
     [navigateTo, routeState, selectedProjectId],
@@ -118,6 +144,10 @@ function App() {
 
   const openProject = useCallback(
     (projectId: string, name?: string) => {
+      if (!isRealProjectId(projectId)) {
+        navigateTo({ kind: 'projects' })
+        return
+      }
       setSelectedProjectId(projectId)
       if (name) setProjectName(name)
       navigateTo({ kind: 'studio', projectId, page: 'overview' })
@@ -128,9 +158,15 @@ function App() {
   const handleProjectsLoaded = useCallback((projects: Project[]) => {
     setProjectCount(projects.length)
     setSelectedProjectId((currentId) => {
-      if (currentId !== DEFAULT_PROJECT_ID) return currentId
-      const preferred = projects.find((project) => project.name === 'A New Journey') ?? projects[0]
-      if (!preferred) return currentId
+      if (isRealProjectId(currentId) && projects.some((project) => project.id === currentId)) {
+        return currentId
+      }
+      // Prefer Transfiguration for dry-run, else first project — never a slug.
+      const preferred =
+        projects.find((project) => project.name.toLowerCase().includes('transfiguration')) ??
+        projects.find((project) => project.name === 'A New Journey') ??
+        projects[0]
+      if (!preferred) return null
       setProjectName(preferred.name)
       return preferred.id
     })
@@ -138,11 +174,14 @@ function App() {
 
   useEffect(() => {
     let active = true
-    void api.listProjects().then((projects) => {
-      if (active) handleProjectsLoaded(projects)
-    }).catch(() => {
-      if (active) setProjectCount(0)
-    })
+    void api
+      .listProjects()
+      .then((projects) => {
+        if (active) handleProjectsLoaded(projects)
+      })
+      .catch(() => {
+        if (active) setProjectCount(0)
+      })
     return () => {
       active = false
     }
@@ -158,18 +197,14 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const parsed = readAppRoute()
-    if (parsed.canonicalPath && window.location.pathname !== parsed.canonicalPath) {
-      window.history.replaceState(parsed.route, '', parsed.canonicalPath)
-    }
     const onPopState = () => setRouteState(readAppRoute().route)
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   useEffect(() => {
-    if (routeState.kind !== 'studio') return
-    if (routeState.projectId === DEFAULT_PROJECT_ID) return
+    // Invalid / legacy studio ids are already rewritten by readAppRoute / isRealProjectId guards.
+    if (routeState.kind !== 'studio' || !isRealProjectId(routeState.projectId)) return
 
     let active = true
     void api
@@ -181,12 +216,16 @@ function App() {
         }
       })
       .catch(() => {
-        if (active) setProjectName('Selected project')
+        if (active) {
+          setProjectName('Selected project')
+          // Unknown API id — send user back to the project list (async path, not sync-in-effect).
+          navigateTo({ kind: 'projects' }, { replace: true })
+        }
       })
     return () => {
       active = false
     }
-  }, [routeState])
+  }, [routeState, navigateTo])
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0 })
@@ -206,11 +245,11 @@ function App() {
   const shellView: ShellView =
     routeState.kind === 'studio' ? 'studio' : routeState.kind === 'new-project' ? 'new-project' : 'projects'
   const activePage = routeState.kind === 'studio' ? routeState.page : 'overview'
-  const activeProjectId = routeState.kind === 'studio' ? routeState.projectId : selectedProjectId
-  const activeProjectName =
-    routeState.kind === 'studio' && routeState.projectId === DEFAULT_PROJECT_ID
-      ? 'A New Journey'
-      : projectName
+  const activeProjectId =
+    routeState.kind === 'studio' && isRealProjectId(routeState.projectId)
+      ? routeState.projectId
+      : selectedProjectId ?? ''
+  const activeProjectName = projectName
 
   return (
     <AppShell
@@ -233,8 +272,11 @@ function App() {
           onOpenProject={openProject}
           onProjectsLoaded={handleProjectsLoaded}
           onNavigateStudio={(page) => {
-            const projectId = selectedProjectId || DEFAULT_PROJECT_ID
-            navigateTo({ kind: 'studio', projectId, page })
+            if (!isRealProjectId(selectedProjectId)) {
+              // No real project selected yet — stay on projects list.
+              return
+            }
+            navigateTo({ kind: 'studio', projectId: selectedProjectId, page })
           }}
         />
       ) : null}
@@ -246,7 +288,7 @@ function App() {
           onOpenProject={openProject}
         />
       ) : null}
-      {routeState.kind === 'studio' ? (
+      {routeState.kind === 'studio' && isRealProjectId(routeState.projectId) ? (
         <StoryboardStudio
           key={routeState.projectId}
           page={routeState.page}

@@ -346,6 +346,11 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
     shot.characters?.some((link) => link.character_id === selected?.id),
   )
   const voices = workspace?.voices ?? []
+  const mediaScope = {
+    projectId: workspace?.projectId,
+    storyTitle:
+      typeof workspace?.narrative?.title === 'string' ? workspace.narrative.title : null,
+  }
 
   return (
     <div className="phase-preview-workspace">
@@ -379,10 +384,10 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
 
           <section className="phase-character-profile">
             <div className="phase-character-hero">
-              <div className={`phase-character-avatar${characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id }) ? ' has-image' : ''}`}>
-                {characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id }) ? (
+              <div className={`phase-character-avatar${characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id, ...mediaScope }) ? ' has-image' : ''}`}>
+                {characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id, ...mediaScope }) ? (
                   <img
-                    src={characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id })!}
+                    src={characterPortraitUrl({ name: selected.name, assetId: references[0]?.asset_id, ...mediaScope })!}
                     alt={`${selected.name} reference`}
                     loading="lazy"
                     decoding="async"
@@ -422,9 +427,9 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
                 const reference = references[index]
                 const portraitUrl =
                   index === 0
-                    ? characterPortraitUrl({ name: selected.name, assetId: reference?.asset_id })
+                    ? characterPortraitUrl({ name: selected.name, assetId: reference?.asset_id, ...mediaScope })
                     : reference?.asset_id
-                      ? characterPortraitUrl({ name: selected.name, assetId: reference.asset_id })
+                      ? characterPortraitUrl({ name: selected.name, assetId: reference.asset_id, ...mediaScope })
                       : null
                 return (
                   <article key={label}>
@@ -709,6 +714,11 @@ function PhaseFivePreview({ phase, workspace, historical, onNavigate }: PreviewP
 
 function PhaseSixPreview({ phase, workspace, historical, onNavigate }: PreviewProps) {
   const scenes = useMemo(() => buildSceneRows(workspace), [workspace])
+  const mediaScope = {
+    projectId: workspace?.projectId,
+    storyTitle:
+      typeof workspace?.narrative?.title === 'string' ? workspace.narrative.title : null,
+  }
   const shots = useMemo(() => buildShotRows(scenes), [scenes])
   const [mediaTab, setMediaTab] = useState<'images' | 'voices' | 'mapping'>('images')
   const requiredFrames = shots.filter((row) => row.shot.starting_image_required || row.shot.starting_image_asset_id)
@@ -762,6 +772,7 @@ function PhaseSixPreview({ phase, workspace, historical, onNavigate }: PreviewPr
                     title: row.shot.title,
                     code: row.code,
                     assetId: row.shot.starting_image_asset_id,
+                    ...mediaScope,
                   })
                   return (
                   <article key={row.shot.id}>

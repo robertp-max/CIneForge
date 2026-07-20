@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, type PlanningMediaAsset } from '../../api/client'
 import { useStudio } from '../StudioState'
-import { startingFrameUrl, staticStoryboardUrl } from '../mediaUrls'
+import { artDirectionBoardUrl, startingFrameUrl } from '../mediaUrls'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
 function MediaThumb({
@@ -254,11 +254,17 @@ export function ImagesPage() {
     }
   }
 
+  const mediaScope = {
+    projectId: data.story.project_id,
+    storyTitle: data.story.title,
+  }
+
   const selectedThumbUrl = selectedShot
     ? startingFrameUrl({
         title: selectedShot.title,
         filename: selectedAssignedAsset?.original_filename,
         assetId: selectedShot.starting_image_asset_id,
+        ...mediaScope,
       })
     : null
 
@@ -288,12 +294,12 @@ export function ImagesPage() {
           </div>
           <div className="image-grid">
             {artDirectionRows.map(({ asset, sceneRow, sceneNumber }, index) => {
-              const url =
-                (typeof sceneNumber === 'number' ? staticStoryboardUrl(sceneNumber) : null) ||
-                startingFrameUrl({
-                  filename: asset.original_filename,
-                  assetId: asset.mime_type && !asset.mime_type.startsWith('image/') ? null : asset.id,
-                })
+              const url = artDirectionBoardUrl({
+                sceneNumber,
+                filename: asset.original_filename,
+                assetId: asset.mime_type && !asset.mime_type.startsWith('image/') ? null : asset.id,
+                ...mediaScope,
+              })
               return (
                 <button type="button" key={asset.id} className="selected" style={{ cursor: 'default' }}>
                   <MediaThumb
@@ -366,7 +372,7 @@ export function ImagesPage() {
           {!available && !loading ? (
             <UnavailableState
               title="Managed assets API unavailable"
-              detail="Static published media still renders when shot codes match the Gold pack."
+              detail="Managed asset content cannot load. Transfiguration static canon stills only apply to the Transfiguration project."
             />
           ) : null}
           {!filteredRows.length && !loading ? (
@@ -383,6 +389,7 @@ export function ImagesPage() {
                   title: shot.title,
                   filename: asset?.original_filename,
                   assetId: shot.starting_image_asset_id,
+                  ...mediaScope,
                 })
                 return (
                   <button
@@ -543,6 +550,7 @@ export function ImagesPage() {
                   const url = startingFrameUrl({
                     filename: asset.original_filename,
                     assetId: asset.mime_type && !asset.mime_type.startsWith('image/') ? null : asset.id,
+                    ...mediaScope,
                   })
                   return (
                     <button type="button" key={asset.id} style={{ cursor: 'default' }}>
