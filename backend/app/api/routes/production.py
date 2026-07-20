@@ -7,9 +7,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
 from backend.app.schemas.production import (
+    PhaseHistoryExport,
     PhaseOneGenerationInput,
     PhaseOneMutationResponse,
     PhaseOneRevisionRequest,
+    PhaseVersionCreateRequest,
+    PhaseVersionCreateResponse,
+    PhaseVersionDetail,
+    PhaseVersionSummary,
     ProductionPipelineRead,
 )
 from backend.app.services import production_phases
@@ -21,11 +26,21 @@ router = APIRouter(prefix="/production", tags=["production"])
 def _error(exc: production_phases.ProductionPhaseError) -> HTTPException:
     if isinstance(exc, production_phases.ProductionPhaseConflictError):
         code = status.HTTP_409_CONFLICT
-    elif str(exc) == "Story not found.":
+    elif str(exc) in {
+        "Story not found.",
+        "Version not found.",
+    } or str(exc).startswith("Phase ") and "missing" in str(exc):
+        code = status.HTTP_404_NOT_FOUND
+    elif "different" in str(exc).lower() or "integrity" in str(exc).lower() or "tamper" in str(exc).lower() or "failed integrity" in str(exc).lower() or "Unsupported" in str(exc):
+        code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    elif str(exc) == "Version not found.":
         code = status.HTTP_404_NOT_FOUND
     else:
         code = status.HTTP_422_UNPROCESSABLE_ENTITY
-    return HTTPException(status_code=code, detail=str(exc))
+    message = str(exc)
+    if message == "Version not found.":
+        code = status.HTTP_404_NOT_FOUND
+    return HTTPException(status_code=code, detail=message)
 
 
 @router.get("/stories/{story_id}", response_model=ProductionPipelineRead)
@@ -34,6 +49,72 @@ def get_production_pipeline(
 ) -> ProductionPipelineRead:
     try:
         return production_phases.get_pipeline(db, story_id)
+    except production_phases.ProductionPhaseError as exc:
+        raise _error(exc) from exc
+
+
+@router.get(
+    "/stories/{story_id}/phases/{phase_number}/versions",
+    response_model=list[PhaseVersionSummary],
+)
+def list_phase_versions(
+    story_id: UUID,
+    phase_number: int,
+    db: Session = Depends(get_db),
+) -> list[PhaseVersionSummary]:
+    try:
+        return production_phases.list_phase_versions(db, story_id, phase_number)
+    except production_phases.ProductionPhaseError as exc:
+        raise _error(exc) from exc
+
+
+@router.get(
+    "/stories/{story_id}/phases/{phase_number}/versions/{version_id}",
+    response_model=PhaseVersionDetail,
+)
+def get_phase_version(
+    story_id: UUID,
+    phase_number: int,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+) -> PhaseVersionDetail:
+    try:
+        return production_phases.get_phase_version(
+            db, story_id, phase_number, version_id
+        )
+    except production_phases.ProductionPhaseError as exc:
+        raise _error(exc) from exc
+
+
+@router.post(
+    "/stories/{story_id}/phases/{phase_number}/versions",
+    response_model=PhaseVersionCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_phase_version(
+    story_id: UUID,
+    phase_number: int,
+    payload: PhaseVersionCreateRequest,
+    db: Session = Depends(get_db),
+) -> PhaseVersionCreateResponse:
+    try:
+        return production_phases.create_phase_version(
+            db, story_id, phase_number, payload
+        )
+    except production_phases.ProductionPhaseError as exc:
+        db.rollback()
+        raise _error(exc) from exc
+
+
+@router.get(
+    "/stories/{story_id}/versions/export",
+    response_model=PhaseHistoryExport,
+)
+def export_phase_history(
+    story_id: UUID, db: Session = Depends(get_db)
+) -> PhaseHistoryExport:
+    try:
+        return production_phases.export_phase_history(db, story_id)
     except production_phases.ProductionPhaseError as exc:
         raise _error(exc) from exc
 

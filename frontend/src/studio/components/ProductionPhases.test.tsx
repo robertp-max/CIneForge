@@ -8,6 +8,10 @@ vi.mock('../../api/client', () => ({
   api: {
     getProductionPipeline: vi.fn(),
     revisePhaseOne: vi.fn(),
+    listPhaseVersions: vi.fn(),
+    getPhaseVersion: vi.fn(),
+    createPhaseVersion: vi.fn(),
+    exportPhaseHistory: vi.fn(),
   },
 }))
 
@@ -69,7 +73,8 @@ const pipeline: ProductionPipeline = {
     phase_number: index + 1,
     name,
     lifecycle_state: index === 0 ? 'ready_for_review' : 'not_started',
-    current_version_number: index === 0 ? 1 : null,
+    current_version_number: index === 0 ? 1 : 1,
+    version_count: 1,
     is_locked: index !== 0,
     locked_reason: index === 0 ? null : `Phase ${index} must be approved.`,
     is_stale: false,
@@ -209,11 +214,76 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+const baselineVersions = (phaseNumber: number) => [{
+  id: `baseline-${phaseNumber}`,
+  version_number: 1,
+  label: 'Baseline',
+  notes: 'Initial retained state for this phase.',
+  source: 'baseline' as const,
+  lifecycle_state: 'not_started' as const,
+  completed: false,
+  snapshot_schema_version: 1,
+  input_hash: 'c'.repeat(64),
+  output_hash: 'd'.repeat(64),
+  created_by: 'system:baseline',
+  previous_version_id: null,
+  created_at: '2026-07-19T00:00:00Z',
+  updated_at: '2026-07-19T00:00:00Z',
+}]
+
+function mockHistoryApis() {
+  vi.mocked(api.listPhaseVersions).mockImplementation(async (_storyId, phaseNumber) => baselineVersions(phaseNumber))
+  vi.mocked(api.getPhaseVersion).mockImplementation(async (storyId, phaseNumber, versionId) => ({
+    ...baselineVersions(phaseNumber)[0],
+    id: versionId,
+    story_id: storyId,
+    project_id: 'project-1',
+    phase_number: phaseNumber,
+    phase_name: phaseNames[phaseNumber - 1],
+    input_snapshot_json: {},
+    output_json: { schema_name: 'cineforge.production_phase_snapshot', phase_number: phaseNumber },
+    verified: true,
+  }))
+  vi.mocked(api.createPhaseVersion).mockResolvedValue({
+    version: {
+      ...baselineVersions(1)[0],
+      id: 'manual-1',
+      version_number: 2,
+      label: 'Director review',
+      source: 'manual',
+      story_id: 'story-1',
+      project_id: 'project-1',
+      phase_number: 1,
+      phase_name: phaseNames[0],
+      input_snapshot_json: {},
+      output_json: {},
+      verified: true,
+    },
+    pipeline,
+  })
+  vi.mocked(api.exportPhaseHistory).mockResolvedValue({
+    schema_name: 'cineforge.phase-history',
+    version: 1,
+    project_id: 'project-1',
+    story_id: 'story-1',
+    exported_at: '2026-07-19T00:00:00Z',
+    integrity: {
+      verified: true,
+      iteration_count: 7,
+      snapshot_count: 7,
+      phase_counts: { '1': 1, '2': 1, '3': 1, '4': 1, '5': 1, '6': 1, '7': 1 },
+      hashes: Array.from({ length: 7 }, () => 'e'.repeat(64)),
+    },
+    iterations: [],
+  })
+}
+
 describe('ProductionPhases', () => {
   it('shows exactly seven enabled phase tabs and opens every UI workspace', async () => {
     vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    mockHistoryApis()
 
-    render(<ProductionPhases storyId="story-1" data={aggregate} />)
+    render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
 
     expect(await screen.findByText('Your complete script is ready for review.')).toBeTruthy()
     expect(screen.getByText('7 complete workspaces')).toBeTruthy()
@@ -238,7 +308,8 @@ describe('ProductionPhases', () => {
 
   it('supports keyboard navigation across the seven phase tabs', async () => {
     vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
-    render(<ProductionPhases storyId="story-1" data={aggregate} />)
+    mockHistoryApis()
+    render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
 
     const first = await screen.findByRole('tab', { name: /Script and Narrative Development/ })
     fireEvent.keyDown(first, { key: 'ArrowRight' })
@@ -253,12 +324,13 @@ describe('ProductionPhases', () => {
 
   it('saves edits as a new version and reruns QA', async () => {
     vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    mockHistoryApis()
     vi.mocked(api.revisePhaseOne).mockResolvedValue({
       pipeline,
       phase: pipeline.phases[0],
       completion_message: 'Your complete script is ready for review.',
     })
-    render(<ProductionPhases storyId="story-1" data={aggregate} />)
+    render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
     await screen.findByText('The Test Film')
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit script package' }))
@@ -270,5 +342,24 @@ describe('ProductionPhases', () => {
       expected_version_number: 1,
       logline: 'A revised logline.',
     }))
+  })
+
+  it('loads SQLite-backed history and retains a current draft iteration', async () => {
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    mockHistoryApis()
+    render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
+    await screen.findByText('Current working draft')
+
+    fireEvent.click(screen.getByRole('button', { name: 'New iteration' }))
+    fireEvent.change(screen.getByPlaceholderText(/Director review/), { target: { value: 'Director review' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Retain current draft' }))
+
+    await waitFor(() => expect(api.createPhaseVersion).toHaveBeenCalledTimes(1))
+    expect(api.createPhaseVersion).toHaveBeenCalledWith(
+      'story-1',
+      1,
+      expect.objectContaining({ label: 'Director review' }),
+    )
+    expect(api.listPhaseVersions).toHaveBeenCalled()
   })
 })

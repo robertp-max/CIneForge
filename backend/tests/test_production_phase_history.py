@@ -1,0 +1,226 @@
+"""Immutable production-phase version history (SQLite disposable DB only)."""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from backend.app.db.base import Base, ProductionPhase, ProductionPhaseVersion, Project, Story
+from backend.app.db.session import get_db
+from backend.app.main import app
+from backend.app.schemas.production import PhaseVersionCreateRequest
+from backend.app.services import production_phases
+
+
+@pytest.fixture
+def db_session(tmp_path) -> Generator[Session, None, None]:
+    engine = create_engine(
+        f"sqlite:///{(tmp_path / 'history.db').as_posix()}",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    session = factory()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    def _override():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = _override
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def _story(db: Session) -> Story:
+    project = Project(name=f"History Project {uuid4().hex[:8]}", description="history")
+    db.add(project)
+    db.flush()
+    story = Story(
+        project_id=project.id,
+        title="History Story",
+        base_story="A quiet mountain becomes a place of revelation.",
+        target_duration_sec=300,
+        audience="General",
+        genre="Sacred narrative",
+        tone="Reverent",
+        visual_style="Photoreal",
+        point_of_view="Third person",
+        production_notes="Planning only",
+        approval_state="draft",
+    )
+    db.add(story)
+    db.commit()
+    db.refresh(story)
+    return story
+
+
+def test_seven_phase_contract_and_baselines(db_session: Session):
+    story = _story(db_session)
+    pipeline = production_phases.get_pipeline(db_session, story.id)
+    assert pipeline.exact_phase_count == 7
+    assert len(pipeline.phases) == 7
+    assert [p.phase_number for p in pipeline.phases] == [1, 2, 3, 4, 5, 6, 7]
+    assert all(p.version_count >= 1 for p in pipeline.phases)
+    assert all(
+        p.latest_version and p.latest_version.source == "baseline"
+        for p in pipeline.phases
+    )
+    # Idempotent
+    again = production_phases.get_pipeline(db_session, story.id)
+    assert [p.version_count for p in again.phases] == [p.version_count for p in pipeline.phases]
+
+
+def test_manual_append_all_phases_unique_and_immutable(db_session: Session):
+    story = _story(db_session)
+    production_phases.get_pipeline(db_session, story.id)
+    prior_rows: dict[int, list[tuple]] = {}
+    for phase_number in range(1, 8):
+        rows = list(
+            db_session.scalars(
+                select(ProductionPhaseVersion)
+                .join(ProductionPhase)
+                .where(
+                    ProductionPhase.story_id == story.id,
+                    ProductionPhase.phase_number == phase_number,
+                )
+                .order_by(ProductionPhaseVersion.version_number)
+            )
+        )
+        prior_rows[phase_number] = [
+            (
+                row.id,
+                row.version_number,
+                row.input_hash,
+                row.output_hash,
+                row.label,
+                row.notes,
+                row.source,
+            )
+            for row in rows
+        ]
+        created = production_phases.create_phase_version(
+            db_session,
+            story.id,
+            phase_number,
+            PhaseVersionCreateRequest(
+                label=f"Director review P{phase_number}",
+                notes="Milestone",
+                requested_by="tester",
+            ),
+        )
+        assert created.version.version_number == len(prior_rows[phase_number]) + 1
+        assert created.version.source == "manual"
+        assert created.version.previous_version_id == prior_rows[phase_number][-1][0]
+        assert created.version.verified is True
+
+    # Prior rows unchanged byte-for-byte on tracked fields
+    for phase_number, expected in prior_rows.items():
+        rows = list(
+            db_session.scalars(
+                select(ProductionPhaseVersion)
+                .join(ProductionPhase)
+                .where(
+                    ProductionPhase.story_id == story.id,
+                    ProductionPhase.phase_number == phase_number,
+                )
+                .order_by(ProductionPhaseVersion.version_number)
+            )
+        )
+        for index, fields in enumerate(expected):
+            row = rows[index]
+            assert (
+                row.id,
+                row.version_number,
+                row.input_hash,
+                row.output_hash,
+                row.label,
+                row.notes,
+                row.source,
+            ) == fields
+
+
+def test_hash_tamper_and_cross_phase_rejection(db_session: Session, client: TestClient):
+    story = _story(db_session)
+    production_phases.get_pipeline(db_session, story.id)
+    phase = db_session.scalar(
+        select(ProductionPhase).where(
+            ProductionPhase.story_id == story.id, ProductionPhase.phase_number == 2
+        )
+    )
+    version = db_session.scalar(
+        select(ProductionPhaseVersion)
+        .where(ProductionPhaseVersion.production_phase_id == phase.id)
+        .order_by(ProductionPhaseVersion.version_number)
+    )
+    # Tamper output without updating hash
+    version.output_json = {**version.output_json, "tampered": True}
+    db_session.commit()
+    response = client.get(
+        f"/production/stories/{story.id}/phases/2/versions/{version.id}"
+    )
+    assert response.status_code == 422
+    assert "integrity" in response.json()["detail"].lower()
+
+    # Cross-phase rejection
+    other = client.get(
+        f"/production/stories/{story.id}/phases/3/versions/{version.id}"
+    )
+    assert other.status_code == 422
+
+
+def test_export_complete_or_fail_and_routes(client: TestClient, db_session: Session):
+    story = _story(db_session)
+    listed = client.get(f"/production/stories/{story.id}/phases/1/versions")
+    assert listed.status_code == 200
+    assert len(listed.json()) >= 1
+    created = client.post(
+        f"/production/stories/{story.id}/phases/4/versions",
+        json={"label": "Location pass", "notes": "env coverage"},
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["version"]["label"] == "Location pass"
+    assert body["version"]["source"] == "manual"
+    assert body["pipeline"]["exact_phase_count"] == 7
+
+    export = client.get(f"/production/stories/{story.id}/versions/export")
+    assert export.status_code == 200
+    payload = export.json()
+    assert payload["integrity"]["verified"] is True
+    assert payload["integrity"]["iteration_count"] >= 8
+    assert payload["story_id"] == str(story.id)
+    assert set(payload["integrity"]["phase_counts"].keys()) == {
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+    }
+
+
+def test_missing_story_and_no_delete_route(client: TestClient):
+    missing = uuid4()
+    assert client.get(f"/production/stories/{missing}").status_code == 404
+    # No delete endpoint for history
+    story = None
+    # FastAPI should 405/404 for DELETE on versions collection
+    response = client.delete(f"/production/stories/{missing}/phases/1/versions/{missing}")
+    assert response.status_code in {404, 405, 422}

@@ -3410,3 +3410,132 @@ tbody tr {
   .phase-final-qa-grid article { grid-template-columns: 27px minmax(0, 1fr); }
   .phase-final-qa-grid small { grid-column: 2; }
 }
+
+/* --- Gold Edition phase iteration chrome (SQLite-backed history) --- */
+.production-phase-rail > button { position: relative; }
+.phase-iteration-badge {
+  position: absolute; top: 7px; right: 7px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; border: 1px solid #3f6a54; background: #1a2a22; color: #9dccb3;
+  font-size: 0.58rem; font-weight: 800; display: grid; place-items: center; font-style: normal;
+}
+.production-phase-rail > button.current .phase-iteration-badge { border-color: #58b885; background: #214733; color: #c7f0d9; }
+
+.phase-iteration-bar {
+  display: grid; grid-template-columns: minmax(240px, 1.1fr) minmax(0, 1.3fr) auto; gap: 12px; align-items: center;
+  border: 1px solid #2d3437; border-radius: 11px; background: #171a1c; padding: 10px 12px;
+}
+.phase-iteration-bar.viewing-history { border-color: #4a6f5a; background: linear-gradient(90deg, #17241d, #171a1c); }
+.phase-version-nav { display: flex; align-items: end; gap: 8px; min-width: 0; }
+.phase-version-nav > button {
+  width: 32px; height: 34px; border: 1px solid #394145; border-radius: 8px; background: #1d2123; color: #cfd4d7; cursor: pointer;
+}
+.phase-version-nav > button:disabled { opacity: 0.4; cursor: not-allowed; }
+.phase-version-nav label { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.phase-version-nav label span { color: #7f8a84; font-size: 0.58rem; font-weight: 800; letter-spacing: 0.08em; }
+.phase-version-nav select {
+  width: 100%; min-width: 0; border: 1px solid #3a4145; border-radius: 8px; background: #191c1e; color: #e4e7e9; padding: 8px 10px;
+}
+.phase-version-status span, .phase-version-status b, .phase-version-status small { display: block; }
+.phase-version-status span { color: #7b8580; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.phase-version-status b { margin-top: 3px; color: #dce3df; font-size: 0.82rem; }
+.phase-version-status small { margin-top: 3px; color: #7f888c; font-size: 0.68rem; line-height: 1.4; }
+.phase-version-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.phase-version-actions > button {
+  border: 1px solid #3a4246; border-radius: 8px; background: #1c2022; color: #cfd4d7; padding: 8px 11px; cursor: pointer; font-size: 0.72rem; font-weight: 700;
+}
+.phase-version-actions > button.primary, .phase-version-actions > button.active {
+  border-color: #4b8769; background: #1e3328; color: #b6e7cb;
+}
+
+.phase-history-banner, .phase-history-error {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  border-radius: 10px; padding: 12px 14px;
+}
+.phase-history-banner { border: 1px solid #456b55; background: #18241e; }
+.phase-history-error { border: 1px solid #7a4545; background: #2a1b1b; color: #f0c4c1; }
+.phase-history-banner b, .phase-history-error b { display: block; }
+.phase-history-banner p, .phase-history-error p { margin: 4px 0 0; color: #93a59b; font-size: 0.72rem; line-height: 1.45; }
+.phase-history-banner small { display: block; margin-top: 5px; color: #8fb89f; }
+.phase-history-banner > button {
+  flex: 0 0 auto; border: 1px solid #4b7a60; border-radius: 8px; background: #20362a; color: #c5ecd6; padding: 8px 11px; cursor: pointer;
+}
+
+.phase-comparison {
+  border: 1px solid #30373a; border-radius: 11px; background: #171a1c; padding: 12px;
+}
+.phase-comparison > header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.phase-comparison > header span { color: #78b494; font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em; }
+.phase-comparison > header b { display: block; margin-top: 3px; }
+.phase-comparison > header small { color: #7f888c; font-size: 0.68rem; }
+.phase-comparison > div { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.phase-comparison article { border: 1px solid #2e3437; border-radius: 8px; background: #1a1d1f; padding: 10px; }
+.phase-comparison article.changed { border-color: #4d6f58; }
+.phase-comparison article span, .phase-comparison article em { display: block; color: #7f888c; font-size: 0.62rem; }
+.phase-comparison article div { display: flex; align-items: center; gap: 6px; margin: 7px 0; flex-wrap: wrap; }
+.phase-comparison article b, .phase-comparison article strong { color: #e2e6e8; }
+
+.phase-modal-backdrop {
+  position: fixed; inset: 0; z-index: 80; background: rgba(8, 10, 11, 0.72);
+  display: grid; place-items: center; padding: 18px;
+}
+.phase-modal {
+  width: min(560px, 100%); max-height: min(88vh, 900px); overflow: auto;
+  border: 1px solid #3a4246; border-radius: 14px; background: #171a1c; box-shadow: 0 24px 80px rgba(0,0,0,.45);
+}
+.phase-modal.wide { width: min(760px, 100%); }
+.phase-modal > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-bottom: 1px solid #2d3336; padding: 14px 16px;
+}
+.phase-modal > header h3 { margin: 0; font-size: 1rem; }
+.phase-modal > header > button {
+  width: 32px; height: 32px; border: 1px solid #3a4246; border-radius: 8px; background: #1d2123; color: #cfd4d7; cursor: pointer;
+}
+.phase-iteration-form, .phase-history-drawer { display: grid; gap: 12px; padding: 16px; }
+.phase-iteration-form label { display: grid; gap: 6px; color: #c6cbce; font-size: 0.72rem; font-weight: 800; }
+.phase-iteration-form input, .phase-iteration-form textarea {
+  width: 100%; border: 1px solid #393e42; border-radius: 8px; background: #191c1e; color: #e1e4e5; padding: 10px 11px;
+}
+.phase-iteration-form textarea { min-height: 90px; resize: vertical; }
+.phase-iteration-form-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.phase-iteration-form-meta span { border: 1px solid #2f3538; border-radius: 8px; background: #1a1d1f; padding: 8px; font-size: 0.68rem; color: #9aa3a7; }
+.phase-iteration-form-meta b { display: block; color: #d5dbde; margin-bottom: 3px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.phase-history-drawer > header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.phase-history-drawer > header h4 { margin: 4px 0; }
+.phase-history-drawer > header p { margin: 0; color: #8a9297; font-size: 0.72rem; line-height: 1.45; }
+.phase-history-list { display: grid; gap: 7px; max-height: 46vh; overflow: auto; }
+.phase-history-list > button {
+  display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; text-align: left;
+  border: 1px solid #2f3538; border-radius: 10px; background: #1a1d1f; color: inherit; padding: 10px; cursor: pointer;
+}
+.phase-history-list > button.active { border-color: #4b8769; background: #1b2a22; }
+.phase-history-list > button > span {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #243028; color: #9dccb3; font-weight: 800; font-size: 0.68rem;
+}
+.phase-history-list b { display: block; }
+.phase-history-list p { margin: 3px 0; color: #9aa3a7; font-size: 0.72rem; }
+.phase-history-list small { color: #74807b; font-size: 0.65rem; }
+.phase-history-drawer > footer {
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  border-top: 1px solid #2d3336; padding-top: 12px;
+}
+.phase-history-drawer > footer small { display: block; color: #7f888c; margin-top: 3px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+@media (max-width: 1100px) {
+  .phase-iteration-bar { grid-template-columns: 1fr; }
+  .phase-version-actions { justify-content: flex-start; }
+  .phase-comparison > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .phase-iteration-form-meta { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .phase-comparison > div { grid-template-columns: 1fr; }
+  .phase-history-banner { display: grid; }
+}
+@media (max-height: 760px) {
+  .phase-history-list { max-height: 34vh; }
+  .phase-modal { max-height: 92vh; }
+}

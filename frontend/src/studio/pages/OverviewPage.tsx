@@ -63,7 +63,12 @@ export function OverviewPage() {
 
   return (
     <>
-      <ProductionPhases storyId={data.story.id} data={data} onNavigate={navigate} />
+      <ProductionPhases
+        storyId={data.story.id}
+        projectId={data.story.project_id}
+        data={data}
+        onNavigate={navigate}
+      />
 
       <details className="backend-diagnostics">
         <summary>

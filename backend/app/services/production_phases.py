@@ -16,24 +16,49 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.db.base import (
     AuditLog,
+    Chapter,
+    Character,
+    CharacterReferenceAsset,
+    PlanningMediaAsset,
     ProductionPhase,
     ProductionPhaseVersion,
+    Project,
+    ProviderProfile,
     QAReport,
+    Scene,
+    Shot,
+    ShotCharacter,
+    ShotNarration,
+    ShotPromptPackage,
     Story,
+    TaskProviderAssignment,
+    VoiceProfile,
 )
 from backend.app.schemas.production import (
+    PhaseHistoryExport,
+    PhaseHistoryExportIntegrity,
     PhaseOneGenerationInput,
     PhaseOneMutationResponse,
     PhaseOneRevisionRequest,
+    PhaseVersionCreateRequest,
+    PhaseVersionCreateResponse,
+    PhaseVersionDetail,
     PhaseVersionRead,
+    PhaseVersionSummary,
     ProductionPhaseRead,
     ProductionPipelineRead,
     QAReportRead,
+)
+
+SNAPSHOT_SCHEMA_VERSION = 1
+SUPPORTED_SOURCES = frozenset(
+    {"baseline", "manual", "generated", "revision", "imported"}
 )
 
 
@@ -719,22 +744,38 @@ def _latest_qa(db: Session, version_id: UUID) -> QAReport | None:
     )
 
 
+def _version_count(db: Session, phase_id: UUID) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(ProductionPhaseVersion)
+            .where(ProductionPhaseVersion.production_phase_id == phase_id)
+        )
+        or 0
+    )
+
+
 def _phase_read(db: Session, phase: ProductionPhase) -> ProductionPhaseRead:
     version = _latest_version(db, phase.id)
     qa = _latest_qa(db, version.id) if version is not None else None
+    latest = None
+    if version is not None:
+        latest = PhaseVersionRead.model_validate(version)
+        latest.verified = True
     return ProductionPhaseRead(
         id=phase.id,
         phase_number=phase.phase_number,
         name=phase.name,
         lifecycle_state=phase.lifecycle_state,
         current_version_number=phase.current_version_number,
+        version_count=_version_count(db, phase.id),
         is_locked=phase.is_locked,
         locked_reason=phase.locked_reason,
         is_stale=phase.is_stale,
         stale_reason=phase.stale_reason,
         generation_completed_at=phase.generation_completed_at,
         approved_at=phase.approved_at,
-        latest_version=PhaseVersionRead.model_validate(version) if version is not None else None,
+        latest_version=latest,
         latest_qa_report=QAReportRead.model_validate(qa) if qa is not None else None,
     )
 
@@ -743,7 +784,10 @@ def get_pipeline(db: Session, story_id: UUID, *, ensure: bool = True) -> Product
     story = db.get(Story, story_id)
     if story is None:
         raise ProductionPhaseError("Story not found.")
-    phases = ensure_contract(db, story, commit=ensure)
+    phases = ensure_contract(db, story, commit=False)
+    if ensure:
+        ensure_phase_baselines(db, story, phases=phases, commit=True)
+        phases = ensure_contract(db, story, commit=False)
     reads = [_phase_read(db, phase) for phase in phases]
     if len(reads) != 7:
         raise ProductionPhaseError("Production contract must contain exactly seven phases.")
@@ -767,17 +811,25 @@ def _persist_phase_one_version(
     qa: dict[str, Any],
     created_by: str | None,
     commit: bool,
+    source: str = "generated",
+    label: str | None = None,
+    notes: str = "",
 ) -> ProductionPhaseVersion:
     previous = _latest_version(db, phase.id)
     next_version = 1 if previous is None else previous.version_number + 1
-    if previous is not None:
-        previous.superseded_at = datetime.now(timezone.utc)
+    # Append-only: never mutate prior version rows (including superseded_at).
     state = "ready_for_review" if qa.get("passed") else "needs_revision"
+    if not label:
+        label = "Generated package" if source == "generated" else f"Revision {next_version}"
     version = ProductionPhaseVersion(
         production_phase_id=phase.id,
         version_number=next_version,
         lifecycle_state=state,
         completed=True,
+        label=label.strip() or f"Version {next_version}",
+        notes=(notes or "").strip(),
+        source=source if source in SUPPORTED_SOURCES else "generated",
+        snapshot_schema_version=SNAPSHOT_SCHEMA_VERSION,
         input_snapshot_json=input_snapshot,
         output_json=package,
         input_hash=_canonical_hash(input_snapshot),
@@ -886,6 +938,8 @@ def generate_phase_one(
         qa=qa,
         created_by=payload.requested_by,
         commit=commit,
+        source="generated",
+        label="Generated package",
     )
     pipeline = get_pipeline(db, story.id, ensure=False)
     phase_read = pipeline.phases[0]
@@ -955,6 +1009,8 @@ def revise_phase_one(
         qa=qa,
         created_by=payload.requested_by,
         commit=True,
+        source="revision",
+        label=f"Revision {current.version_number + 1}",
     )
     pipeline = get_pipeline(db, story.id, ensure=False)
     message = COMPLETION_MESSAGE if qa.get("passed") else "Your script needs revision before review."
@@ -962,4 +1018,627 @@ def revise_phase_one(
         pipeline=pipeline,
         phase=pipeline.phases[0],
         completion_message=message,
+    )
+
+
+def _require_story(db: Session, story_id: UUID) -> Story:
+    story = db.get(Story, story_id)
+    if story is None:
+        raise ProductionPhaseError("Story not found.")
+    return story
+
+
+def _require_phase(
+    db: Session, story: Story, phase_number: int
+) -> ProductionPhase:
+    if phase_number < 1 or phase_number > 7:
+        raise ProductionPhaseError("Phase number must be between 1 and 7.")
+    phases = ensure_contract(db, story, commit=False)
+    phase = next((item for item in phases if item.phase_number == phase_number), None)
+    if phase is None:
+        raise ProductionPhaseError(f"Phase {phase_number} is missing from the contract.")
+    return phase
+
+
+def _media_ref(asset: PlanningMediaAsset) -> dict[str, Any]:
+    return {
+        "id": str(asset.id),
+        "kind": asset.kind,
+        "source_type": asset.source_type,
+        "managed_uri": asset.managed_uri,
+        "original_filename": asset.original_filename,
+        "content_hash": asset.sha256,
+        "mime_type": asset.mime_type,
+        "width": asset.width,
+        "height": asset.height,
+        "size_bytes": asset.size_bytes,
+        "approval_state": asset.approval_state,
+        "metadata_json": asset.metadata_json or {},
+    }
+
+
+def build_phase_snapshot(
+    db: Session, story: Story, phase_number: int
+) -> dict[str, Any]:
+    """Build a phase-scoped snapshot from live canonical records (no media bytes)."""
+    project = db.get(Project, story.project_id)
+    chapters = list(
+        db.scalars(
+            select(Chapter)
+            .where(Chapter.story_id == story.id, Chapter.archived_at.is_(None))
+            .order_by(Chapter.order_index, Chapter.created_at)
+        )
+    )
+    chapter_ids = [chapter.id for chapter in chapters]
+    scenes = (
+        list(
+            db.scalars(
+                select(Scene)
+                .where(Scene.chapter_id.in_(chapter_ids), Scene.archived_at.is_(None))
+                .order_by(Scene.order_index, Scene.created_at)
+            )
+        )
+        if chapter_ids
+        else []
+    )
+    scene_ids = [scene.id for scene in scenes]
+    shots = (
+        list(
+            db.scalars(
+                select(Shot)
+                .where(Shot.scene_id.in_(scene_ids), Shot.archived_at.is_(None))
+                .order_by(Shot.order_index, Shot.created_at)
+            )
+        )
+        if scene_ids
+        else []
+    )
+    characters = list(
+        db.scalars(
+            select(Character)
+            .where(Character.story_id == story.id, Character.archived_at.is_(None))
+            .order_by(Character.created_at)
+        )
+    )
+    voices = list(
+        db.scalars(
+            select(VoiceProfile)
+            .where(VoiceProfile.story_id == story.id, VoiceProfile.archived_at.is_(None))
+            .order_by(VoiceProfile.created_at)
+        )
+    )
+    assets = list(
+        db.scalars(
+            select(PlanningMediaAsset)
+            .where(
+                PlanningMediaAsset.project_id == story.project_id,
+                PlanningMediaAsset.archived_at.is_(None),
+            )
+            .order_by(PlanningMediaAsset.created_at)
+        )
+    )
+    shot_ids = [shot.id for shot in shots]
+    narrations = (
+        {
+            row.shot_id: row
+            for row in db.scalars(
+                select(ShotNarration).where(ShotNarration.shot_id.in_(shot_ids))
+            )
+        }
+        if shot_ids
+        else {}
+    )
+    prompt_packages = (
+        list(
+            db.scalars(
+                select(ShotPromptPackage)
+                .where(ShotPromptPackage.shot_id.in_(shot_ids))
+                .order_by(ShotPromptPackage.shot_id, ShotPromptPackage.version.desc())
+            )
+        )
+        if shot_ids
+        else []
+    )
+    shot_characters = (
+        list(db.scalars(select(ShotCharacter).where(ShotCharacter.shot_id.in_(shot_ids))))
+        if shot_ids
+        else []
+    )
+    character_ids = [character.id for character in characters]
+    char_refs = (
+        list(
+            db.scalars(
+                select(CharacterReferenceAsset).where(
+                    CharacterReferenceAsset.character_id.in_(character_ids)
+                )
+            )
+        )
+        if character_ids
+        else []
+    )
+    assignments = list(
+        db.scalars(
+            select(TaskProviderAssignment).where(
+                TaskProviderAssignment.story_id == story.id
+            )
+        )
+    )
+    providers = list(
+        db.scalars(select(ProviderProfile).order_by(ProviderProfile.display_name))
+    )
+
+    narrative = {
+        "story_id": str(story.id),
+        "project_id": str(story.project_id),
+        "project_name": project.name if project else None,
+        "title": story.title,
+        "base_story": story.base_story,
+        "logline": story.logline,
+        "synopsis": story.synopsis,
+        "target_duration_sec": float(story.target_duration_sec)
+        if story.target_duration_sec is not None
+        else None,
+        "audience": story.audience,
+        "genre": story.genre,
+        "tone": story.tone,
+        "visual_style": story.visual_style,
+        "point_of_view": story.point_of_view,
+        "production_notes": story.production_notes,
+        "approval_state": story.approval_state,
+        "narrative_objectives_json": story.narrative_objectives_json or {},
+        "pacing_plan_json": story.pacing_plan_json or {},
+        "duration_strategy_json": story.duration_strategy_json or {},
+    }
+    structure = {
+        "chapters": [
+            {
+                "id": str(c.id),
+                "title": c.title,
+                "summary": c.summary,
+                "order_index": c.order_index,
+            }
+            for c in chapters
+        ],
+        "scenes": [
+            {
+                "id": str(s.id),
+                "chapter_id": str(s.chapter_id) if s.chapter_id else None,
+                "title": s.title,
+                "summary": s.summary,
+                "location": s.location,
+                "order_index": s.order_index,
+            }
+            for s in scenes
+        ],
+        "shots": [
+            {
+                "id": str(sh.id),
+                "scene_id": str(sh.scene_id) if sh.scene_id else None,
+                "title": sh.title,
+                "story_purpose": sh.story_purpose,
+                "visual_description": sh.visual_description,
+                "duration_sec": float(sh.duration_sec)
+                if sh.duration_sec is not None
+                else None,
+                "location": sh.location,
+                "order_index": sh.order_index,
+                "approval_state": sh.approval_state,
+                "production_status": sh.production_status,
+                "continuity_source_type": sh.continuity_source_type,
+                "continuity_source_shot_id": str(sh.continuity_source_shot_id)
+                if sh.continuity_source_shot_id
+                else None,
+                "starting_image_asset_id": str(sh.starting_image_asset_id)
+                if sh.starting_image_asset_id
+                else None,
+            }
+            for sh in shots
+        ],
+    }
+    identity = {
+        "characters": [
+            {
+                "id": str(c.id),
+                "name": c.name,
+                "role": c.role,
+                "physical_description": c.physical_description,
+                "age_range": c.age_range,
+                "personality": c.personality,
+                "approval_state": c.approval_state,
+            }
+            for c in characters
+        ],
+        "character_reference_links": [
+            {
+                "id": str(r.id),
+                "character_id": str(r.character_id),
+                "asset_id": str(r.asset_id) if r.asset_id else None,
+                "reference_role": r.reference_role,
+                "approved": r.approved,
+                "order_index": r.order_index,
+            }
+            for r in char_refs
+        ],
+        "voices": [
+            {
+                "id": str(v.id),
+                "name": v.name,
+                "character_id": str(v.character_id) if v.character_id else None,
+                "setup_mode": v.setup_mode,
+                "provider": v.provider,
+                "language": v.language,
+                "consent_confirmed": v.consent_confirmed,
+                "approval_state": v.approval_state,
+            }
+            for v in voices
+        ],
+    }
+    locations = sorted(
+        {
+            value
+            for value in [
+                *(s.location for s in scenes if s.location),
+                *(sh.location for sh in shots if sh.location),
+            ]
+            if value
+        }
+    )
+    location_state = {
+        "locations": locations,
+        "key_assets": [],
+        "continuity_states": [],
+    }
+    prompts = {
+        "prompt_packages": [
+            {
+                "id": str(p.id),
+                "shot_id": str(p.shot_id),
+                "version": p.version,
+                "image_prompt": p.image_prompt,
+                "video_prompt": p.video_prompt,
+                "negative_prompt": p.negative_prompt,
+            }
+            for p in prompt_packages
+        ],
+        "task_assignments": [
+            {
+                "id": str(a.id),
+                "task_type": a.task_type,
+                "provider_profile_id": str(a.provider_profile_id)
+                if a.provider_profile_id
+                else None,
+            }
+            for a in assignments
+        ],
+        "provider_profiles": [
+            {
+                "id": str(p.id),
+                "display_name": p.display_name,
+                "provider_identifier": p.provider_identifier,
+            }
+            for p in providers
+        ],
+    }
+    media = {
+        "planning_media": [_media_ref(a) for a in assets],
+        "shot_character_links": [
+            {
+                "shot_id": str(link.shot_id),
+                "character_id": str(link.character_id),
+                "role_in_shot": link.role_in_shot,
+                "order_index": link.order_index,
+            }
+            for link in shot_characters
+        ],
+        "narrations": [
+            {
+                "shot_id": str(n.shot_id),
+                "narration_text": n.narration_text,
+                "voice_profile_id": str(n.voice_profile_id)
+                if n.voice_profile_id
+                else None,
+            }
+            for n in narrations.values()
+        ],
+    }
+    assembly = {
+        "planned_shot_count": len(shots),
+        "planned_runtime_sec": round(
+            sum(float(sh.duration_sec or 0) for sh in shots), 2
+        ),
+        "export_ready": False,
+        "final_output": None,
+        "qa_state": "not_evaluated",
+        "manifest": {
+            "schema": "cineforge.assembly_manifest_preview",
+            "version": 1,
+            "note": "Planning snapshot only; no rendered clips are claimed.",
+        },
+    }
+
+    domains = {
+        1: {"narrative": narrative},
+        2: {"narrative": narrative, "structure": structure},
+        3: {"identity": identity},
+        4: {"locations": location_state, "structure": {"scenes": structure["scenes"]}},
+        5: {"prompts": prompts, "structure": {"shots": structure["shots"]}},
+        6: {
+            "media": media,
+            "identity": identity,
+            "structure": {"shots": structure["shots"]},
+        },
+        7: {"assembly": assembly, "structure": structure, "media": media},
+    }
+    body = domains.get(phase_number, {})
+    return {
+        "schema_name": "cineforge.production_phase_snapshot",
+        "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "phase_number": phase_number,
+        "story_id": str(story.id),
+        "project_id": str(story.project_id),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        **body,
+    }
+
+
+def _verify_version_row(
+    version: ProductionPhaseVersion,
+    *,
+    expected_phase_id: UUID | None = None,
+    expected_story_id: UUID | None = None,
+    expected_project_id: UUID | None = None,
+    phase: ProductionPhase | None = None,
+    story: Story | None = None,
+) -> None:
+    if version.snapshot_schema_version != SNAPSHOT_SCHEMA_VERSION:
+        raise ProductionPhaseError(
+            f"Unsupported snapshot schema version {version.snapshot_schema_version}."
+        )
+    if version.source not in SUPPORTED_SOURCES:
+        raise ProductionPhaseError(f"Unsupported version source {version.source!r}.")
+    if not version.input_snapshot_json and not version.output_json:
+        raise ProductionPhaseError("Version snapshot is missing.")
+    if _canonical_hash(version.input_snapshot_json) != version.input_hash:
+        raise ProductionPhaseError("Version input snapshot failed integrity verification.")
+    if _canonical_hash(version.output_json) != version.output_hash:
+        raise ProductionPhaseError("Version output snapshot failed integrity verification.")
+    if expected_phase_id is not None and version.production_phase_id != expected_phase_id:
+        raise ProductionPhaseError("Version belongs to a different production phase.")
+    if phase is not None and version.production_phase_id != phase.id:
+        raise ProductionPhaseError("Version belongs to a different production phase.")
+    if story is not None and phase is not None and phase.story_id != story.id:
+        raise ProductionPhaseError("Version belongs to a different story.")
+    if expected_story_id is not None and story is not None and story.id != expected_story_id:
+        raise ProductionPhaseError("Version belongs to a different story.")
+    if expected_project_id is not None and story is not None and story.project_id != expected_project_id:
+        raise ProductionPhaseError("Version belongs to a different project.")
+
+
+def _append_version(
+    db: Session,
+    *,
+    phase: ProductionPhase,
+    label: str,
+    notes: str,
+    source: str,
+    input_snapshot: dict[str, Any],
+    output_json: dict[str, Any],
+    lifecycle_state: str,
+    completed: bool,
+    created_by: str | None,
+    commit: bool,
+) -> ProductionPhaseVersion:
+    if source not in SUPPORTED_SOURCES:
+        raise ProductionPhaseError(f"Unsupported version source {source!r}.")
+    clean_label = (label or "").strip()
+    if not clean_label:
+        raise ProductionPhaseError("Iteration label is required.")
+    clean_notes = (notes or "").strip()
+
+    def _insert_once() -> ProductionPhaseVersion:
+        previous = _latest_version(db, phase.id)
+        next_version = 1 if previous is None else previous.version_number + 1
+        row = ProductionPhaseVersion(
+            production_phase_id=phase.id,
+            version_number=next_version,
+            lifecycle_state=lifecycle_state,
+            completed=completed,
+            label=clean_label,
+            notes=clean_notes,
+            source=source,
+            snapshot_schema_version=SNAPSHOT_SCHEMA_VERSION,
+            input_snapshot_json=input_snapshot,
+            output_json=output_json,
+            input_hash=_canonical_hash(input_snapshot),
+            output_hash=_canonical_hash(output_json),
+            created_by=created_by,
+            previous_version_id=previous.id if previous is not None else None,
+        )
+        db.add(row)
+        db.flush()
+        phase.current_version_number = next_version
+        if phase.lifecycle_state == "not_started":
+            phase.lifecycle_state = lifecycle_state
+        return row
+
+    try:
+        version = _insert_once()
+    except IntegrityError:
+        db.rollback()
+        # Retry once after a concurrent version-number collision.
+        version = _insert_once()
+
+    db.add(
+        AuditLog(
+            entity_type="production_phase_version",
+            entity_id=version.id,
+            action="production_phase_version_retained",
+            details={
+                "phase_number": phase.phase_number,
+                "version_number": version.version_number,
+                "source": source,
+                "label": clean_label,
+            },
+        )
+    )
+    if commit:
+        db.commit()
+        db.refresh(version)
+    else:
+        db.flush()
+    return version
+
+
+def ensure_phase_baselines(
+    db: Session,
+    story: Story,
+    *,
+    phases: list[ProductionPhase] | None = None,
+    commit: bool = True,
+) -> list[ProductionPhaseVersion]:
+    """Idempotently create a baseline version only when a phase has zero history."""
+    phases = phases or ensure_contract(db, story, commit=False)
+    created: list[ProductionPhaseVersion] = []
+    for phase in phases:
+        if _version_count(db, phase.id) > 0:
+            continue
+        snapshot = build_phase_snapshot(db, story, phase.phase_number)
+        created.append(
+            _append_version(
+                db,
+                phase=phase,
+                label="Baseline",
+                notes="Initial retained state for this phase.",
+                source="baseline",
+                input_snapshot={"reason": "baseline", "phase_number": phase.phase_number},
+                output_json=snapshot,
+                lifecycle_state="not_started"
+                if phase.lifecycle_state == "not_started"
+                else phase.lifecycle_state,
+                completed=False,
+                created_by="system:baseline",
+                commit=False,
+            )
+        )
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return created
+
+
+def list_phase_versions(
+    db: Session, story_id: UUID, phase_number: int
+) -> list[PhaseVersionSummary]:
+    story = _require_story(db, story_id)
+    phase = _require_phase(db, story, phase_number)
+    ensure_phase_baselines(db, story, phases=[phase], commit=True)
+    rows = list(
+        db.scalars(
+            select(ProductionPhaseVersion)
+            .where(ProductionPhaseVersion.production_phase_id == phase.id)
+            .order_by(ProductionPhaseVersion.version_number.asc())
+        )
+    )
+    return [PhaseVersionSummary.model_validate(row) for row in rows]
+
+
+def get_phase_version(
+    db: Session, story_id: UUID, phase_number: int, version_id: UUID
+) -> PhaseVersionDetail:
+    story = _require_story(db, story_id)
+    phase = _require_phase(db, story, phase_number)
+    version = db.get(ProductionPhaseVersion, version_id)
+    if version is None:
+        raise ProductionPhaseError("Version not found.")
+    _verify_version_row(version, phase=phase, story=story)
+    base = PhaseVersionRead.model_validate(version).model_dump()
+    base["verified"] = True
+    return PhaseVersionDetail(
+        **base,
+        story_id=story.id,
+        project_id=story.project_id,
+        phase_number=phase.phase_number,
+        phase_name=phase.name,
+    )
+
+
+def create_phase_version(
+    db: Session,
+    story_id: UUID,
+    phase_number: int,
+    payload: PhaseVersionCreateRequest,
+) -> PhaseVersionCreateResponse:
+    story = _require_story(db, story_id)
+    phases = ensure_contract(db, story, commit=False)
+    phase = _require_phase(db, story, phase_number)
+    ensure_phase_baselines(db, story, phases=phases, commit=False)
+    snapshot = build_phase_snapshot(db, story, phase_number)
+    version = _append_version(
+        db,
+        phase=phase,
+        label=payload.label,
+        notes=payload.notes,
+        source="manual",
+        input_snapshot={
+            "reason": "manual_retain",
+            "phase_number": phase_number,
+            "requested_by": payload.requested_by,
+        },
+        output_json=snapshot,
+        lifecycle_state=phase.lifecycle_state
+        if phase.lifecycle_state != "not_started"
+        else "drafting",
+        completed=False,
+        created_by=payload.requested_by,
+        commit=True,
+    )
+    detail = get_phase_version(db, story_id, phase_number, version.id)
+    pipeline = get_pipeline(db, story_id, ensure=False)
+    return PhaseVersionCreateResponse(version=detail, pipeline=pipeline)
+
+
+def export_phase_history(db: Session, story_id: UUID) -> PhaseHistoryExport:
+    story = _require_story(db, story_id)
+    phases = ensure_contract(db, story, commit=False)
+    ensure_phase_baselines(db, story, phases=phases, commit=True)
+    iterations: list[PhaseVersionDetail] = []
+    phase_counts: dict[str, int] = {}
+    hashes: list[str] = []
+    for phase in phases:
+        rows = list(
+            db.scalars(
+                select(ProductionPhaseVersion)
+                .where(ProductionPhaseVersion.production_phase_id == phase.id)
+                .order_by(ProductionPhaseVersion.version_number.asc())
+            )
+        )
+        phase_counts[str(phase.phase_number)] = len(rows)
+        for row in rows:
+            _verify_version_row(row, phase=phase, story=story)
+            base = PhaseVersionRead.model_validate(row).model_dump()
+            base["verified"] = True
+            detail = PhaseVersionDetail(
+                **base,
+                story_id=story.id,
+                project_id=story.project_id,
+                phase_number=phase.phase_number,
+                phase_name=phase.name,
+            )
+            iterations.append(detail)
+            hashes.append(row.output_hash)
+    if not iterations:
+        raise ProductionPhaseError("History export found no verified iterations.")
+    return PhaseHistoryExport(
+        project_id=story.project_id,
+        story_id=story.id,
+        exported_at=datetime.now(timezone.utc),
+        integrity=PhaseHistoryExportIntegrity(
+            verified=True,
+            iteration_count=len(iterations),
+            snapshot_count=len(set(hashes)),
+            phase_counts=phase_counts,
+            hashes=hashes,
+        ),
+        iterations=iterations,
     )

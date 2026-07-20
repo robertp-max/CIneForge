@@ -854,9 +854,15 @@ export type ProductionQAReport = {
   }
 }
 
+export type PhaseVersionSource = 'baseline' | 'manual' | 'generated' | 'revision' | 'imported'
+
 export type ProductionPhaseVersion = {
   id: string
   version_number: number
+  label?: string
+  notes?: string
+  source?: PhaseVersionSource
+  snapshot_schema_version?: number
   lifecycle_state: PhaseLifecycleState
   completed: boolean
   input_snapshot_json: Record<string, unknown>
@@ -867,6 +873,48 @@ export type ProductionPhaseVersion = {
   previous_version_id: string | null
   created_at: string
   updated_at: string
+  verified?: boolean
+}
+
+export type PhaseVersionSummary = {
+  id: string
+  version_number: number
+  label: string
+  notes: string
+  source: PhaseVersionSource
+  lifecycle_state: PhaseLifecycleState
+  completed: boolean
+  snapshot_schema_version: number
+  input_hash: string
+  output_hash: string
+  created_by: string | null
+  previous_version_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PhaseVersionDetail = ProductionPhaseVersion & {
+  story_id: string
+  project_id: string
+  phase_number: number
+  phase_name: string
+  verified: boolean
+}
+
+export type PhaseHistoryExport = {
+  schema_name: 'cineforge.phase-history'
+  version: 1
+  project_id: string
+  story_id: string
+  exported_at: string
+  integrity: {
+    verified: true
+    iteration_count: number
+    snapshot_count: number
+    phase_counts: Record<string, number>
+    hashes: string[]
+  }
+  iterations: PhaseVersionDetail[]
 }
 
 export type ProductionPhase = {
@@ -875,6 +923,7 @@ export type ProductionPhase = {
   name: string
   lifecycle_state: PhaseLifecycleState
   current_version_number: number | null
+  version_count?: number
   is_locked: boolean
   locked_reason: string | null
   is_stale: boolean
@@ -891,6 +940,11 @@ export type ProductionPipeline = {
   exact_phase_count: 7
   phases: ProductionPhase[]
   completion_message: string | null
+}
+
+export type PhaseVersionCreateResponse = {
+  version: PhaseVersionDetail
+  pipeline: ProductionPipeline
 }
 
 export type PhaseOneRevisionPayload = Pick<
@@ -1380,6 +1434,25 @@ export const api = {
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
   getProductionPipeline: (storyId: string) =>
     request<ProductionPipeline>(`/production/stories/${storyId}`),
+  listPhaseVersions: (storyId: string, phaseNumber: number) =>
+    request<PhaseVersionSummary[]>(
+      `/production/stories/${storyId}/phases/${phaseNumber}/versions`,
+    ),
+  getPhaseVersion: (storyId: string, phaseNumber: number, versionId: string) =>
+    request<PhaseVersionDetail>(
+      `/production/stories/${storyId}/phases/${phaseNumber}/versions/${versionId}`,
+    ),
+  createPhaseVersion: (
+    storyId: string,
+    phaseNumber: number,
+    payload: { label: string; notes?: string; requested_by?: string | null },
+  ) =>
+    request<PhaseVersionCreateResponse>(
+      `/production/stories/${storyId}/phases/${phaseNumber}/versions`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  exportPhaseHistory: (storyId: string) =>
+    request<PhaseHistoryExport>(`/production/stories/${storyId}/versions/export`),
   revisePhaseOne: (storyId: string, payload: PhaseOneRevisionPayload) =>
     request<PhaseOneMutationResponse>(`/production/stories/${storyId}/phases/1`, {
       method: 'PUT',

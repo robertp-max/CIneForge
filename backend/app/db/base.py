@@ -571,7 +571,12 @@ class ProductionPhase(UUIDMixin, StoryboardTimestampMixin, Base):
 
 
 class ProductionPhaseVersion(UUIDMixin, StoryboardTimestampMixin, Base):
-    """Immutable output snapshot for one production-phase attempt/revision."""
+    """Immutable output snapshot for one production-phase attempt/revision.
+
+    Rows are append-only after insert.  ``superseded_at`` is retained for
+    legacy rows but is no longer written at runtime; lineage uses
+    ``previous_version_id`` only.
+    """
 
     __tablename__ = "production_phase_versions"
     production_phase_id: Mapped[uuid.UUID] = mapped_column(
@@ -583,6 +588,10 @@ class ProductionPhaseVersion(UUIDMixin, StoryboardTimestampMixin, Base):
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False)
     completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    snapshot_schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     input_snapshot_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
     output_json: Mapped[dict] = mapped_column(json_type(), default=dict, nullable=False)
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -604,6 +613,14 @@ class ProductionPhaseVersion(UUIDMixin, StoryboardTimestampMixin, Base):
             "'not_started', 'drafting', 'qa_pending', 'needs_revision', "
             "'ready_for_review', 'approved', 'blocked')",
             name="ck_production_phase_version_lifecycle_state",
+        ),
+        CheckConstraint(
+            "source IN ('baseline', 'manual', 'generated', 'revision', 'imported')",
+            name="ck_production_phase_version_source",
+        ),
+        CheckConstraint(
+            "snapshot_schema_version > 0",
+            name="ck_production_phase_version_snapshot_schema",
         ),
         Index(
             "ix_production_phase_versions_phase_version",

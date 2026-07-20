@@ -154,13 +154,20 @@ def test_one_prompt_creates_only_complete_phase_one_package(client: TestClient, 
 
     assert all(phase["lifecycle_state"] == "not_started" for phase in pipeline["phases"][1:])
     assert all(phase["is_locked"] is True for phase in pipeline["phases"][1:])
-    assert all(phase["latest_version"] is None for phase in pipeline["phases"][1:])
+    # Phases 2–7 receive idempotent planning baselines (not executable packages).
+    assert all(
+        phase["latest_version"] is not None
+        and phase["latest_version"]["source"] == "baseline"
+        for phase in pipeline["phases"][1:]
+    )
+    assert phase_one["latest_version"]["source"] in {"generated", "revision"}
 
     story = db_session.get(Story, UUID(body["story"]["id"]))
     assert story is not None
     assert story.approval_state == "draft"
     assert _count(db_session, ProductionPhase) == 7
-    assert _count(db_session, ProductionPhaseVersion) == 1
+    # One Phase 1 generated package + six planning baselines for phases 2–7.
+    assert _count(db_session, ProductionPhaseVersion) == 7
     assert _count(db_session, QAReport) == 1
     assert _count(db_session, AuditLog) >= 3
 
@@ -213,14 +220,22 @@ def test_phase_one_revision_preserves_prior_version_and_remains_unapproved(
     assert revised["current_version_number"] == 2
     assert revised["latest_version"]["version_number"] == 2
     assert revised["lifecycle_state"] == "ready_for_review"
-    assert _count(db_session, ProductionPhaseVersion) == 2
+    # Two Phase 1 rows + six planning baselines.
+    assert _count(db_session, ProductionPhaseVersion) == 8
+    phase_one_id = UUID(revised["id"])
     versions = list(
         db_session.scalars(
-            select(ProductionPhaseVersion).order_by(ProductionPhaseVersion.version_number)
+            select(ProductionPhaseVersion)
+            .where(ProductionPhaseVersion.production_phase_id == phase_one_id)
+            .order_by(ProductionPhaseVersion.version_number)
         )
     )
-    assert versions[0].superseded_at is not None
+    assert len(versions) == 2
+    # Append-only history: prior rows are never mutated (including superseded_at).
+    assert versions[0].superseded_at is None
     assert versions[1].previous_version_id == versions[0].id
+    assert versions[0].source == "generated"
+    assert versions[1].source == "revision"
     assert db_session.get(Story, UUID(story_id)).approval_state == "draft"
 
 
