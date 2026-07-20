@@ -1,90 +1,27 @@
-/* FINAL LAYER — no forest-green tinted boxes (AI Studio blue accents) */
-:root {
-  --mint: #a8c7fa !important;
-  --mint-dark: #233348 !important;
-  --blue: #a8c7fa !important;
-}
-/* Phase rail selected: cool blue panel, never forest green */
-.production-phase-rail > button.current,
-.production-phase-rail > button[aria-current="step"] {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  background-image: none !important;
-  box-shadow: inset 0 0 0 1px rgba(168, 199, 250, 0.12) !important;
-}
-.production-phase-rail > button.current > span {
-  border-color: #6b8fc4 !important;
-  background: #24344f !important;
-  color: #a8c7fa !important;
-}
-.production-phase-rail > button.current b { color: #e8eef8 !important; }
-.production-phase-rail > button.current small { color: #9bb6df !important; }
-
-/* Meta pills / design available */
-.phase-workspace-meta > span,
-.phase-workspace-meta-pill,
-.design-available-pill,
+:root{--mint:#a8c7fa!important;--mint-dark:#233348!important;--blue:#a8c7fa!important}
+/* blanket: anything that was mint-green becomes blue */
+.production-phase-rail>button.current,
+.production-phase-rail>button[aria-current=step],
+.production-phase-rail>button.current>span,
+.summary-icon.mint,
 .phase-count-pill,
-.summary-icon.mint {
-  border-color: #4a5f7d !important;
-  background: #1e2a3c !important;
-  color: #a8c7fa !important;
-}
-
-/* Green hexes from globals hardcoded into phase UI */
-.phase-list button.active,
-.phase-inline-tabs button.active,
-.phase-list button:hover,
-.phase-package-list > button.active {
-  border-color: #5b7aa8 !important;
-  background: #1a2434 !important;
-  color: #e4eaf4 !important;
-}
-
-.assembly-track > div span {
-  background: #2a3a52 !important;
-  color: #b8c9e6 !important;
-}
-
-.phase-mini-timeline span {
-  background: #2a3a52 !important;
-  color: #a8c7fa !important;
-  box-shadow: none !important;
-}
-
+.phase-workspace-meta>span,
+.design-available-pill,
+.phase-workspace-meta-pill,
 .phase,
-.phase.chip {
-  border-color: #3d4f6a !important;
-  background: #1a2434 !important;
-  color: #a8c7fa !important;
-}
-
+.status-pill,
 .primary-button,
-.btn.primary {
-  background: #d3e3fd !important;
-  border-color: #d3e3fd !important;
-  color: #041e49 !important;
-}
-
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  box-shadow: 0 0 0 2px var(--bg, #131314), 0 0 0 4px rgba(168, 199, 250, 0.72) !important;
-}
-
-/* Eyebrows: cool blue not mint green */
-.eyebrow,
-.phase-workspace-header .eyebrow,
-.phase-subheading span,
-.phase-subheading > div > span,
-.phase-one-document > section > span,
-.phase-one-document summary,
-.phase-document span {
-  color: #8ab0e8 !important;
-}
-
-.qa-pass,
-.phase-one-metrics .qa-pass {
-  color: #a8c7fa !important;
-}
+.btn.primary{background-image:none!important}
+.production-phase-rail>button.current{border-color:#5b7aa8!important;background:#1a2434!important}
+.production-phase-rail>button.current>span{border-color:#6b8fc4!important;background:#24344f!important;color:#a8c7fa!important}
+.production-phase-rail>button.current b{color:#e8eef8!important}
+.production-phase-rail>button.current small{color:#9bb6df!important}
+.summary-icon.mint,.phase-count-pill,.phase-workspace-meta>span,.design-available-pill,.phase-workspace-meta-pill{border-color:#4a5f7d!important;background:#1e2a3c!important;color:#a8c7fa!important}
+.phase{border-color:#3d4f6a!important;background:#1a2434!important;color:#a8c7fa!important}
+.phase-list button.active,.phase-inline-tabs button.active{border-color:#5b7aa8!important;background:#1a2434!important;color:#e4eaf4!important}
+.assembly-track>div span{background:#2a3a52!important;color:#b8c9e6!important}
+.phase-mini-timeline span{background:#2a3a52!important;color:#a8c7fa!important}
+.primary-button,.btn.primary{background:#d3e3fd!important;border-color:#d3e3fd!important;color:#041e49!important}
+.eyebrow,.phase-workspace-header .eyebrow,.phase-subheading span,.phase-subheading>div>span,.phase-one-document>section>span,.phase-one-document summary{color:#8ab0e8!important}
+.qa-pass,.phase-one-metrics .qa-pass{color:#a8c7fa!important}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{box-shadow:0 0 0 2px #131314,0 0 0 4px rgba(168,199,250,.72)!important}
