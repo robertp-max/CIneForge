@@ -35,10 +35,12 @@ type RouteDraft = {
   rationale: string
 }
 
-function evidenceClass(status: string): string {
-  if (status === 'available' || status === 'verified' || status === 'ready') return 'verified'
-  if (status === 'unavailable' || status === 'blocked' || status === 'failed') return 'blocked'
-  return 'unknown'
+function evidenceStatus(status: string): string {
+  const value = status.toLowerCase()
+  if (value === 'available' || value === 'verified' || value === 'ready' || value === 'connected') return 'ready'
+  if (value === 'unavailable' || value === 'blocked' || value === 'failed' || value === 'missing') return 'blocked'
+  if (value === 'manual' || value === 'review' || value === 'open') return 'review'
+  return 'draft'
 }
 
 function errorText(error: unknown, fallback: string): string {
@@ -65,12 +67,13 @@ export function RoutingPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [selectedTask, setSelectedTask] = useState<PlanningTaskType>(TASK_PROFILE_MAP[0].task)
   const [preferLocal, setPreferLocal] = useState(true)
   const [preferHosted, setPreferHosted] = useState(false)
   const [routeDrafts, setRouteDrafts] = useState<Record<string, RouteDraft>>({})
+  const [showProfileForm, setShowProfileForm] = useState(false)
 
-  const selectedProfile =
-    profiles.find((profile) => profile.id === selectedProfileId) ?? null
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null
 
   const load = useCallback(async () => {
     if (!data) return
@@ -115,6 +118,7 @@ export function RoutingPage() {
 
   const resetProfileForm = () => {
     setSelectedProfileId('')
+    setShowProfileForm(true)
   }
 
   const declaredCapabilities = (value: string) =>
@@ -155,6 +159,7 @@ export function RoutingPage() {
         setMessage(`Provider profile “${displayName}” created with availability Unknown.`)
       }
       await load()
+      setShowProfileForm(false)
     } catch (err) {
       const text = errorText(err, 'Could not save the provider profile.')
       setError(text)
@@ -171,7 +176,8 @@ export function RoutingPage() {
     setError(null)
     try {
       await api.deleteProviderProfile(selectedProfile.id)
-      resetProfileForm()
+      setSelectedProfileId('')
+      setShowProfileForm(false)
       await load()
       setMessage(`Deleted provider profile “${selectedProfile.display_name}”.`)
     } catch (err) {
@@ -183,30 +189,38 @@ export function RoutingPage() {
     }
   }
 
+  const draftFor = (task: PlanningTaskType): RouteDraft => {
+    const assignment = assignments.find((item) => item.task_type === task)
+    return (
+      routeDrafts[task] ?? {
+        providerProfileId: assignment?.provider_profile_id ?? '',
+        enabled: assignment?.enabled ?? true,
+        rationale: assignment?.rationale ?? '',
+      }
+    )
+  }
+
   const updateRouteDraft = (task: PlanningTaskType, patch: Partial<RouteDraft>) => {
-    setRouteDrafts((current) => ({
-      ...current,
-      [task]: {
-        providerProfileId:
-          current[task]?.providerProfileId ??
-          assignments.find((assignment) => assignment.task_type === task)?.provider_profile_id ??
-          '',
-        enabled:
-          current[task]?.enabled ??
-          assignments.find((assignment) => assignment.task_type === task)?.enabled ??
-          true,
-        rationale:
-          current[task]?.rationale ??
-          assignments.find((assignment) => assignment.task_type === task)?.rationale ??
-          '',
-        ...patch,
-      },
-    }))
+    setRouteDrafts((current) => {
+      const assignment = assignments.find((item) => item.task_type === task)
+      const base = current[task] ?? {
+        providerProfileId: assignment?.provider_profile_id ?? '',
+        enabled: assignment?.enabled ?? true,
+        rationale: assignment?.rationale ?? '',
+      }
+      return {
+        ...current,
+        [task]: {
+          ...base,
+          ...patch,
+        },
+      }
+    })
   }
 
   const onSaveAssignment = async (task: PlanningTaskType) => {
-    const draft = routeDrafts[task]
-    if (!draft?.providerProfileId) return
+    const draft = draftFor(task)
+    if (!draft.providerProfileId) return
     const existing = assignments.find((assignment) => assignment.task_type === task)
     setSaving(true)
     setError(null)
@@ -229,7 +243,9 @@ export function RoutingPage() {
         })
       }
       await Promise.all([load(), reload()])
-      setMessage(`Saved the ${task} provider assignment. Its logical profile remains the displayed default unless a run explicitly overrides it.`)
+      setMessage(
+        `Saved the ${task} provider assignment. Its logical profile remains the displayed default unless a run explicitly overrides it.`,
+      )
     } catch (err) {
       const text = errorText(err, 'Could not save the task-provider assignment.')
       setError(text)
@@ -304,134 +320,560 @@ export function RoutingPage() {
     }
   }
 
+  const selectedRow = TASK_PROFILE_MAP.find((row) => row.task === selectedTask) ?? TASK_PROFILE_MAP[0]
+  const selectedDraft = draftFor(selectedRow.task)
+  const selectedAssignment = assignments.find((item) => item.task_type === selectedRow.task)
+  const selectedAssignmentProfile =
+    profiles.find((profile) => profile.id === selectedDraft.providerProfileId) ?? null
+
   return (
-    <div className="stack-form">
-      <section className="panel">
-        <div className="panel-title">
-          <div><h2>Model routing</h2><p>Manage planning provider records and per-story task assignments without storing secrets or claiming a connection.</p></div>
-          <button type="button" className="ghost-button touch-target" onClick={() => void load()} disabled={loading || busy || saving}>Refresh</button>
+    <div className="page">
+      <div className="page-title">
+        <div>
+          <span className="eyebrow">MODEL ORCHESTRATION</span>
+          <h1>Model routing</h1>
+          <p>
+            Manage planning provider records and per-story task assignments without storing secrets or claiming a
+            connection.
+          </p>
         </div>
-        {loading ? <LoadingState title="Loading routing records…" /> : null}
-        {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
-      </section>
+        <div className="page-actions">
+          <button
+            type="button"
+            className="btn secondary"
+            title="Provider connections and availability are factual records only. This page never sends prompts or credentials."
+          >
+            Privacy boundary
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => void load()}
+            disabled={loading || busy || saving}
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+      </div>
 
-      <div className="split-2">
-        <section className="panel">
-          <div className="panel-title"><div><h2>Provider profiles</h2><p>Configuration records only; credentials and secret values are never requested.</p></div><button type="button" className="secondary-button touch-target" onClick={resetProfileForm} disabled={saving}>New profile</button></div>
-          {!profiles.length && !loading ? <EmptyState title="No provider profiles" detail="Create a disabled or manually controlled provider record. Availability begins Unknown." /> : null}
-          {profiles.length ? (
-            <div className="card-grid">
-              {profiles.map((profile) => (
-                <article key={profile.id}>
-                  <b>{profile.display_name}</b>
-                  <small>{profile.provider_identifier} · {profile.provider_model_id ?? 'No model selected'}</small>
-                  <ul className="kv-list">
-                    <li><span>Execution</span><strong>{profile.execution_mode}</strong></li>
-                    <li><span>Privacy</span><strong>{profile.privacy_classification ?? 'unknown'}</strong></li>
-                    <li><span>Availability</span><strong><span className={`truth-pill ${evidenceClass(profile.availability_status)}`}>{profile.availability_status}</span></strong></li>
-                    <li><span>Capabilities</span><strong>{capabilityLabels(profile)}</strong></li>
-                    <li><span>Capability source</span><strong>{profile.capability_source ?? 'Unknown'}</strong></li>
-                    <li><span>Capability check</span><strong>{profile.capabilities_checked_at ? formatDate(profile.capabilities_checked_at) : 'Never checked'}</strong></li>
-                    <li><span>Health check</span><strong>{profile.health_checked_at ? formatDate(profile.health_checked_at) : 'Never checked'}</strong></li>
-                  </ul>
-                  <button type="button" className={selectedProfile?.id === profile.id ? 'primary-button touch-target' : 'secondary-button touch-target'} onClick={() => setSelectedProfileId(profile.id)}>{selectedProfile?.id === profile.id ? 'Selected' : 'Edit profile'}</button>
-                </article>
-              ))}
+      {loading ? <LoadingState title="Loading routing records…" /> : null}
+      {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
+
+      <div className="routing-controls">
+        <label>
+          Privacy preference
+          <div className="segmented">
+            <button
+              type="button"
+              className={preferLocal && !preferHosted ? 'active' : ''}
+              onClick={() => {
+                setPreferLocal(true)
+                setPreferHosted(false)
+              }}
+              disabled={saving || !settings}
+            >
+              Local only
+            </button>
+            <button
+              type="button"
+              className={preferLocal && preferHosted ? 'active' : ''}
+              onClick={() => {
+                setPreferLocal(true)
+                setPreferHosted(true)
+              }}
+              disabled={saving || !settings}
+            >
+              Hybrid
+            </button>
+            <button
+              type="button"
+              className={!preferLocal && preferHosted ? 'active' : ''}
+              onClick={() => {
+                setPreferLocal(false)
+                setPreferHosted(true)
+              }}
+              disabled={saving || !settings}
+            >
+              Hosted allowed
+            </button>
+          </div>
+        </label>
+        <label>
+          Prefer local
+          <select
+            value={preferLocal ? 'yes' : 'no'}
+            onChange={(event) => setPreferLocal(event.target.value === 'yes')}
+            disabled={saving || !settings}
+          >
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        <label>
+          Permit hosted
+          <select
+            value={preferHosted ? 'yes' : 'no'}
+            onChange={(event) => setPreferHosted(event.target.value === 'yes')}
+            disabled={saving || !settings}
+          >
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        <label>
+          Profiles
+          <input value={`${profiles.length} configured`} readOnly />
+        </label>
+        <label>
+          Assignments
+          <input value={`${assignments.length} saved`} readOnly />
+        </label>
+        <label>
+          Action
+          <button
+            type="button"
+            className="btn primary"
+            style={{ width: '100%', marginTop: 5 }}
+            onClick={() => void onSavePreferences()}
+            disabled={saving || !settings || (!preferLocal && !preferHosted)}
+          >
+            Save privacy
+          </button>
+        </label>
+      </div>
+
+      {!settingsAvailable && !loading ? (
+        <UnavailableState
+          title="Project settings unavailable"
+          detail="No privacy preference was inferred or changed."
+        />
+      ) : null}
+      {!preferLocal && !preferHosted ? (
+        <p className="notice warning">At least one provider class must be permitted for routing.</p>
+      ) : null}
+
+      <div className="provider-grid">
+        {profiles.map((profile, index) => (
+          <button
+            key={profile.id}
+            type="button"
+            onClick={() => {
+              setSelectedProfileId(profile.id)
+              setShowProfileForm(true)
+            }}
+          >
+            <span className={`provider-logo provider-${index % 4}`} aria-hidden="true">
+              {profile.display_name.charAt(0).toUpperCase()}
+            </span>
+            <span>
+              <b>{profile.display_name}</b>
+              <small>
+                {profile.provider_identifier} · {profile.provider_model_id ?? 'No model'}
+              </small>
+            </span>
+            <span className="status-pill" data-status={evidenceStatus(profile.availability_status)}>
+              {profile.availability_status}
+            </span>
+          </button>
+        ))}
+        <button type="button" onClick={resetProfileForm}>
+          <span className="provider-logo" aria-hidden="true">
+            +
+          </span>
+          <span>
+            <b>New profile</b>
+            <small>Configuration record only</small>
+          </span>
+          <span className="status-pill" data-status="draft">
+            Create
+          </span>
+        </button>
+      </div>
+
+      {!profiles.length && !loading ? (
+        <EmptyState
+          title="No provider profiles"
+          detail="Create a disabled or manually controlled provider record. Availability begins Unknown."
+        />
+      ) : null}
+
+      <div className="routing-layout">
+        <section className="panel routing-table-panel">
+          <header className="panel-head">
+            <div>
+              <h2>Task-routing matrix</h2>
+              <p>Persist a provider profile per task. Sol / Terra / Luna remain logical defaults.</p>
             </div>
-          ) : null}
+          </header>
+          <div className="data-table routing-table">
+            <div className="table-head">
+              <span>Task</span>
+              <span>Provider / model</span>
+              <span>Mode</span>
+              <span>Privacy</span>
+              <span>Enabled</span>
+              <span>Logical</span>
+              <span>Status</span>
+            </div>
+            {TASK_PROFILE_MAP.map((row) => {
+              const draft = draftFor(row.task)
+              const profile = profiles.find((item) => item.id === draft.providerProfileId)
+              const assignment = assignments.find((item) => item.task_type === row.task)
+              return (
+                <div
+                  key={row.task}
+                  role="button"
+                  tabIndex={0}
+                  className={`data-row ${selectedTask === row.task ? 'selected' : ''}`}
+                  onClick={() => setSelectedTask(row.task)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedTask(row.task)
+                    }
+                  }}
+                >
+                  <span>
+                    <b>{row.task}</b>
+                    <small>{row.description}</small>
+                  </span>
+                  <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                    <select
+                      aria-label={`Provider for ${row.task}`}
+                      value={draft.providerProfileId}
+                      onChange={(event) =>
+                        updateRouteDraft(row.task, { providerProfileId: event.target.value })
+                      }
+                      disabled={saving || !profiles.length}
+                    >
+                      <option value="">Unassigned</option>
+                      {profiles.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.display_name} · {item.availability_status}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`Rationale for ${row.task}`}
+                      value={draft.rationale}
+                      onChange={(event) => updateRouteDraft(row.task, { rationale: event.target.value })}
+                      disabled={saving}
+                      placeholder={profile?.provider_model_id ?? 'Optional review note'}
+                    />
+                  </span>
+                  <span>
+                    <span className="status-pill" data-status={assignment ? 'manual' : 'draft'}>
+                      {assignment ? assignment.assignment_mode : 'Unset'}
+                    </span>
+                  </span>
+                  <span>{profile?.privacy_classification ?? '—'}</span>
+                  <span onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={draft.enabled}
+                      onChange={(event) => updateRouteDraft(row.task, { enabled: event.target.checked })}
+                      disabled={saving}
+                      aria-label={`Enable ${row.task} provider assignment`}
+                    />
+                  </span>
+                  <span>
+                    <span className="status-pill" data-status="ready">
+                      {row.logicalProfile}
+                    </span>
+                  </span>
+                  <span>
+                    <span
+                      className="status-pill"
+                      data-status={
+                        assignment
+                          ? evidenceStatus(profile?.availability_status ?? 'ready')
+                          : 'review'
+                      }
+                    >
+                      {assignment ? profile?.availability_status ?? 'saved' : 'Unassigned'}
+                    </span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </section>
 
-        <form key={selectedProfile?.id ?? 'new'} className="panel stack-form" onSubmit={(event) => void onSaveProfile(event)}>
-          <div className="panel-title"><div><h2>{selectedProfileId ? 'Edit provider profile' : 'Create provider profile'}</h2><p>Availability remains factual backend evidence and is not editable here.</p></div></div>
-          <label>Provider identifier<input name="provider_identifier" required defaultValue={selectedProfile?.provider_identifier ?? ''} disabled={saving} readOnly={Boolean(selectedProfileId)} placeholder="openai, xai, local_cli…" /></label>
-          <label>Display name<input name="display_name" required defaultValue={selectedProfile?.display_name ?? ''} disabled={saving} /></label>
-          <label>Provider model ID<input name="provider_model_id" defaultValue={selectedProfile?.provider_model_id ?? ''} disabled={saving} placeholder="Optional configuration value" /></label>
-          <label>Execution mode<select name="execution_mode" defaultValue={selectedProfile?.execution_mode ?? 'disabled'} disabled={saving}><option value="disabled">Disabled</option><option value="manual">Manual</option><option value="assisted">Assisted</option><option value="automatic">Automatic</option></select></label>
-          <label>Privacy classification<select name="privacy_classification" defaultValue={selectedProfile?.privacy_classification ?? 'local'} disabled={saving}><option value="local">Local</option><option value="hosted">Hosted</option><option value="restricted">Restricted</option><option value="unknown">Unknown</option></select></label>
-          <label>Declared capabilities<input name="capabilities" defaultValue={selectedProfile ? capabilityLabels(selectedProfile).replace('No declared capabilities', '') : 'planning'} disabled={saving} placeholder="Comma-separated, e.g. planning" /></label>
-          <button type="submit" className="primary-button touch-target" disabled={saving}>{saving ? 'Saving…' : 'Save provider profile'}</button>
-          {selectedProfile ? <button type="button" className="danger-button touch-target" onClick={() => void onDeleteProfile()} disabled={saving}>Delete profile</button> : null}
-          <button type="button" className="secondary-button touch-target" disabled title="No provider validation or health-probe endpoint is exposed in Phase 1; availability and check timestamps remain factual database evidence.">Validate connection — unavailable</button>
-          <p className="form-hint">No provider validation or health-probe endpoint is exposed in Phase 1; availability and check timestamps remain factual database evidence.</p>
+        <aside className="route-detail">
+          <header>
+            <span className="orchestrator-mark" aria-hidden="true">
+              ⚙
+            </span>
+            <div>
+              <span className="eyebrow">ROUTE DETAIL</span>
+              <h2>{selectedRow.task}</h2>
+            </div>
+          </header>
+          <dl>
+            <div>
+              <dt>Logical default</dt>
+              <dd>{selectedRow.logicalProfile}</dd>
+            </div>
+            <div>
+              <dt>Provider</dt>
+              <dd>{selectedAssignmentProfile?.display_name ?? 'Unassigned'}</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{selectedAssignmentProfile?.provider_model_id ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Control</dt>
+              <dd>{selectedAssignment?.assignment_mode ?? 'Unset'}</dd>
+            </div>
+            <div>
+              <dt>Privacy</dt>
+              <dd>{selectedAssignmentProfile?.privacy_classification ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Availability</dt>
+              <dd>
+                <span
+                  className="status-pill"
+                  data-status={evidenceStatus(selectedAssignmentProfile?.availability_status ?? 'draft')}
+                >
+                  {selectedAssignmentProfile?.availability_status ?? 'unknown'}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Enabled</dt>
+              <dd>{selectedDraft.enabled ? 'Yes' : 'No'}</dd>
+            </div>
+          </dl>
+          <div className="recommendation">
+            <span aria-hidden="true">✧</span>
+            <p>
+              <b>Why this route</b>
+              {selectedDraft.rationale || selectedRow.description}. Logical profile {selectedRow.logicalProfile} is a
+              deterministic default; saving writes a manual assignment only.
+            </p>
+          </div>
+          <div className="inline-actions" style={{ marginTop: 10, flexWrap: 'wrap', gap: 7 }}>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void onSaveAssignment(selectedRow.task)}
+              disabled={saving || !selectedDraft.providerProfileId}
+            >
+              Save assignment
+            </button>
+            {selectedAssignment ? (
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => void onDeleteAssignment(selectedAssignment)}
+                disabled={saving}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+          <p className="form-hint" style={{ marginTop: 8 }}>
+            No provider validation or health-probe is run from this page; availability remains factual database evidence.
+          </p>
+        </aside>
+      </div>
+
+      {showProfileForm ? (
+        <form
+          key={selectedProfile?.id ?? 'new'}
+          className="panel stack-form form-stack"
+          style={{ marginTop: 12 }}
+          onSubmit={(event) => void onSaveProfile(event)}
+        >
+          <header className="panel-head">
+            <div>
+              <h2>{selectedProfileId ? 'Edit provider profile' : 'Create provider profile'}</h2>
+              <p>Availability remains factual backend evidence and is not editable here.</p>
+            </div>
+            <button type="button" className="btn quiet" onClick={() => setShowProfileForm(false)}>
+              Close
+            </button>
+          </header>
+          <div className="form-grid">
+            <label>
+              Provider identifier
+              <input
+                name="provider_identifier"
+                required
+                defaultValue={selectedProfile?.provider_identifier ?? ''}
+                disabled={saving}
+                readOnly={Boolean(selectedProfileId)}
+                placeholder="openai, xai, local_cli…"
+              />
+            </label>
+            <label>
+              Display name
+              <input
+                name="display_name"
+                required
+                defaultValue={selectedProfile?.display_name ?? ''}
+                disabled={saving}
+              />
+            </label>
+          </div>
+          <label>
+            Provider model ID
+            <input
+              name="provider_model_id"
+              defaultValue={selectedProfile?.provider_model_id ?? ''}
+              disabled={saving}
+              placeholder="Optional configuration value"
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Execution mode
+              <select name="execution_mode" defaultValue={selectedProfile?.execution_mode ?? 'disabled'} disabled={saving}>
+                <option value="disabled">Disabled</option>
+                <option value="manual">Manual</option>
+                <option value="assisted">Assisted</option>
+                <option value="automatic">Automatic</option>
+              </select>
+            </label>
+            <label>
+              Privacy classification
+              <select
+                name="privacy_classification"
+                defaultValue={selectedProfile?.privacy_classification ?? 'local'}
+                disabled={saving}
+              >
+                <option value="local">Local</option>
+                <option value="hosted">Hosted</option>
+                <option value="restricted">Restricted</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Declared capabilities
+            <input
+              name="capabilities"
+              defaultValue={
+                selectedProfile ? capabilityLabels(selectedProfile).replace('No declared capabilities', '') : 'planning'
+              }
+              disabled={saving}
+              placeholder="Comma-separated, e.g. planning"
+            />
+          </label>
+          {selectedProfile ? (
+            <ul className="kv-list">
+              <li>
+                <span>Capabilities</span>
+                <strong>{capabilityLabels(selectedProfile)}</strong>
+              </li>
+              <li>
+                <span>Capability source</span>
+                <strong>{selectedProfile.capability_source ?? 'Unknown'}</strong>
+              </li>
+              <li>
+                <span>Capability check</span>
+                <strong>
+                  {selectedProfile.capabilities_checked_at
+                    ? formatDate(selectedProfile.capabilities_checked_at)
+                    : 'Never checked'}
+                </strong>
+              </li>
+              <li>
+                <span>Health check</span>
+                <strong>
+                  {selectedProfile.health_checked_at
+                    ? formatDate(selectedProfile.health_checked_at)
+                    : 'Never checked'}
+                </strong>
+              </li>
+            </ul>
+          ) : null}
+          <div className="inline-actions">
+            <button type="submit" className="btn primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save provider profile'}
+            </button>
+            {selectedProfile ? (
+              <button type="button" className="btn danger" onClick={() => void onDeleteProfile()} disabled={saving}>
+                Delete profile
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn secondary"
+              disabled
+              title="No provider validation or health-probe endpoint is exposed in Phase 1."
+            >
+              Validate connection — unavailable
+            </button>
+          </div>
         </form>
-      </div>
+      ) : null}
 
-      <section className="panel">
-        <div className="panel-title"><div><h2>Task-routing matrix</h2><p>Persist a provider profile per task. Sol, Terra, and Luna are deterministic logical defaults; run-specific overrides are configured when starting an orchestration run.</p></div></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Task</th><th>Logical default</th><th>Provider profile</th><th>Enabled</th><th>Rationale</th><th>Action</th></tr></thead>
-            <tbody>
-              {TASK_PROFILE_MAP.map((row) => {
-                const assignment = assignments.find((item) => item.task_type === row.task)
-                const draft = routeDrafts[row.task] ?? {
-                  providerProfileId: assignment?.provider_profile_id ?? '',
-                  enabled: assignment?.enabled ?? true,
-                  rationale: assignment?.rationale ?? '',
-                }
-                return (
-                  <tr key={row.task}>
-                    <td><strong>{row.task}</strong><div className="form-hint">{row.description}</div></td>
-                    <td><span className="truth-pill verified">{row.logicalProfile}</span></td>
-                    <td><select value={draft.providerProfileId} onChange={(event) => updateRouteDraft(row.task, { providerProfileId: event.target.value })} disabled={saving || !profiles.length}><option value="">Unassigned</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.display_name} · {profile.availability_status}</option>)}</select></td>
-                    <td><input type="checkbox" checked={draft.enabled} onChange={(event) => updateRouteDraft(row.task, { enabled: event.target.checked })} disabled={saving} aria-label={`Enable ${row.task} provider assignment`} /></td>
-                    <td><input value={draft.rationale} onChange={(event) => updateRouteDraft(row.task, { rationale: event.target.value })} disabled={saving} placeholder="Optional review note" /></td>
-                    <td>
-                      <button type="button" className="secondary-button touch-target" onClick={() => void onSaveAssignment(row.task)} disabled={saving || !draft.providerProfileId}>Save</button>
-                      {assignment ? <button type="button" className="ghost-button touch-target" onClick={() => void onDeleteAssignment(assignment)} disabled={saving}>Remove</button> : null}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="split-2">
-        <section className="panel stack-form">
-          <div className="panel-title"><div><h2>Privacy preference</h2><p>Project-scoped routing policy used by new orchestration runs.</p></div></div>
-          {!settingsAvailable && !loading ? <UnavailableState title="Project settings unavailable" detail="No privacy preference was inferred or changed." /> : null}
-          {settings ? (
-            <>
-              <label className="checkbox-row"><input type="checkbox" checked={preferLocal} onChange={(event) => setPreferLocal(event.target.checked)} disabled={saving} />Prefer local providers</label>
-              <label className="checkbox-row"><input type="checkbox" checked={preferHosted} onChange={(event) => setPreferHosted(event.target.checked)} disabled={saving} />Permit hosted providers</label>
-              <button type="button" className="primary-button touch-target" onClick={() => void onSavePreferences()} disabled={saving || (!preferLocal && !preferHosted)}>Save privacy preference</button>
-              {!preferLocal && !preferHosted ? <p className="notice warning">At least one provider class must be permitted for routing.</p> : null}
-              <p className="form-hint">Saving policy does not contact providers, validate credentials, or start a planning run.</p>
-            </>
-          ) : null}
-        </section>
-
-        <section className="panel">
-          <div className="panel-title"><div><h2>Factual runtime catalog</h2><p>Database evidence only; no hardware or provider probes run from this page.</p></div></div>
-          {!catalogAvailable && !loading ? <UnavailableState title="Runtime catalog unavailable" detail="No model, install, benchmark, or connection claim is inferred." /> : null}
-          {catalog ? <p className="notice info">{catalog.summary.evidence_note}</p> : null}
-          {!loading && catalog && !catalog.model_variants.length ? <EmptyState title="No model variants registered" detail="The runtime catalog contains no model-variant records." /> : null}
-          {catalog?.model_variants.length ? (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Model / variant</th><th>24 GB</th><th>Path</th><th>Checksum</th><th>Benchmark</th><th>Native voice</th></tr></thead>
-                <tbody>
-                  {catalog.model_variants.map((variant) => {
-                    const model = modelsById.get(variant.model_id)
-                    return (
-                      <tr key={variant.id}>
-                        <td><strong>{model ? `${model.family} · ${model.name}` : 'Unknown model'}</strong><div className="form-hint">{variant.variant_name}</div></td>
-                        <td>{variant.compatible_24gb_status || 'unknown'}</td>
-                        <td><span className={`truth-pill ${evidenceClass(variant.path_status)}`}>{variant.path_status}</span></td>
-                        <td><span className={`truth-pill ${evidenceClass(variant.checksum_status)}`}>{variant.checksum_status}</span></td>
-                        <td><span className={`truth-pill ${evidenceClass(variant.benchmark_status)}`}>{variant.benchmark_status}</span> {variant.benchmark_run_count ? `${variant.benchmark_run_count} run(s)` : ''}</td>
-                        <td>{variant.native_voice_capability || 'unknown'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+      <section className="panel" style={{ marginTop: 12 }}>
+        <header className="panel-head">
+          <div>
+            <h2>Factual runtime catalog</h2>
+            <p>Database evidence only; no hardware or provider probes run from this page.</p>
+          </div>
+        </header>
+        {!catalogAvailable && !loading ? (
+          <UnavailableState
+            title="Runtime catalog unavailable"
+            detail="No model, install, benchmark, or connection claim is inferred."
+          />
+        ) : null}
+        {catalog ? <p className="notice info">{catalog.summary.evidence_note}</p> : null}
+        {!loading && catalog && !catalog.model_variants.length ? (
+          <EmptyState title="No model variants registered" detail="The runtime catalog contains no model-variant records." />
+        ) : null}
+        {catalog?.model_variants.length ? (
+          <div className="data-table">
+            <div className="table-head" style={{ gridTemplateColumns: '1.4fr .5fr .55fr .55fr .7fr .55fr' }}>
+              <span>Model / variant</span>
+              <span>24 GB</span>
+              <span>Path</span>
+              <span>Checksum</span>
+              <span>Benchmark</span>
+              <span>Native voice</span>
             </div>
-          ) : null}
-        </section>
-      </div>
+            {catalog.model_variants.map((variant) => {
+              const model = modelsById.get(variant.model_id)
+              return (
+                <div
+                  key={variant.id}
+                  className="data-row"
+                  style={{ gridTemplateColumns: '1.4fr .5fr .55fr .55fr .7fr .55fr' }}
+                >
+                  <span>
+                    <b>{model ? `${model.family} · ${model.name}` : 'Unknown model'}</b>
+                    <small>{variant.variant_name}</small>
+                  </span>
+                  <span>{variant.compatible_24gb_status || 'unknown'}</span>
+                  <span>
+                    <span className="status-pill" data-status={evidenceStatus(variant.path_status)}>
+                      {variant.path_status}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="status-pill" data-status={evidenceStatus(variant.checksum_status)}>
+                      {variant.checksum_status}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="status-pill" data-status={evidenceStatus(variant.benchmark_status)}>
+                      {variant.benchmark_status}
+                    </span>
+                    {variant.benchmark_run_count ? ` ${variant.benchmark_run_count} run(s)` : ''}
+                  </span>
+                  <span>{variant.native_voice_capability || 'unknown'}</span>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+      </section>
     </div>
   )
 }

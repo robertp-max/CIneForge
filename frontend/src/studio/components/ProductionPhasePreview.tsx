@@ -327,13 +327,15 @@ function PhaseTwoPreview({ phase, workspace, historical, onNavigate }: PreviewPr
                 </figcaption>
               </figure>
             ) : sceneFrameUrls.length ? (
-              <div className="phase-scene-frame-strip" aria-label="Selected scene starting frames">
-                {sceneFrameUrls.slice(0, 6).map((frame) => (
+              <div className="phase-frame-grid" aria-label="Selected scene starting frames">
+                {sceneFrameUrls.slice(0, 6).map((frame, index) => (
                   <article key={frame.code}>
-                    <div className="frame-art has-image">
+                    <div className={`frame-art frame-${index % 8} has-image`}>
                       <img src={frame.url} alt={`${frame.code} starting frame`} loading="lazy" decoding="async" />
                       <span>{frame.code}</span>
                     </div>
+                    <b>{frame.code}</b>
+                    <small>Starting frame</small>
                   </article>
                 ))}
               </div>
@@ -349,7 +351,7 @@ function PhaseTwoPreview({ phase, workspace, historical, onNavigate }: PreviewPr
                     return (
                       <tr key={row.shot.id}>
                         <td><b>{row.code}</b><small>{row.shot.title}</small></td>
-                        <td title={purpose}><span className="phase-shot-purpose">{purpose}</span></td>
+                        <td title={purpose}>{purpose}</td>
                         <td>
                           {row.shot.location || 'Location not mapped'}
                           <small>{row.shot.characters?.length ?? 0} cast links</small>
@@ -413,9 +415,14 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
     : firstCharacterId
   const selected = characters.find((item) => item.id === activeCharacterId) ?? characters[0] ?? null
   const references = selected?.reference_links ?? []
+  const linkedShots = (workspace?.shots ?? []).filter((shot) =>
+    shot.characters?.some((link) => link.character_id === selected?.id),
+  )
   const voices = workspace?.voices ?? []
   const assignedVoices = characters.filter((item) => item.assigned_voice_profile_id).length
-  const approvedHeroes = characters.filter(characterIsApprovedHero).length
+  const principalCast = characters.filter(
+    (item) => (item.role || '').toLowerCase().includes('lead') || (item.reference_links?.length ?? 0) > 0,
+  ).length
   const referenceLinks = characters.reduce((total, item) => total + (item.reference_links?.length ?? 0), 0)
   const mediaScope = {
     projectId: workspace?.projectId,
@@ -429,9 +436,6 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
         ...mediaScope,
       })
     : null
-  const selectedVoice = selected?.assigned_voice_profile_id
-    ? voices.find((voice) => voice.id === selected.assigned_voice_profile_id) ?? null
-    : null
 
   return (
     <div className="phase-workspace">
@@ -439,19 +443,19 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
         phase={phase}
         historical={historical}
         source={historical ? 'Retained snapshot' : 'Live records'}
-        description="Build distinct, continuity-safe character identities and review a required nine-view reference plan before media production."
+        description="Build distinct, continuity-safe character identities and review the required nine-view reference plan before any media is produced."
         actions={[{ label: 'Characters', page: 'characters' }, { label: 'Voices', page: 'voices' }]}
         onNavigate={onNavigate}
       />
       <PreviewDisclosure historical={historical} />
       <div className="phase-metrics four">
         <WorkspaceMetric label="Characters" value={characters.length || '—'} />
-        <WorkspaceMetric label="Approved heroes" value={approvedHeroes || '—'} />
+        <WorkspaceMetric label="Principal cast" value={principalCast || '—'} />
         <WorkspaceMetric label="Reference links" value={referenceLinks || '—'} />
         <WorkspaceMetric
           label="Voice assignments"
-          value={characters.length ? `${assignedVoices}/${characters.length}` : '—'}
-          detail={voices.length ? `${voices.length} voice profiles` : undefined}
+          value={assignedVoices || '—'}
+          detail={characters.length ? `${voices.length} voice profiles` : undefined}
         />
       </div>
 
@@ -507,35 +511,29 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
             <div className="phase-fact-grid">
               <article>
                 <span>Physical identity</span>
-                <p>{selected.physical_description || 'Not recorded'}</p>
+                <p>{selected.physical_description || (historical ? 'Not recorded in this snapshot.' : 'Not recorded')}</p>
               </article>
               <article>
                 <span>Personality & movement</span>
-                <p>{selected.personality || 'Not recorded'}</p>
+                <p>{selected.personality || (historical ? 'Not recorded in this snapshot.' : 'Not recorded')}</p>
               </article>
               <article>
-                <span>Voice & speech</span>
+                <span>Voice assignment</span>
                 <p>
-                  {selected.speaking_style
-                    || (selectedVoice
-                      ? `${selectedVoice.name}${selectedVoice.tone ? ` · ${selectedVoice.tone}` : ''}`
-                      : selected.assigned_voice_profile_id
-                        ? 'Voice linked; speech notes not recorded'
-                        : 'Not recorded')}
+                  {selected.assigned_voice_profile_id
+                    ? `Linked voice ${selected.assigned_voice_profile_id.slice(0, 8)}…`
+                    : (historical ? 'No voice assignment in this snapshot.' : 'No voice assignment.')}
                 </p>
               </article>
               <article>
-                <span>Wardrobe lock</span>
-                <p>{selected.wardrobe || 'Not recorded'}</p>
+                <span>Reference coverage</span>
+                <p>{references.length} linked reference asset(s).</p>
               </article>
             </div>
             <div className="phase-continuity">
-              <span>CONTINUITY PROMPT</span>
+              <span>SHOT LINKS</span>
               <p>
-                {selected.consistency_prompt
-                  || (historical
-                    ? 'No continuity prompt has been recorded in this retained snapshot.'
-                    : 'No continuity prompt has been recorded.')}
+                {linkedShots.length} linked shots in this {historical ? 'retained snapshot' : 'current draft'}.
               </p>
             </div>
           </section>
@@ -545,7 +543,7 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
               <div>
                 <span>NINE-PANEL SPECIFICATION</span>
                 <h4>Reference-view plan</h4>
-                <p>Slots remain planned unless a real approved reference exists.</p>
+                <p>Each slot remains a planned requirement unless a real managed reference is linked.</p>
               </div>
               <b>{Math.min(9, references.length)}/9 linked</b>
             </header>
@@ -567,7 +565,6 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
                           ...mediaScope,
                         })
                       : null
-                const hasLinkedSlot = Boolean(reference) || Boolean(portraitUrl)
                 return (
                   <article key={label}>
                     <span className={portraitUrl ? 'has-reference' : undefined}>
@@ -578,7 +575,7 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
                           loading="lazy"
                           decoding="async"
                         />
-                      ) : hasLinkedSlot ? initials(selected.name) : (index + 1)}
+                      ) : (index + 1)}
                     </span>
                     <b>{label}</b>
                     <small>
@@ -601,7 +598,7 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
         />
       )}
 
-      <footer className="phase-footer">
+      <div className="phase-footer">
         <div>
           <span>PROFILE COVERAGE</span>
           <b>Identity planning, not generated media</b>
@@ -613,11 +610,16 @@ function PhaseThreePreview({ phase, workspace, historical, onNavigate }: Preview
           </p>
         </div>
         {onNavigate ? (
-          <button type="button" className="btn primary" onClick={() => onNavigate('characters')}>
-            {editorLabel('Edit character profiles', historical)}
-          </button>
+          <div className="phase-header-actions">
+            <button type="button" className="btn secondary" onClick={() => onNavigate('voices')}>
+              {editorLabel('Review voices', historical)}
+            </button>
+            <button type="button" className="btn primary" onClick={() => onNavigate('characters')}>
+              {editorLabel('Edit character profiles', historical)}
+            </button>
+          </div>
         ) : null}
-      </footer>
+      </div>
     </div>
   )
 }
@@ -664,15 +666,19 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
       </div>
 
       <div className="phase-location-layout">
-        <section className="phase-location-catalog" aria-label="Location catalog">
-          <div className="phase-subheading">
+        <section aria-label="Location catalog">
+          <header className="phase-subheading">
             <div>
               <span>LOCATION CATALOG</span>
               <h4>Environment coverage</h4>
-              <p>{historical ? 'Location names are taken only from the retained snapshot.' : 'Location names are derived from persisted shots.'}</p>
+              <p>
+                {historical
+                  ? 'Location names are taken only from the retained snapshot.'
+                  : 'Location names are derived from persisted shots.'}
+              </p>
             </div>
             <b>{locations.length || 0} sites</b>
-          </div>
+          </header>
           {locations.length ? (
             <div className="phase-location-list">
               {locations.map((location, index) => (
@@ -685,7 +691,10 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <div>
                     <b>{location.name}</b>
-                    <small>{location.shots.length} shots · first appears in {location.shots[0]?.sceneTitle || 'snapshot'}</small>
+                    <small>
+                      {location.shots.length} shots · first appears in{' '}
+                      {location.shots[0]?.sceneTitle || 'snapshot'}
+                    </small>
                   </div>
                   <i aria-hidden="true">›</i>
                 </button>
@@ -694,7 +703,11 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
           ) : (
             <EmptyDesignState
               title="No location values are recorded"
-              detail={historical ? 'This retained snapshot has no location catalog entries.' : 'The location profile design remains available without inventing production data.'}
+              detail={
+                historical
+                  ? 'This retained snapshot has no location catalog entries.'
+                  : 'The location profile design remains available without inventing production data.'
+              }
             />
           )}
         </section>
@@ -704,7 +717,11 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
             <div>
               <span>LOCATION PROFILE</span>
               <h4>{selected?.name || 'Select a location'}</h4>
-              <p>{selected ? `${selected.shots.length} shot uses are connected to this profile.` : 'No location is selected.'}</p>
+              <p>
+                {selected
+                  ? `${selected.shots.length} shot uses are connected to this profile.`
+                  : 'No location is selected.'}
+              </p>
             </div>
             <span className="status-pill" data-status={historical ? 'review' : 'draft'}>
               {historical ? 'Snapshot' : 'Derived'}
@@ -729,7 +746,7 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
       </div>
 
       <section className="phase-key-assets">
-        <div className="phase-subheading">
+        <header className="phase-subheading">
           <div>
             <span>KEY-ASSET REGISTRY</span>
             <h4>Story-critical object continuity</h4>
@@ -740,7 +757,7 @@ function PhaseFourPreview({ phase, workspace, historical }: PreviewProps) {
             </p>
           </div>
           <b>Design template</b>
-        </div>
+        </header>
         <div>
           {[
             ['Identity', 'Canonical name, function, size, shape, material, color'],
@@ -991,28 +1008,35 @@ function PhaseSixPreview({ phase, workspace, historical, onNavigate }: PreviewPr
                     ...mediaScope,
                   })
                   return (
-                  <article key={row.shot.id}>
-                    <div
-                      className={`frame-art frame-${index % 8}${frameUrl ? ' has-image' : ''}`}
-                    >
-                      {frameUrl ? (
-                        <img
-                          src={frameUrl}
-                          alt={`${row.code} starting frame`}
-                          loading="lazy"
-                          decoding="async"
-                          onError={(event) => {
-                            const img = event.currentTarget
-                            img.style.display = 'none'
-                            img.parentElement?.classList.remove('has-image')
-                          }}
-                        />
-                      ) : null}
-                      <span>{row.code}</span>
-                    </div>
-                    <b>{row.code} · {row.shot.title}</b>
-                    <small>{frameUrl ? 'Frame attached' : 'Starting frame planned'}</small>
-                  </article>
+                    <article key={row.shot.id}>
+                      {/* Gold Sites: .frame-art + .frame-N + optional .has-image */}
+                      <div
+                        className={`frame-art frame-${index % 8}${frameUrl ? ' has-image' : ''}`}
+                      >
+                        {frameUrl ? (
+                          <img
+                            src={frameUrl}
+                            alt={`${row.code} starting frame`}
+                            loading="lazy"
+                            decoding="async"
+                            onError={(event) => {
+                              const img = event.currentTarget
+                              img.style.display = 'none'
+                              img.parentElement?.classList.remove('has-image')
+                            }}
+                          />
+                        ) : null}
+                        <span>{row.code}</span>
+                      </div>
+                      <span
+                        className="status-pill"
+                        data-status={frameUrl ? 'ready' : 'draft'}
+                      >
+                        {frameUrl ? 'Mapped' : 'Planned'}
+                      </span>
+                      <b>{row.code} · {row.shot.title}</b>
+                      <small>{frameUrl ? 'Frame attached' : 'Starting frame planned'}</small>
+                    </article>
                   )
                 })}
               </div>
@@ -1134,7 +1158,6 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
     ? workspace.assembly.manifest as Record<string, unknown>
     : null
   const voiceShots = shots.filter((row) => row.shot.narration_text)
-  const exportReady = Boolean(workspace?.assembly?.export_ready)
   const finalPresent = Boolean(workspace?.assembly?.final_output)
   const endLabel = formatDuration(planned || workspace?.targetDurationSec || 0)
 
@@ -1163,17 +1186,12 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
         <WorkspaceMetric
           label="Final output"
           value={finalPresent ? 'Present' : 'Not produced'}
-          detail={exportReady ? 'export_ready flag set' : 'Not export-ready'}
         />
         <WorkspaceMetric label="Final QA" value={qaState.replaceAll('_', ' ')} />
       </div>
 
       <div className="phase-inline-tabs phase-major-tabs" role="tablist" aria-label="Phase 7 assembly view">
-        {([
-          ['timeline', 'Assembly timeline'],
-          ['review', 'Final QA review'],
-          ['manifest', 'Manifest & provenance'],
-        ] as const).map(([tab, label]) => (
+        {(['timeline', 'review', 'manifest'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -1182,7 +1200,7 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
             className={assemblyTab === tab ? 'active' : ''}
             onClick={() => setAssemblyTab(tab)}
           >
-            {label}
+            {tab === 'timeline' ? 'Assembly timeline' : tab === 'review' ? 'Final QA review' : 'Manifest & provenance'}
           </button>
         ))}
       </div>
@@ -1206,8 +1224,8 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
             </footer>
           </section>
 
-          <div>
-            <div className="phase-subheading">
+          <section className="phase-timeline" aria-label="Assembly timeline tracks">
+            <header className="phase-subheading">
               <div>
                 <span>ASSEMBLY TIMELINE</span>
                 <h4>Shot, dialogue, music, and subtitle tracks</h4>
@@ -1217,61 +1235,59 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
                 </p>
               </div>
               <b>{shots.length ? `${shots.length} planned` : 'Empty'}</b>
+            </header>
+
+            <div>
+              <b>VIDEO</b>
+              <section aria-label="Video clips by planned duration">
+                {shots.length ? shots.map((row) => {
+                  const dur = Math.max(1, Number(row.shot.duration_sec || 1))
+                  return (
+                    <span
+                      key={row.shot.id}
+                      style={{ flexGrow: dur }}
+                      title={`${row.code} · ${dur}s · clip not generated`}
+                    >
+                      {row.code}
+                    </span>
+                  )
+                }) : <span>No project-scoped video output</span>}
+              </section>
             </div>
 
-            <section className="phase-timeline" aria-label="Assembly timeline tracks">
-              <div>
-                <b>VIDEO</b>
-                <section aria-label="Video clips by planned duration">
-                  {shots.length ? shots.map((row) => {
-                    const dur = Math.max(1, Number(row.shot.duration_sec) || 1)
-                    return (
-                      <span
-                        key={row.shot.id}
-                        style={{ flex: `${dur} 1 0` }}
-                        title={`${row.code} · ${dur}s · clip not generated`}
-                      >
-                        {row.code}
-                      </span>
-                    )
-                  }) : <span>No project-scoped video output</span>}
-                </section>
-              </div>
+            <div className={voiceShots.length ? 'audio' : 'audio empty'}>
+              <b>VOICE</b>
+              <section aria-label="Voice clips">
+                {voiceShots.length ? voiceShots.map((row) => {
+                  const dur = Math.max(1, Number(row.shot.duration_sec || 1))
+                  return (
+                    <span
+                      key={row.shot.id}
+                      style={{ flexGrow: dur }}
+                      title={`${row.code} · narration planned, audio not synthesized`}
+                    >
+                      {row.code}
+                    </span>
+                  )
+                }) : <span>Narration lane — no voice assets generated</span>}
+              </section>
+            </div>
 
-              <div className={voiceShots.length ? 'audio' : 'audio empty'}>
-                <b>VOICE</b>
-                <section aria-label="Voice clips">
-                  {voiceShots.length ? voiceShots.map((row) => {
-                    const dur = Math.max(1, Number(row.shot.duration_sec) || 1)
-                    return (
-                      <span
-                        key={row.shot.id}
-                        style={{ flex: `${dur} 1 0` }}
-                        title={`${row.code} · narration planned, audio not synthesized`}
-                      >
-                        {row.code}
-                      </span>
-                    )
-                  }) : <span>Narration lane — no voice assets generated</span>}
-                </section>
-              </div>
-
-              <div className="empty">
-                <b>MUSIC</b>
-                <section><span>Music and SFX design lane</span></section>
-              </div>
-              <div className="empty">
-                <b>CAPTIONS</b>
-                <section><span>Subtitle and accessibility lane</span></section>
-              </div>
-            </section>
-          </div>
+            <div className="empty">
+              <b>MUSIC</b>
+              <section><span>Music and SFX design lane</span></section>
+            </div>
+            <div className="empty">
+              <b>CAPTIONS</b>
+              <section><span>Subtitle and accessibility lane</span></section>
+            </div>
+          </section>
         </div>
       ) : null}
 
       {assemblyTab === 'review' ? (
-        <section aria-label="Final QA review">
-          <div className="phase-subheading">
+        <section className="phase-final-qa" aria-label="Final QA review">
+          <header className="phase-subheading">
             <div>
               <span>FINAL QA REVIEW</span>
               <h4>Technical and creative validation</h4>
@@ -1283,7 +1299,7 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
             <span className="status-pill" data-status={qaState === 'passed' ? 'complete' : 'draft'}>
               {qaState.replaceAll('_', ' ')}
             </span>
-          </div>
+          </header>
           <div className="phase-qa-grid">
             {[
               ['Timeline coverage', 'Every planned shot has a selected, decodable clip.'],
@@ -1307,8 +1323,8 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
       ) : null}
 
       {assemblyTab === 'manifest' ? (
-        <section aria-label="Final manifest and provenance">
-          <div className="phase-subheading">
+        <section className="phase-manifest-preview" aria-label="Final manifest and provenance">
+          <header className="phase-subheading">
             <div>
               <span>FINAL MANIFEST</span>
               <h4>Provenance and delivery record</h4>
@@ -1321,7 +1337,7 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
             <span className="status-pill" data-status={manifest ? 'ready' : 'draft'}>
               {historical ? 'Snapshot' : 'Template'}
             </span>
-          </div>
+          </header>
           <div className="phase-manifest-grid">
             {[
               ['Output identity', 'Canonical filename, delivery path, SHA-256'],
@@ -1348,7 +1364,7 @@ function PhaseSevenPreview({ phase, workspace, historical, onNavigate }: Preview
           <p>No project-scoped clip, FFmpeg, or final-output API is currently represented as complete.</p>
         </div>
         {onNavigate ? (
-          <div className="phase-header-actions">
+          <div className="phase-footer-actions">
             <button type="button" className="btn secondary" onClick={() => onNavigate('workflows')}>
               {editorLabel('Review workflows', historical)}
             </button>

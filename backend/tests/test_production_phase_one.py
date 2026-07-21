@@ -291,3 +291,78 @@ def test_contract_exposes_exact_canonical_names(client: TestClient):
     assert pipeline["phases"][0]["lifecycle_state"] == "not_started"
     assert pipeline["phases"][0]["is_locked"] is False
     assert all(item["is_locked"] for item in pipeline["phases"][1:])
+
+
+def test_phase_one_package_schema_and_retain_keeps_package_head(
+    client: TestClient, db_session: Session
+):
+    """Manual retain must keep the script package as the pipeline head for UI packageData."""
+    created = client.post("/projects/workspace", json=_workspace_payload()).json()
+    story_id = created["story"]["id"]
+    phase_one = created["production_pipeline"]["phases"][0]
+    package = phase_one["latest_version"]["output_json"]
+
+    assert package["schema_name"] == "cineforge.phase_one_script_package"
+    assert package["schema_version"] == 1
+    for key in (
+        "project_title",
+        "logline",
+        "short_synopsis",
+        "detailed_treatment",
+        "complete_script",
+        "narration_script",
+        "dialogue_script",
+        "non_dialogue_action",
+        "silent_visual_beats",
+        "emotional_progression",
+        "dramatic_escalation",
+        "duration_analysis",
+        "script_word_count",
+        "generation_boundary",
+    ):
+        assert key in package, key
+    assert set(package["duration_analysis"]) >= {
+        "target_duration_sec",
+        "narration_duration_sec",
+        "dialogue_duration_sec",
+        "planned_silence_visual_duration_sec",
+        "estimated_total_duration_sec",
+    }
+
+    retained = client.post(
+        f"/production/stories/{story_id}/phases/1/versions",
+        json={"label": "Director freeze", "notes": "Keep package visible", "requested_by": "tester"},
+    )
+    assert retained.status_code in {200, 201}, retained.text
+    body = retained.json()
+    head = body["version"]["output_json"]
+    assert head["schema_name"] == "cineforge.phase_one_script_package"
+    assert head["project_title"] == package["project_title"]
+    assert head["complete_script"] == package["complete_script"]
+    assert body["pipeline"]["phases"][0]["latest_version"]["output_json"]["schema_name"] == (
+        "cineforge.phase_one_script_package"
+    )
+
+    # Revision still works against the retained head's version number.
+    revised = client.put(
+        f"/production/stories/{story_id}/phases/1",
+        json={
+            "expected_version_number": body["version"]["version_number"],
+            "project_title": package["project_title"],
+            "logline": package["logline"] + " Review note retained.",
+            "short_synopsis": package["short_synopsis"],
+            "detailed_treatment": package["detailed_treatment"],
+            "complete_script": package["complete_script"],
+            "narration_script": package["narration_script"],
+            "dialogue_script": package["dialogue_script"],
+            "non_dialogue_action": package["non_dialogue_action"],
+            "silent_visual_beats": package["silent_visual_beats"],
+            "emotional_progression": package["emotional_progression"],
+            "dramatic_escalation": package["dramatic_escalation"],
+            "source_fidelity_notes": package["source_fidelity_notes"],
+            "creative_assumptions": package["creative_assumptions"],
+            "requested_by": "tester",
+        },
+    )
+    assert revised.status_code == 200, revised.text
+    assert "Review note retained" in revised.json()["phase"]["latest_version"]["output_json"]["logline"]

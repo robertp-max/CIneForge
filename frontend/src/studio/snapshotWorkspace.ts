@@ -64,6 +64,9 @@ export type SnapshotCharacter = {
   physical_description?: string | null
   age_range?: string | null
   personality?: string | null
+  speaking_style?: string | null
+  wardrobe?: string | null
+  consistency_prompt?: string | null
   approval_state?: string | null
   reference_links?: Array<{
     id: string
@@ -400,6 +403,9 @@ export function workspaceFromHistoricalDetail(
       physical_description: str(row.physical_description) || null,
       age_range: str(row.age_range) || null,
       personality: str(row.personality) || null,
+      speaking_style: str(row.speaking_style) || null,
+      wardrobe: str(row.wardrobe) || null,
+      consistency_prompt: str(row.consistency_prompt) || null,
       approval_state: str(row.approval_state) || null,
       reference_links: refsByCharacter.get(id) ?? [],
       assigned_voice_profile_id: null as string | null,
@@ -547,6 +553,9 @@ export function workspaceFromAggregate(
       physical_description: character.physical_description,
       age_range: character.age_range,
       personality: character.personality,
+      speaking_style: character.speaking_style,
+      wardrobe: character.wardrobe,
+      consistency_prompt: character.consistency_prompt,
       approval_state: character.approval_state,
       reference_links: (character.reference_assets ?? []).map((ref) => ({
         id: ref.id,

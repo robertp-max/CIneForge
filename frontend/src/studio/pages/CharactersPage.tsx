@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   api,
   type CharacterReferenceLink,
@@ -12,6 +12,10 @@ import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../compo
 import { initials } from '../utils'
 
 const REFERENCE_ROLES = ['primary', 'alternate', 'expression', 'costume', 'detail'] as const
+
+/** Gold Sites status filter chips (All + ApprovalState surface labels). */
+const STATUS_FILTERS = ['All', 'Draft', 'Review', 'Approved', 'Blocked'] as const
+type StatusFilter = (typeof STATUS_FILTERS)[number]
 
 function selectDisplayReference(
   links: CharacterReferenceLink[],
@@ -29,9 +33,39 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+/** Map backend approval_state → Gold status-pill data-status token. */
+function statusPillToken(approvalState: string | null | undefined): string {
+  const raw = (approvalState ?? 'draft').toLowerCase().replace(/\s+/g, '_')
+  if (raw === 'in_review' || raw === 'review') return 'review'
+  return raw
+}
+
+function statusPillLabel(approvalState: string | null | undefined): string {
+  const token = statusPillToken(approvalState)
+  if (token === 'review') return 'Review'
+  if (token === 'approved') return 'Approved'
+  if (token === 'blocked') return 'Blocked'
+  return 'Draft'
+}
+
+function matchesStatusFilter(approvalState: string | null | undefined, filter: StatusFilter): boolean {
+  if (filter === 'All') return true
+  return statusPillLabel(approvalState) === filter
+}
+
+function hasApprovedHeroReference(links: CharacterReferenceLink[]): boolean {
+  return links.some(
+    (reference) =>
+      reference.approved &&
+      (reference.reference_role === 'primary' || reference.reference_role === 'hero') &&
+      reference.asset?.archived_at == null,
+  )
+}
+
 export function CharactersPage() {
   const { data, readiness, reload, setMessage, addCharacter, busy } = useStudio()
   const [selectedId, setSelectedId] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [newName, setNewName] = useState('')
   const [newRole, setNewRole] = useState('')
   const [newDescription, setNewDescription] = useState('')
@@ -98,6 +132,26 @@ export function CharactersPage() {
     const timer = window.setTimeout(() => void loadReferences(), 0)
     return () => window.clearTimeout(timer)
   }, [loadReferences])
+
+  const characters = data?.characters ?? []
+  const filteredCharacters = useMemo(
+    () => characters.filter((character) => matchesStatusFilter(character.approval_state, statusFilter)),
+    [characters, statusFilter],
+  )
+  const filterCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = {
+      All: characters.length,
+      Draft: 0,
+      Review: 0,
+      Approved: 0,
+      Blocked: 0,
+    }
+    for (const character of characters) {
+      const label = statusPillLabel(character.approval_state) as Exclude<StatusFilter, 'All'>
+      if (label in counts) counts[label] += 1
+    }
+    return counts
+  }, [characters])
 
   if (!data) return null
 
@@ -337,23 +391,41 @@ export function CharactersPage() {
   }
 
   return (
-    <div className="split-2">
-      <section className="panel">
-        <div className="panel-title">
-          <div>
-            <h2>Characters</h2>
-            <p>Persist identity, managed references, voice associations, and linked-shot readiness.</p>
-          </div>
+    <div className="character-layout">
+      <div className="stack">
+        <div className="segmented" role="tablist" aria-label="Filter characters by approval state">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter}
+              type="button"
+              role="tab"
+              aria-selected={statusFilter === filter}
+              className={statusFilter === filter ? 'active' : undefined}
+              onClick={() => setStatusFilter(filter)}
+            >
+              {filter}
+              <span>{filterCounts[filter]}</span>
+            </button>
+          ))}
         </div>
 
         {!data.characters.length ? (
           <EmptyState title="No characters yet" detail="Add a character to begin building a character profile." />
+        ) : !filteredCharacters.length ? (
+          <EmptyState
+            title="No characters match"
+            detail="Try another readiness filter."
+            action={
+              <button type="button" className="secondary-button touch-target" onClick={() => setStatusFilter('All')}>
+                Clear filter
+              </button>
+            }
+          />
         ) : (
-          <div className="people-grid character-grid">
-            {data.characters.map((character) => {
-              const displayReference = selectDisplayReference(
-                referencesByCharacter[character.id] ?? [],
-              )
+          <div className="character-grid">
+            {filteredCharacters.map((character) => {
+              const characterRefs = referencesByCharacter[character.id] ?? []
+              const displayReference = selectDisplayReference(characterRefs)
               const portraitUrl = characterPortraitUrl({
                 name: character.name,
                 assetId: displayReference?.asset_id,
@@ -361,51 +433,89 @@ export function CharactersPage() {
                 storyTitle: data.story.title,
               })
               const isSelected = character.id === selectedCharacter?.id
+              const linkedShotList = data.chapters.flatMap((chapter) =>
+                chapter.scenes.flatMap((scene) =>
+                  scene.shots.filter((shot) =>
+                    shot.characters?.some((link) => link.character_id === character.id),
+                  ),
+                ),
+              )
+              const linkedSceneCount = new Set(
+                data.chapters.flatMap((chapter) =>
+                  chapter.scenes
+                    .filter((scene) =>
+                      scene.shots.some((shot) =>
+                        shot.characters?.some((link) => link.character_id === character.id),
+                      ),
+                    )
+                    .map((scene) => scene.id),
+                ),
+              ).size
+              const referenceCount = characterRefs.length
+              const roleLabel = character.role?.trim() || 'Role not specified'
+              const cardVoice =
+                (character.assigned_voice_profile_id
+                  ? data.voices.find((voice) => voice.id === character.assigned_voice_profile_id)
+                  : null) ?? data.voices.find((voice) => voice.character_id === character.id)
+              const heroReady = hasApprovedHeroReference(characterRefs)
+              const pillToken = statusPillToken(character.approval_state)
               return (
-              <article key={character.id} className={isSelected ? 'selected-card' : undefined}>
-                <div
-                  className={`portrait${portraitUrl ? ' has-image' : ''}`}
-                  style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', borderRadius: 10, background: '#151719' }}
-                >
-                  {portraitUrl ? (
-                    <img
-                      src={portraitUrl}
-                      alt={`${character.name} character reference`}
-                      loading="lazy"
-                      decoding="async"
-                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  ) : (
-                    <ManagedAssetImage
-                      assetId={displayReference?.asset_id}
-                      alt={`${character.name} character reference`}
-                      fit="cover"
-                      className="character-card-portrait"
-                      fallback={<span className="avatar" aria-hidden="true">{initials(character.name)}</span>}
-                      errorLabel={`The linked reference for ${character.name} is unavailable.`}
-                    />
-                  )}
-                  <span style={{ position: 'absolute', zIndex: 2, left: 8, bottom: 8 }}>{initials(character.name)}</span>
-                </div>
-                <b>{character.name}</b>
-                <small>{character.role ?? 'Role not specified'} · {character.approval_state}</small>
-                <p>{character.physical_description || 'Physical description not recorded.'}</p>
                 <button
                   type="button"
+                  key={character.id}
+                  className={isSelected ? 'selected' : undefined}
+                  aria-pressed={isSelected}
                   aria-label={
                     isSelected
                       ? `Open character: ${character.name} (selected)`
                       : `Open character: ${character.name}`
                   }
-                  className={isSelected ? 'primary-button touch-target' : 'secondary-button touch-target'}
                   onClick={() => {
                     setSelectedId(character.id)
                     setSelectedVoiceId('')
                   }}
                 >
-                  {isSelected ? 'Selected' : 'Open character'}
+                  <div className={`portrait${portraitUrl ? ' has-image' : ''}`}>
+                    {portraitUrl ? (
+                      <img
+                        src={portraitUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : null}
+                    <span>{initials(character.name)}</span>
+                    <i>{roleLabel.split('·')[0].trim()}</i>
+                  </div>
+                  <div className="character-card-copy">
+                    <div>
+                      <span className="eyebrow">{roleLabel}</span>
+                      <span className="status-pill" data-status={pillToken}>
+                        {statusPillLabel(character.approval_state)}
+                      </span>
+                    </div>
+                    <h3>{character.name}</h3>
+                    <p>{character.physical_description || 'Physical description not recorded.'}</p>
+                    <dl>
+                      <div>
+                        <dt>Scenes</dt>
+                        <dd>{linkedSceneCount}</dd>
+                      </div>
+                      <div>
+                        <dt>Shots</dt>
+                        <dd>{linkedShotList.length}</dd>
+                      </div>
+                      <div>
+                        <dt>References</dt>
+                        <dd>{referenceCount}</dd>
+                      </div>
+                    </dl>
+                    <footer>
+                      <span>{cardVoice?.name ?? 'Voice missing'}</span>
+                      {!heroReady ? <em>Hero image needed</em> : null}
+                    </footer>
+                  </div>
                 </button>
-              </article>
               )
             })}
           </div>
@@ -431,49 +541,44 @@ export function CharactersPage() {
             Add character
           </button>
         </form>
-      </section>
+      </div>
 
       {selectedCharacter ? (
-        <div className="stack-form">
-          <form key={selectedCharacter.id} className="panel stack-form form-stack" onSubmit={(event) => void onSaveCharacter(event)}>
-            <div className="panel-title">
-              <div><h2>{selectedCharacter.name}</h2><p>Persisted identity fields · {selectedCharacter.approval_state}</p></div>
+        <aside className="entity-drawer stack-form">
+          <header>
+            <div>
+              <span className="eyebrow">Selected character</span>
+              <h2>{selectedCharacter.name}</h2>
             </div>
-            {(() => {
-              const selectedPortraitUrl = characterPortraitUrl({
-                name: selectedCharacter.name,
-                assetId: selectedDisplayReference?.asset_id,
-                projectId: data.story.project_id,
-                storyTitle: data.story.title,
-              })
-              if (selectedPortraitUrl) {
-                return (
-                  <div
-                    className="portrait has-image large"
-                    style={{ position: 'relative', aspectRatio: '4 / 3', overflow: 'hidden', borderRadius: 10, background: '#151719', maxHeight: 360 }}
-                  >
-                    <img
-                      src={selectedPortraitUrl}
-                      alt={`${selectedCharacter.name} selected character reference`}
-                      loading="lazy"
-                      decoding="async"
-                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  </div>
-                )
-              }
-              return (
-            <ManagedAssetImage
-              assetId={selectedDisplayReference?.asset_id}
-              alt={`${selectedCharacter.name} selected character reference`}
-              fit="cover"
-              className="selected-character-portrait"
-              fallback={<span className="avatar" aria-hidden="true">{initials(selectedCharacter.name)}</span>}
-              errorLabel={`The selected reference for ${selectedCharacter.name} is unavailable.`}
-            />
-              )
-            })()}
-            {error ? <ErrorState detail={error} /> : null}
+            <span className="status-pill" data-status={statusPillToken(selectedCharacter.approval_state)}>
+              {statusPillLabel(selectedCharacter.approval_state)}
+            </span>
+          </header>
+          {(() => {
+            const selectedPortraitUrl = characterPortraitUrl({
+              name: selectedCharacter.name,
+              assetId: selectedDisplayReference?.asset_id,
+              projectId: data.story.project_id,
+              storyTitle: data.story.title,
+            })
+            const roleLabel = selectedCharacter.role?.trim() || 'Role not specified'
+            return (
+              <div className={`portrait large${selectedPortraitUrl ? ' has-image' : ''}`}>
+                {selectedPortraitUrl ? (
+                  <img
+                    src={selectedPortraitUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : null}
+                <span>{initials(selectedCharacter.name)}</span>
+                <i>{roleLabel.split('·')[0].trim()}</i>
+              </div>
+            )
+          })()}
+          {error ? <ErrorState detail={error} /> : null}
+          <form key={selectedCharacter.id} className="stack-form form-stack compact" onSubmit={(event) => void onSaveCharacter(event)}>
             <div className="form-grid">
               <label>
                 Name
@@ -532,7 +637,7 @@ export function CharactersPage() {
             </div>
           </form>
 
-          <section className="panel">
+          <section>
             <div className="panel-title"><div><h2>Coverage and readiness</h2><p>Live links from the storyboard snapshot.</p></div></div>
             <ul className="kv-list">
               <li><span>Scenes</span><strong>{linkedScenes.length}</strong></li>
@@ -545,7 +650,7 @@ export function CharactersPage() {
             {characterReadiness.length ? characterReadiness.map((reason) => <p className="notice warning" key={`${reason.code}-${reason.entity_id}`}>{reason.message}</p>) : <p className="notice success">No character-specific blocking reason is currently reported.</p>}
           </section>
 
-          <section className="panel stack-form">
+          <section className="stack-form">
             <div className="panel-title"><div><h2>Voice assignment</h2><p>Associates a mutable voice profile through its persisted character_id.</p></div></div>
             {associatedVoices.length ? (
               <ul className="kv-list">
@@ -584,7 +689,7 @@ export function CharactersPage() {
             <p className="form-hint">Direct mutation of character.assigned_voice_profile_id is not exposed; that canonical field is applied through reviewed proposals.</p>
           </section>
 
-          <section className="panel stack-form">
+          <section className="stack-form">
             <div className="panel-title">
               <div><h2>Managed reference assets</h2><p>Upload, link, list, unlink, and approve a hero reference when the link is created.</p></div>
               <button type="button" className="ghost-button touch-target" onClick={() => void loadReferences()} disabled={loadingReferences || saving}>Refresh</button>
@@ -640,7 +745,7 @@ export function CharactersPage() {
             <button type="button" className="secondary-button touch-target" disabled title="Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets.">Generate reference image — disabled</button>
             <p className="form-hint">Image generation is disabled in Phase 1 planning; this page only stores and links user-provided managed assets.</p>
           </section>
-        </div>
+        </aside>
       ) : null}
     </div>
   )

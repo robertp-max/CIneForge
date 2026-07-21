@@ -132,8 +132,11 @@ describe('ImagesPage managed starting-image truth', () => {
 
     render(<ImagesPage />)
 
+    // Wait for managed asset list resolve (load is deferred via setTimeout(0)).
+    expect(await screen.findAllByText('assigned-frame.jpg')).not.toHaveLength(0)
+
     // Managed asset wins for assigned shots (no global Transfiguration static bleed on project-1).
-    const assignedHeading = await screen.findByRole('heading', { level: 3, name: 'S01A — Assigned' })
+    const assignedHeading = screen.getByRole('heading', { level: 3, name: 'S01A — Assigned' })
     const assignedCard = assignedHeading.closest('button')
     const unassignedCard = screen.getByRole('heading', { level: 3, name: 'S01B — Unassigned' }).closest('button')
     expect(assignedCard?.querySelector('img')?.getAttribute('src')).toBe('http://assets.test/start-asset-1')
@@ -141,7 +144,6 @@ describe('ImagesPage managed starting-image truth', () => {
     // Unassigned on a non-Transfiguration project must not show static canon stills.
     expect(unassignedCard?.querySelector('img')).toBeNull()
     expect(unassignedCard?.textContent).toMatch(/missing|required/i)
-    expect(screen.getAllByText('assigned-frame.jpg').length).toBeGreaterThan(0)
 
     const candidateSelect = screen.getByLabelText('Candidate asset') as HTMLSelectElement
     expect(Array.from(candidateSelect.options).map((option) => option.textContent).join(' ')).not.toContain(

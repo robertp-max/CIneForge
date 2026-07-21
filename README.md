@@ -44,6 +44,22 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8010
 ```
 
+### ComfyUI auto-start contract (required, not yet implemented)
+
+Starting CineForge must also start the explicitly configured external ComfyUI runtime when it is not already reachable. ComfyUI remains an isolated process; CineForge must not import it in-process or treat a listening port alone as generation readiness.
+
+The startup orchestrator must:
+
+1. Read an administrator-configured ComfyUI working directory and launcher path. On the primary Windows workstation, the current runtime is `C:\AI\ComfyUI_windows_portable` and its launcher is `run_nvidia_gpu.bat`.
+2. Probe `CINEFORGE_COMFYUI_BASE_URL` before launching. If ComfyUI is already healthy, reuse it and do not start a duplicate process.
+3. Start the configured launcher as a hidden background child process with the configured runtime directory as its working directory. AI-authored text must never become a shell command or executable path.
+4. Wait for both the ComfyUI root endpoint and `/object_info` to respond within a bounded timeout. Only then may CineForge report ComfyUI as ready.
+5. Fail honestly: if startup or `/object_info` validation fails, keep planning available, block image/video generation, and show the exact runtime-readiness blocker. Never display a generated, reviewed, approved, or playable state for media that does not exist.
+6. Record whether CineForge owns the child process. On shutdown, CineForge may stop only the process it started; it must not terminate an independently running ComfyUI instance.
+7. Never install, update, download models, mutate custom nodes, or weaken host security as part of auto-start.
+
+Auto-start does not by itself enable generation. Image generation additionally requires an enabled backend worker/submission path, a validated workflow manifest compatible with live `/object_info`, registered model evidence, output collection, and provenance persistence. Video generation remains a separately gated phase.
+
 Run tests:
 
 ```powershell

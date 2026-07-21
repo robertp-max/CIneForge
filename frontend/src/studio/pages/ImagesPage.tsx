@@ -1,41 +1,51 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, type PlanningMediaAsset } from '../../api/client'
 import { useStudio } from '../StudioState'
-import { artDirectionBoardUrl, startingFrameUrl } from '../mediaUrls'
+import { artDirectionBoardUrl, shotCodeFromLabel, startingFrameUrl } from '../mediaUrls'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
+/**
+ * Gold Sites media frame for Starting Images.
+ * - Grid cards: `.image-placeholder.frame-N` (98px Sites chrome)
+ * - Inspector: `.review-canvas.frame-N` (191px)
+ * - Real bytes: add `.has-image` so Sites hides the silhouette and stacks captions
+ * No inline size/type overrides — gold-globals + PIXEL bridge own density.
+ */
 function MediaThumb({
   url,
   label,
   frameClass = '',
   tall = false,
+  caption,
 }: {
   url: string | null
   label: string
   frameClass?: string
   tall?: boolean
+  /** Optional Gold review-canvas corner badge (e.g. CURRENT SELECTED IMAGE). */
+  caption?: string
 }) {
+  const className = tall
+    ? `review-canvas ${frameClass}${url ? ' has-image' : ''}`.trim()
+    : `image-placeholder ${frameClass}${url ? ' has-image' : ''}`.trim()
+
   return (
-    <div
-      className={`image-placeholder ${frameClass}${url ? ' has-image' : ''}${tall ? ' review-canvas' : ''}`.trim()}
-      style={
-        tall
-          ? { position: 'relative', minHeight: 280, aspectRatio: '16 / 9', overflow: 'hidden' }
-          : { position: 'relative', height: 98, overflow: 'hidden' }
-      }
-    >
+    <div className={className}>
       {url ? (
         <img
           src={url}
           alt={label}
           loading="lazy"
           decoding="async"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', zIndex: 1 }}
+          onError={(event) => {
+            const img = event.currentTarget
+            img.style.display = 'none'
+            img.parentElement?.classList.remove('has-image')
+          }}
         />
       ) : null}
-      <span style={{ position: 'absolute', zIndex: 2, left: 7, top: 7, fontSize: 10, background: 'rgba(0,0,0,.6)', padding: '3px 4px' }}>
-        {label}
-      </span>
+      <span>{label}</span>
+      {tall && caption ? <small>{caption}</small> : null}
     </div>
   )
 }
@@ -44,6 +54,14 @@ const GENERATION_DISABLED_REASON =
   'Image generation is disabled in Phase 1 planning; no render or ComfyUI submission endpoint is exposed.'
 
 type RequirementFilter = 'all' | 'required' | 'missing' | 'assigned'
+
+/** Map backend approval / readiness → Gold status-pill data-status token. */
+function statusPillToken(value: string | null | undefined): string {
+  const raw = (value ?? 'draft').toLowerCase().replace(/\s+/g, '_')
+  if (raw === 'in_review' || raw === 'review') return 'review'
+  if (raw === 'mapped') return 'draft'
+  return raw
+}
 
 function formatBytes(value: number | null): string {
   if (value == null) return 'Unknown size'
@@ -56,6 +74,14 @@ function errorText(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
     : 'Failed to load managed starting-image assets.'
+}
+
+/** Compact card code line — Gold uses shot id; titles often use "S01A — …". */
+function shotCodeLabel(title: string): string {
+  const code = shotCodeFromLabel(title)
+  if (code) return code
+  const head = title.split(/\s*[—–-]\s*/)[0]?.trim()
+  return head || title
 }
 
 export function ImagesPage() {
@@ -268,6 +294,11 @@ export function ImagesPage() {
       })
     : null
 
+  const selectedFrameIndex = Math.max(
+    0,
+    shotRows.findIndex((row) => row.shot.id === selectedShot?.id),
+  )
+
   return (
     <div className="page">
       <div className="page-title">
@@ -290,7 +321,9 @@ export function ImagesPage() {
               <h3 id="art-direction-heading">Scene art-direction references</h3>
               <p>Planning-only multi-panel boards. These are never shot starting images.</p>
             </div>
-            <span className="status-pill">{artDirectionRows.length} references</span>
+            <span className="status-pill" data-status="draft">
+              {artDirectionRows.length} references
+            </span>
           </div>
           <div className="image-grid">
             {artDirectionRows.map(({ asset, sceneRow, sceneNumber }, index) => {
@@ -301,7 +334,13 @@ export function ImagesPage() {
                 ...mediaScope,
               })
               return (
-                <button type="button" key={asset.id} className="selected" style={{ cursor: 'default' }}>
+                <button
+                  type="button"
+                  key={asset.id}
+                  tabIndex={-1}
+                  aria-disabled="true"
+                  className="image-grid-static"
+                >
                   <MediaThumb
                     url={url}
                     label={sceneRow?.scene.title ?? `Scene ${sceneNumber ?? index + 1}`}
@@ -381,7 +420,7 @@ export function ImagesPage() {
 
           {filteredRows.length ? (
             <div className="image-grid">
-              {filteredRows.map(({ chapter, scene, shot }, index) => {
+              {filteredRows.map(({ chapter, scene, shot }) => {
                 const asset = shot.starting_image_asset_id
                   ? assetsById.get(shot.starting_image_asset_id) ?? null
                   : null
@@ -391,6 +430,12 @@ export function ImagesPage() {
                   assetId: shot.starting_image_asset_id,
                   ...mediaScope,
                 })
+                // Gold uses absolute shot order for frame-N silhouettes, not filtered index.
+                const frameIndex = Math.max(
+                  0,
+                  shotRows.findIndex((row) => row.shot.id === shot.id),
+                )
+                const pillState = asset?.approval_state ?? (shot.starting_image_asset_id ? 'mapped' : 'missing')
                 return (
                   <button
                     key={shot.id}
@@ -400,12 +445,18 @@ export function ImagesPage() {
                   >
                     <MediaThumb
                       url={url}
-                      label={asset ? `${asset.approval_state}` : shot.starting_image_required ? 'IMAGE REQUIRED' : 'OPTIONAL'}
-                      frameClass={`frame-${index % 8}`}
+                      label={
+                        asset
+                          ? `${asset.approval_state}`
+                          : shot.starting_image_required
+                            ? 'IMAGE REQUIRED'
+                            : 'OPTIONAL'
+                      }
+                      frameClass={`frame-${frameIndex % 8}`}
                     />
                     <div>
                       <span>
-                        <code>{shot.title.split(' - ')[0] || shot.title}</code>
+                        <code>{shotCodeLabel(shot.title)}</code>
                         <b>{shot.duration_sec}s</b>
                       </span>
                       <h3>{shot.title}</h3>
@@ -413,7 +464,9 @@ export function ImagesPage() {
                         {chapter.title} · {scene.title}
                       </p>
                       <footer>
-                        <span className="status-pill">{asset?.approval_state ?? (shot.starting_image_asset_id ? 'mapped' : 'missing')}</span>
+                        <span className="status-pill" data-status={statusPillToken(pillState)}>
+                          {pillState}
+                        </span>
                         <small>{shot.continuity_source_type || 'none'}</small>
                       </footer>
                     </div>
@@ -430,15 +483,21 @@ export function ImagesPage() {
               <header>
                 <div>
                   <span className="eyebrow">IMAGE REVIEW</span>
-                  <h2>{selectedShot.title.split(' - ')[0] || selectedShot.title}</h2>
+                  <h2>{shotCodeLabel(selectedShot.title)}</h2>
                 </div>
-                <span className="status-pill">{selectedAssignedAsset?.approval_state ?? 'draft'}</span>
+                <span
+                  className="status-pill"
+                  data-status={statusPillToken(selectedAssignedAsset?.approval_state ?? 'draft')}
+                >
+                  {selectedAssignedAsset?.approval_state ?? 'draft'}
+                </span>
               </header>
               <MediaThumb
                 url={selectedThumbUrl}
                 label={selectedShot.title}
-                frameClass={`frame-${Math.max(0, shotRows.findIndex((row) => row.shot.id === selectedShot.id)) % 8}`}
+                frameClass={`frame-${selectedFrameIndex % 8}`}
                 tall
+                caption={selectedThumbUrl ? 'CURRENT SELECTED IMAGE' : 'NO CANDIDATE'}
               />
               <div className="image-meta">
                 <div>
@@ -545,7 +604,7 @@ export function ImagesPage() {
           {items?.length ? (
             <section style={{ marginTop: 16 }}>
               <h3>Candidate inventory</h3>
-              <div className="image-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+              <div className="image-grid image-grid-compact">
                 {items.map((asset, index) => {
                   const url = startingFrameUrl({
                     filename: asset.original_filename,
@@ -553,7 +612,13 @@ export function ImagesPage() {
                     ...mediaScope,
                   })
                   return (
-                    <button type="button" key={asset.id} style={{ cursor: 'default' }}>
+                    <button
+                      type="button"
+                      key={asset.id}
+                      tabIndex={-1}
+                      aria-disabled="true"
+                      className="image-grid-static"
+                    >
                       <MediaThumb
                         url={url}
                         label={asset.approval_state}

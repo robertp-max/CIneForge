@@ -688,6 +688,23 @@ function ShotInspector({
   )
 }
 
+type ShotFilter = 'all' | 'draft' | 'review' | 'approved' | 'blocked'
+
+function matchesShotFilter(shot: { approval_state: string; production_status: string }, filter: ShotFilter) {
+  if (filter === 'all') return true
+  const state = (shot.approval_state || '').toLowerCase()
+  if (filter === 'blocked') return shot.production_status === 'blocked' || state === 'blocked'
+  if (filter === 'approved') return state === 'approved'
+  if (filter === 'review') return state === 'in_review' || state === 'review' || state === 'needs_review'
+  if (filter === 'draft') return state === 'draft' || state === '' || state === 'pending'
+  return true
+}
+
+function shortTitle(title: string, max = 28) {
+  const t = title.trim()
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
 export function StoryboardPage() {
   const {
     data,
@@ -702,6 +719,9 @@ export function StoryboardPage() {
     setMessage,
   } = useStudio()
   const [runtimeCatalog, setRuntimeCatalog] = useState<RuntimeCatalog | null>(null)
+  const [filter, setFilter] = useState<ShotFilter>('all')
+  const [expandedChapters, setExpandedChapters] = useState<string[]>([])
+  const [inspectorOpen, setInspectorOpen] = useState(true)
 
   useEffect(() => {
     let active = true
@@ -714,6 +734,11 @@ export function StoryboardPage() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!data?.chapters.length) return
+    setExpandedChapters((prev) => (prev.length ? prev : data.chapters.map((c) => c.id)))
+  }, [data?.chapters])
 
   if (!data) return null
 
@@ -732,204 +757,298 @@ export function StoryboardPage() {
     }
   }
 
-  const totalShots = data.chapters.reduce(
-    (n, chapter) => n + chapter.scenes.reduce((m, scene) => m + scene.shots.length, 0),
-    0,
-  )
-  const approvedShots = data.chapters.reduce(
-    (n, chapter) =>
-      n +
-      chapter.scenes.reduce(
-        (m, scene) => m + scene.shots.filter((shot) => shot.approval_state === 'approved').length,
-        0,
-      ),
-    0,
-  )
+  const allShots = data.chapters.flatMap((chapter) => chapter.scenes.flatMap((scene) => scene.shots))
+  const totalShots = allShots.length
+  const approvedShots = allShots.filter((shot) => shot.approval_state === 'approved').length
   const progressPct = totalShots > 0 ? Math.round((approvedShots / totalShots) * 100) : 0
+  const filterCounts: Record<ShotFilter, number> = {
+    all: totalShots,
+    draft: allShots.filter((s) => matchesShotFilter(s, 'draft')).length,
+    review: allShots.filter((s) => matchesShotFilter(s, 'review')).length,
+    approved: approvedShots,
+    blocked: allShots.filter((s) => matchesShotFilter(s, 'blocked')).length,
+  }
+  const targetLabel = formatDuration(data.story.target_duration_sec)
 
   return (
-    <div className="storyboard-layout">
-      <div>
-        <div className="page-title" style={{ marginBottom: 14 }}>
-          <div>
-            <span className="eyebrow">STORYBOARD WORKSPACE</span>
-            <h1>Production storyboard</h1>
-            <p>Review generated frames, narration, and approval state in production order.</p>
-          </div>
-          <div className="page-actions">
-            <div className="readiness-block" style={{ width: 160 }}>
-              <span>
-                Progress <b>{progressPct}%</b>
-              </span>
-              <i
-                className="project-progress"
-                aria-hidden="true"
-                style={{ display: 'block', height: 4, borderRadius: 99, background: '#292c30', marginTop: 6, overflow: 'hidden' }}
-              >
-                <i style={{ display: 'block', height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg,#7baaf7,#a8c7fa)' }} />
-              </i>
+    <div className={`page storyboard-page${inspectorOpen ? '' : ' inspector-closed'}`}>
+      <div className="page-title">
+        <div>
+          <span className="eyebrow">STORYBOARD WORKSPACE</span>
+          <h1>Production storyboard</h1>
+          <p>
+            Review all {totalShots} planned shots across the {targetLabel} target.
+          </p>
+        </div>
+        <div className="page-actions">
+          <div className="readiness-block">
+            <span>
+              <b>{progressPct}%</b> storyboard readiness
+            </span>
+            <div className="progress" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
+              <i style={{ width: `${progressPct}%` }} />
             </div>
+            <small>
+              {approvedShots} of {totalShots} shots approved
+            </small>
           </div>
         </div>
-        <div className="toolbar">
-          <div className="segmented" role="group" aria-label="Shot filter">
-            <button type="button" className="active">
-              All
-            </button>
-            <button type="button">Draft</button>
-            <button type="button">Review</button>
-            <button type="button">Approved</button>
-            <button type="button">Blocked</button>
-          </div>
-          <div>
-            <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('chapter')}>
-              + Chapter
-            </button>
-            <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('scene')}>
-              + Scene
-            </button>
-            <button type="button" className="btn secondary touch-target" disabled={busy} onClick={() => void addHierarchy('shot')}>
-              + Shot
-            </button>
-          </div>
-        </div>
-
-        {!data.chapters.length ? (
-          <EmptyState
-            title="No chapters yet"
-            detail="Add a chapter to begin the ordered production hierarchy."
-            action={
-              <button type="button" className="primary-button" disabled={busy} onClick={() => void addHierarchy('chapter')}>
-                Add chapter
-              </button>
-            }
-          />
-        ) : (
-          data.chapters.map((chapter, index) => (
-            <article className="chapter-group" key={chapter.id}>
-              <header>
-                <span>CH{String(index + 1).padStart(2, '0')}</span>
-                <b>{chapter.title}</b>
-                <small>
-                  {formatDuration(chapter.duration_sec)} · {chapter.scenes.length} scene
-                  {chapter.scenes.length === 1 ? '' : 's'}
-                </small>
-              </header>
-              {chapter.scenes.map((scene, sceneIndex) => (
-                <section key={scene.id} aria-label={`Scene ${scene.title}`}>
-                  <div className="scene-name">
-                    <span>
-                      SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}
-                    </span>
-                    <small>
-                      {formatDuration(scene.duration_sec)} · {scene.shots.length} shot
-                      {scene.shots.length === 1 ? '' : 's'}
-                    </small>
-                  </div>
-                  <div className="shot-strip" role="list">
-                    {scene.shots.map((shot, shotIndex) => {
-                      const sceneNumber = sceneNumberById.get(scene.id) ?? sceneIndex + 1
-                      const letter =
-                        shot.order_index < 26
-                          ? String.fromCharCode(65 + shot.order_index)
-                          : String(shot.order_index + 1)
-                      // Global S##X code matches ProductionPhasePreview + Transfiguration static pack.
-                      const syntheticCode = `S${String(sceneNumber).padStart(2, '0')}${letter}`
-                      const shotCode =
-                        shotCodeFromLabel(shot.title) ||
-                        shotCodeFromLabel(shot.display_label) ||
-                        syntheticCode
-                      const frameUrl = startingFrameUrl({
-                        title: shot.title,
-                        code: shotCode,
-                        assetId: shot.starting_image_asset_id,
-                        ...mediaScope,
-                      })
-                      // Prefer production codes (S01A) on the Gold frame badge when available.
-                      const frameLabel = shotCode
-                      return (
-                        <button
-                          key={shot.id}
-                          type="button"
-                          role="listitem"
-                          className={`shot-card ${selectedShot?.id === shot.id ? 'selected' : ''}`}
-                          aria-pressed={selectedShot?.id === shot.id}
-                          onClick={() => setSelectedShot(shot)}
-                        >
-                          <div
-                            className={`frame-art frame-${shotIndex % 8}${frameUrl ? ' has-image' : ''}`}
-                          >
-                            {frameUrl ? (
-                              <img
-                                src={frameUrl}
-                                alt={`${frameLabel} starting frame`}
-                                loading="lazy"
-                                decoding="async"
-                                onError={(event) => {
-                                  const img = event.currentTarget
-                                  img.style.display = 'none'
-                                  img.parentElement?.classList.remove('has-image')
-                                }}
-                              />
-                            ) : null}
-                            <span>{frameLabel}</span>
-                          </div>
-                          <div>
-                            <span>
-                              <code>{frameLabel}</code>
-                              <b>{shot.duration_sec}s</b>
-                            </span>
-                            <strong>
-                              {shot.title.length > 42 ? `${shot.title.slice(0, 40)}…` : shot.title}
-                            </strong>
-                            <small>
-                              {shot.approval_state}
-                              {shot.production_status === 'blocked' ? ' · blocked' : ''}
-                            </small>
-                          </div>
-                        </button>
-                      )
-                    })}
-                    {!scene.shots.length ? (
-                      <p className="form-hint" style={{ margin: 0 }}>
-                        No shots in this scene.
-                      </p>
-                    ) : null}
-                  </div>
-                </section>
-              ))}
-              {!chapter.scenes.length ? (
-                <section>
-                  <p className="form-hint">No scenes in this chapter yet.</p>
-                </section>
-              ) : null}
-            </article>
-          ))
-        )}
       </div>
 
-      <aside className="inspector" aria-label="Shot inspector">
-        <h2>Shot inspector</h2>
-        {selectedShot ? (
-          <ShotInspector
-            key={`${selectedShot.id}-${data.revision}`}
-            shot={selectedShot}
-            busy={busy}
-            onSave={saveShot}
-            onSaveNarration={saveNarration}
-            onSavePromptPackage={savePromptPackage}
-            characters={data.characters}
-            voices={data.voices}
-            runtimeCatalog={runtimeCatalog}
-            onRefresh={() => reload(data.story.id)}
-            onMessage={setMessage}
-          />
+      <div className={`storyboard-layout${inspectorOpen ? '' : ' inspector-closed'}`}>
+        <div className="storyboard-main">
+          <div className="toolbar">
+            <div className="segmented" role="group" aria-label="Shot filter">
+              {(
+                [
+                  ['all', 'All'],
+                  ['draft', 'Draft'],
+                  ['review', 'Review'],
+                  ['approved', 'Approved'],
+                  ['blocked', 'Blocked'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={filter === id ? 'active' : ''}
+                  onClick={() => setFilter(id)}
+                >
+                  {label}
+                  <em>{filterCounts[id]}</em>
+                </button>
+              ))}
+            </div>
+            <div>
+              <button
+                type="button"
+                className="btn secondary touch-target"
+                disabled={busy}
+                onClick={() => void addHierarchy('chapter')}
+              >
+                + Chapter
+              </button>
+              <button
+                type="button"
+                className="btn secondary touch-target"
+                disabled={busy}
+                onClick={() => void addHierarchy('scene')}
+              >
+                + Scene
+              </button>
+              <button
+                type="button"
+                className="btn secondary touch-target"
+                disabled={busy}
+                onClick={() => void addHierarchy('shot')}
+              >
+                + Shot
+              </button>
+            </div>
+          </div>
+
+          {!data.chapters.length ? (
+            <EmptyState
+              title="No chapters yet"
+              detail="Add a chapter to begin the ordered production hierarchy."
+              action={
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={busy}
+                  onClick={() => void addHierarchy('chapter')}
+                >
+                  Add chapter
+                </button>
+              }
+            />
+          ) : (
+            data.chapters.map((chapter, index) => {
+              const open = expandedChapters.includes(chapter.id)
+              const chapterShots = chapter.scenes.flatMap((s) => s.shots)
+              const visibleShotCount = chapterShots.filter((s) => matchesShotFilter(s, filter)).length
+              return (
+                <section className="chapter-group" key={chapter.id}>
+                  <button
+                    type="button"
+                    className="chapter-bar"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setExpandedChapters((ids) =>
+                        open ? ids.filter((id) => id !== chapter.id) : [...ids, chapter.id],
+                      )
+                    }
+                  >
+                    <span className="hierarchy-chevron" aria-hidden="true">
+                      {open ? '▾' : '▸'}
+                    </span>
+                    <span>
+                      <small>CH{String(index + 1).padStart(2, '0')}</small>
+                      <b>{shortTitle(chapter.title, 48)}</b>
+                    </span>
+                    <span>
+                      <b>{formatDuration(chapter.duration_sec)}</b>
+                      <small>
+                        {chapter.scenes.length} scene{chapter.scenes.length === 1 ? '' : 's'} ·{' '}
+                        {visibleShotCount}/{chapterShots.length} shots
+                      </small>
+                    </span>
+                    <span className="status-pill" data-status={chapterShots.every((s) => s.approval_state === 'approved') ? 'approved' : 'draft'}>
+                      {chapterShots.every((s) => s.approval_state === 'approved') ? 'Approved' : 'In progress'}
+                    </span>
+                  </button>
+                  {open
+                    ? chapter.scenes.map((scene, sceneIndex) => {
+                        const filteredShots = scene.shots.filter((s) => matchesShotFilter(s, filter))
+                        if (filter !== 'all' && !filteredShots.length) return null
+                        return (
+                          <div className="scene-block" key={scene.id} aria-label={`Scene ${scene.title}`}>
+                            <div className="scene-row scene-name">
+                              <span>
+                                SC{String(sceneIndex + 1).padStart(2, '0')} · {shortTitle(scene.title, 40)}
+                              </span>
+                              <small>
+                                {formatDuration(scene.duration_sec)} · {filteredShots.length} shot
+                                {filteredShots.length === 1 ? '' : 's'}
+                              </small>
+                            </div>
+                            <div className="shot-strip" role="list">
+                              {(filter === 'all' ? scene.shots : filteredShots).map((shot, shotIndex) => {
+                                const sceneNumber = sceneNumberById.get(scene.id) ?? sceneIndex + 1
+                                const letter =
+                                  shot.order_index < 26
+                                    ? String.fromCharCode(65 + shot.order_index)
+                                    : String(shot.order_index + 1)
+                                const syntheticCode = `S${String(sceneNumber).padStart(2, '0')}${letter}`
+                                const shotCode =
+                                  shotCodeFromLabel(shot.title) ||
+                                  shotCodeFromLabel(shot.display_label) ||
+                                  syntheticCode
+                                const frameUrl = startingFrameUrl({
+                                  title: shot.title,
+                                  code: shotCode,
+                                  assetId: shot.starting_image_asset_id,
+                                  ...mediaScope,
+                                })
+                                const frameLabel = shotCode
+                                return (
+                                  <button
+                                    key={shot.id}
+                                    type="button"
+                                    role="listitem"
+                                    className={`shot-card ${selectedShot?.id === shot.id ? 'selected' : ''}`}
+                                    aria-pressed={selectedShot?.id === shot.id}
+                                    onClick={() => {
+                                      setSelectedShot(shot)
+                                      setInspectorOpen(true)
+                                    }}
+                                  >
+                                    <div
+                                      className={`frame-art frame-${shotIndex % 8}${frameUrl ? ' has-image' : ''}`}
+                                    >
+                                      {frameUrl ? (
+                                        <img
+                                          src={frameUrl}
+                                          alt={`${frameLabel} starting frame`}
+                                          loading="lazy"
+                                          decoding="async"
+                                          onError={(event) => {
+                                            const img = event.currentTarget
+                                            img.style.display = 'none'
+                                            img.parentElement?.classList.remove('has-image')
+                                          }}
+                                        />
+                                      ) : null}
+                                      <span>{frameLabel}</span>
+                                    </div>
+                                    <div>
+                                      <span>
+                                        <code>{frameLabel}</code>
+                                        <b>{shot.duration_sec}s</b>
+                                      </span>
+                                      <strong>{shortTitle(shot.title, 26)}</strong>
+                                      <small>
+                                        <span className="status-pill" data-status={shot.approval_state || 'draft'}>
+                                          {shot.approval_state || 'draft'}
+                                        </span>
+                                        {shot.production_status === 'blocked' ? ' · blocked' : ''}
+                                      </small>
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                              {!scene.shots.length ? (
+                                <p className="form-hint" style={{ margin: 0 }}>
+                                  No shots in this scene.
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })
+                    : null}
+                  {open && !chapter.scenes.length ? (
+                    <div className="scene-block">
+                      <p className="form-hint">No scenes in this chapter yet.</p>
+                    </div>
+                  ) : null}
+                </section>
+              )
+            })
+          )}
+        </div>
+
+        {inspectorOpen ? (
+          <aside className="inspector" aria-label="Shot inspector">
+            <header className="inspector-header">
+              <div>
+                <span className="eyebrow">SHOT {selectedShot?.display_label || selectedShot?.title || '—'}</span>
+                <h2>{selectedShot ? shortTitle(selectedShot.title, 36) : 'Shot inspector'}</h2>
+                {selectedShot ? (
+                  <span className="status-pill" data-status={selectedShot.approval_state || 'draft'}>
+                    {selectedShot.approval_state || 'draft'}
+                  </span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close shot inspector"
+                onClick={() => setInspectorOpen(false)}
+              >
+                ×
+              </button>
+            </header>
+            {selectedShot ? (
+              <ShotInspector
+                key={`${selectedShot.id}-${data.revision}`}
+                shot={selectedShot}
+                busy={busy}
+                onSave={saveShot}
+                onSaveNarration={saveNarration}
+                onSavePromptPackage={savePromptPackage}
+                characters={data.characters}
+                voices={data.voices}
+                runtimeCatalog={runtimeCatalog}
+                onRefresh={() => reload(data.story.id)}
+                onMessage={setMessage}
+              />
+            ) : (
+              <p className="form-hint">
+                Select a shot to inspect persisted details, prompts, and technical planning information.
+              </p>
+            )}
+          </aside>
         ) : (
-          <p className="form-hint">
-            Select a shot to inspect persisted details, prompts, and technical planning information.
-          </p>
+          <button
+            type="button"
+            className="open-inspector btn secondary"
+            onClick={() => setInspectorOpen(true)}
+          >
+            Open inspector
+          </button>
         )}
-      </aside>
+      </div>
     </div>
   )
 }

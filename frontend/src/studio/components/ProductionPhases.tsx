@@ -857,6 +857,7 @@ export function ProductionPhases({
                             typeof packageDirection.visual_style === 'string' ? packageDirection.visual_style : null,
                           ].filter(Boolean).join(' · ')
                             || packageEmotional.join(' · ')
+                            || packageAssumptions.slice(0, 2).join(' · ')
                             || 'Planning text only.'}
                         </p>
                       </article>

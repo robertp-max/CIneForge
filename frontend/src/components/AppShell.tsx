@@ -225,7 +225,9 @@ export function AppShell({
       : view === 'new-project'
         ? labels['new-project']
         : labels[activePage]
-  const runtimeLabel =
+  // Gold Sites sidebar chip is always “Browser preview mode”; backend status lives in the popover.
+  const runtimeLabel = 'Browser preview mode'
+  const runtimeStatusDetail =
     backendStatus === 'ok' || backendStatus === 'ready'
       ? 'Local backend ok'
       : `Local backend ${backendStatus}`
@@ -406,10 +408,10 @@ export function AppShell({
           </button>
           {runtime ? (
             <div className="popover runtime-pop">
-              <b>Runtime boundary</b>
+              <b>Preview boundary</b>
               <p>
-                ComfyUI submissions, model downloads, and rendering stay gated. This shell only shows
-                local status.
+                This local shell never submits a workflow, downloads a model, or starts rendering.
+                Status: {runtimeStatusDetail}.
               </p>
               {onRefreshStatus ? (
                 <button
@@ -423,6 +425,16 @@ export function AppShell({
                   <Icon name="arrow" size={14} />
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setRuntime(false)
+                  goPage('settings')
+                }}
+              >
+                Open preview settings
+                <Icon name="arrow" size={14} />
+              </button>
             </div>
           ) : null}
 
@@ -444,8 +456,8 @@ export function AppShell({
           </button>
           {profile ? (
             <div className="popover profile-pop">
-              <b>Robert</b>
-              <small>Local producer profile</small>
+              <b>Robert Padilla</b>
+              <small>Project owner · Producer</small>
               <button type="button" onClick={() => goPage('settings')}>
                 Project settings
               </button>
@@ -486,14 +498,18 @@ export function AppShell({
               ) : null}
               {view === 'new-project' ? (
                 <>
-                  <span>Projects</span>
+                  <button type="button" onClick={() => goWorkspace(onOpenProjects)}>
+                    Projects
+                  </button>
                   <Icon name="chevron" size={13} />
                   <b>Create project</b>
                 </>
               ) : null}
               {isStudio ? (
                 <>
-                  <span>Projects</span>
+                  <button type="button" onClick={() => goWorkspace(onOpenProjects)}>
+                    Projects
+                  </button>
                   <Icon name="chevron" size={13} />
                   <strong title={projectId}>{projectName}</strong>
                   <Icon name="chevron" size={13} />

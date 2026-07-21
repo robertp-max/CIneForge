@@ -78,7 +78,7 @@ export function StudioHomeHero({ onNavigateStudio, onNotify }: StudioHomeHeroPro
           </div>
           <span className="studio-local-note">
             <i />
-            Local navigator · no model call
+            Browser navigator · no model call
           </span>
           <button className="studio-build-button" type="submit">
             <span>✦</span>

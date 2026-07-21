@@ -11,6 +11,8 @@ import { EmptyState, ErrorNotice } from '../components/Cards'
 import { PageHeader } from '../components/Page'
 import { StudioHomeHero } from '../components/StudioHomeHero'
 import type { PageId } from '../components/AppShell'
+/* PIXEL: Sites project-card density (also loaded last from main.tsx). */
+import '../projects-sites-density.css'
 
 type ProjectsProps = {
   mode?: 'list' | 'create'
@@ -152,7 +154,8 @@ async function enrichProject(project: Project): Promise<ProjectSummary> {
 
 
 function statusSlug(status: ProjectSummary['status']) {
-  // Keep space form for gold-globals (`in progress`) and hyphen form for bridges.
+  // Sites gold-globals status-pill keys use space form (`in progress`).
+  // Bridge also accepts hyphen form; density/type come from gold-globals + PIXEL CSS.
   return status.toLowerCase()
 }
 

@@ -268,6 +268,7 @@ function App() {
         <Projects
           key="projects-list"
           mode="list"
+          currentProjectId={selectedProjectId}
           onCreateNew={() => navigateTo({ kind: 'new-project' })}
           onOpenProject={openProject}
           onProjectsLoaded={handleProjectsLoaded}

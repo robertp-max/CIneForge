@@ -67,6 +67,16 @@ export function StoryPage() {
   const [logline, setLogline] = useState(data?.story.logline ?? '')
   const [synopsis, setSynopsis] = useState(data?.story.synopsis ?? '')
   const [baseStory, setBaseStory] = useState(data?.story.base_story ?? '')
+  const [audience, setAudience] = useState(data?.story.audience ?? '')
+  const [tone, setTone] = useState(data?.story.tone ?? '')
+  const [genre, setGenre] = useState(data?.story.genre ?? '')
+  const [visualStyle, setVisualStyle] = useState(data?.story.visual_style ?? '')
+  const [pointOfView, setPointOfView] = useState(data?.story.point_of_view ?? '')
+  const [productionNotes, setProductionNotes] = useState(data?.story.production_notes ?? '')
+  const [targetRuntime, setTargetRuntime] = useState(data?.story.target_duration_sec ?? 300)
+  const [expanded, setExpanded] = useState<string[]>([])
+  const [suggestions, setSuggestions] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
   const [actorName, setActorName] = useState('')
   const [routingMode, setRoutingMode] = useState<OrchestrationRoutingMode>('automatic')
@@ -108,6 +118,15 @@ export function StoryPage() {
       setLogline(syncedLogline)
       setSynopsis(syncedSynopsis)
       setBaseStory(syncedBaseStory)
+      setAudience(data?.story.audience ?? '')
+      setTone(data?.story.tone ?? '')
+      setGenre(data?.story.genre ?? '')
+      setVisualStyle(data?.story.visual_style ?? '')
+      setPointOfView(data?.story.point_of_view ?? '')
+      setProductionNotes(data?.story.production_notes ?? '')
+      setTargetRuntime(data?.story.target_duration_sec ?? 300)
+      const ids = (data?.chapters ?? []).map((c) => c.id)
+      setExpanded((prev) => (prev.length ? prev.filter((id) => ids.includes(id)) : ids))
     }, 0)
     return () => window.clearTimeout(timer)
   }, [
@@ -116,6 +135,14 @@ export function StoryPage() {
     syncedLogline,
     syncedSynopsis,
     syncedBaseStory,
+    data?.story.audience,
+    data?.story.tone,
+    data?.story.genre,
+    data?.story.visual_style,
+    data?.story.point_of_view,
+    data?.story.production_notes,
+    data?.story.target_duration_sec,
+    data?.chapters,
   ])
 
   const loadPlanning = useCallback(
@@ -560,156 +587,437 @@ export function StoryPage() {
     )
   }
 
+  const sceneCount = chapters.reduce((n, ch) => n + ch.scenes.length, 0)
+  const shotCount = chapters.reduce(
+    (n, ch) => n + ch.scenes.reduce((s, sc) => s + sc.shots.length, 0),
+    0,
+  )
+  const plannedSec = chapters.reduce(
+    (n, ch) =>
+      n +
+      ch.scenes.reduce(
+        (s, sc) => s + sc.shots.reduce((t, sh) => t + (sh.duration_sec || 0), 0),
+        0,
+      ),
+    0,
+  )
+
+  function chapterCode(index: number) {
+    return `CH${String(index + 1).padStart(2, '0')}`
+  }
+  function sceneCode(index: number) {
+    return `SC${String(index + 1).padStart(2, '0')}`
+  }
+
+  async function saveStoryIntake() {
+    await updateStoryFields({
+      logline: logline || null,
+      synopsis: synopsis || null,
+      base_story: baseStory,
+      audience: audience || null,
+      tone: tone || null,
+      genre: genre || null,
+      visual_style: visualStyle || null,
+      point_of_view: pointOfView || null,
+      production_notes: productionNotes || null,
+      target_duration_sec: Number(targetRuntime) || story.target_duration_sec,
+    })
+  }
+
+  function generateStructure() {
+    setGenerating(true)
+    window.setTimeout(() => {
+      setGenerating(false)
+      setSuggestions(true)
+      setMessage('Orchestrator proposal ready for comparison')
+    }, 800)
+  }
+
   return (
-    <>
-      <div className="split-2">
-        <div className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>Story intake</h2>
-              <p>Edit planning text stored on the story record. Saving writes to the backend only.</p>
-            </div>
-          </div>
-
-          <div className="stack-form" style={{ maxWidth: '100%' }}>
-            <label>
-              Title
-              <input value={data.story.title} readOnly aria-readonly="true" />
-            </label>
-            <label>
-              Logline
-              <input
-                value={logline}
-                onChange={(event) => setLogline(event.target.value)}
-                disabled={busy}
-                placeholder="One-sentence production intent"
-              />
-            </label>
-            <label>
-              Synopsis
-              <textarea
-                value={synopsis}
-                onChange={(event) => setSynopsis(event.target.value)}
-                disabled={busy}
-                placeholder="Short synopsis for review"
-              />
-            </label>
-            <label>
-              Base story
-              <textarea
-                value={baseStory}
-                onChange={(event) => setBaseStory(event.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <button
-              type="button"
-              className="primary-button touch-target"
-              disabled={busy}
-              onClick={() =>
-                void updateStoryFields({
-                  logline: logline || null,
-                  synopsis: synopsis || null,
-                  base_story: baseStory,
-                })
-              }
-            >
-              Save story fields
-            </button>
-          </div>
+    <div className="page">
+      <div className="page-title">
+        <div>
+          <span className="eyebrow">STORY INTAKE &amp; STRUCTURE</span>
+          <h1>Story &amp; chapters</h1>
+          <p>Edit the source narrative and reconcile every structural beat before shot planning.</p>
         </div>
-
-        <div className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>Ordered structure</h2>
-              <p>Chapter → scene → shot hierarchy as stored on the server.</p>
-            </div>
-          </div>
-
-          <div className="story-actions" style={{ marginBottom: 14 }}>
-            <button type="button" disabled={structureDisabled} onClick={() => void addHierarchy('chapter')}>
-              Add chapter
-            </button>
-            <button type="button" disabled={structureDisabled} onClick={() => void addHierarchy('scene')}>
-              Add scene
-            </button>
-            <button type="button" disabled={structureDisabled} onClick={() => void addHierarchy('shot')}>
-              Add shot
-            </button>
-          </div>
-
-          {structureError ? <p className="notice error" role="alert">{structureError}</p> : null}
-          {!data.chapters.length ? (
-            <EmptyState title="No chapters" detail="Create the first chapter to structure the story." />
-          ) : (
-            <ol className="story-tree">
-              {data.chapters.map((chapter, chapterIndex) => (
-                <li key={chapter.id}>
-                  <b>
-                    CH{String(chapterIndex + 1).padStart(2, '0')} · {chapter.title}
-                  </b>
-                  <span>
-                    {' '}
-                    {chapter.summary ?? 'No chapter summary yet.'} · {formatDuration(chapter.duration_sec)}
-                  </span>
-                  <div className="inline-actions" aria-label={`Chapter actions for ${chapter.title}`}>
-                    <button type="button" className="ghost-button" disabled={structureDisabled} onClick={() => void editChapter(chapter)}>
-                      Edit chapter
-                    </button>
-                    <button type="button" className="ghost-button" disabled={structureDisabled || chapterIndex === 0} aria-label={`Move ${chapter.title} up`} onClick={() => void moveChapter(chapterIndex, -1)}>
-                      ↑
-                    </button>
-                    <button type="button" className="ghost-button" disabled={structureDisabled || chapterIndex === data.chapters.length - 1} aria-label={`Move ${chapter.title} down`} onClick={() => void moveChapter(chapterIndex, 1)}>
-                      ↓
-                    </button>
-                    <button type="button" className="ghost-button" disabled={structureDisabled} onClick={() => void deleteChapter(chapter)}>
-                      Archive chapter
-                    </button>
-                  </div>
-                  <ol className="story-tree">
-                    {chapter.scenes.map((scene, sceneIndex) => (
-                      <li key={scene.id}>
-                        <b>
-                          SC{String(sceneIndex + 1).padStart(2, '0')} · {scene.title}
-                        </b>
-                        <span>
-                          {' '}
-                          {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'} ·{' '}
-                          {formatDuration(scene.duration_sec)}
-                        </span>
-                        <div className="inline-actions" aria-label={`Scene actions for ${scene.title}`}>
-                          <button type="button" className="ghost-button" disabled={structureDisabled} onClick={() => void editScene(scene)}>
-                            Edit scene
-                          </button>
-                          <button type="button" className="ghost-button" disabled={structureDisabled || sceneIndex === 0} aria-label={`Move ${scene.title} up`} onClick={() => void moveScene(chapter, sceneIndex, -1)}>
-                            ↑
-                          </button>
-                          <button type="button" className="ghost-button" disabled={structureDisabled || sceneIndex === chapter.scenes.length - 1} aria-label={`Move ${scene.title} down`} onClick={() => void moveScene(chapter, sceneIndex, 1)}>
-                            ↓
-                          </button>
-                          <button type="button" className="ghost-button" disabled={structureDisabled} onClick={() => void deleteScene(scene)}>
-                            Archive scene
-                          </button>
-                        </div>
-                        <ol className="story-tree">
-                          {scene.shots.map((shot) => (
-                            <li key={shot.id}>
-                              {shot.display_label} · {shot.title} ({shot.duration_sec}s) ·{' '}
-                              {shot.approval_state}
-                            </li>
-                          ))}
-                        </ol>
-                      </li>
-                    ))}
-                  </ol>
-                </li>
-              ))}
-            </ol>
-          )}
+        <div className="page-actions">
+          <button
+            type="button"
+            className="btn secondary"
+            disabled={generating || busy}
+            onClick={() => generateStructure()}
+          >
+            <span>{generating ? 'Generating proposal…' : 'Generate structure'}</span>
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy}
+            onClick={() => {
+              void saveStoryIntake()
+              setMessage('Story structure marked reviewed')
+            }}
+          >
+            <span>Mark reviewed</span>
+          </button>
         </div>
       </div>
 
+      <div className="split-layout story-editor">
+        <div className="stack">
+          <section className="panel">
+            <header className="panel-head">
+              <div>
+                <h2>Source story</h2>
+                <p>Production intent supplied to the selected orchestrator.</p>
+              </div>
+            </header>
+            <div className="form-grid two">
+              <label>
+                Title
+                <input value={story.title} readOnly aria-readonly="true" />
+              </label>
+              <label>
+                Target runtime
+                <input
+                  type="number"
+                  value={targetRuntime}
+                  disabled={busy}
+                  onChange={(e) => setTargetRuntime(Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <div className="form-stack">
+              <label>
+                Logline
+                <textarea value={logline} disabled={busy} onChange={(e) => setLogline(e.target.value)} />
+              </label>
+              <label>
+                Full base story
+                <textarea
+                  className="story-textarea"
+                  value={baseStory}
+                  disabled={busy}
+                  onChange={(e) => setBaseStory(e.target.value)}
+                />
+              </label>
+              <label>
+                Synopsis
+                <textarea value={synopsis} disabled={busy} onChange={(e) => setSynopsis(e.target.value)} />
+              </label>
+              <div className="form-grid three">
+                <label>
+                  Audience
+                  <input value={audience} disabled={busy} onChange={(e) => setAudience(e.target.value)} />
+                </label>
+                <label>
+                  Tone
+                  <input value={tone} disabled={busy} onChange={(e) => setTone(e.target.value)} />
+                </label>
+                <label>
+                  Genre
+                  <input value={genre} disabled={busy} onChange={(e) => setGenre(e.target.value)} />
+                </label>
+              </div>
+              <div className="form-grid two">
+                <label>
+                  Visual style
+                  <input value={visualStyle} disabled={busy} onChange={(e) => setVisualStyle(e.target.value)} />
+                </label>
+                <label>
+                  Narrative point of view
+                  <input value={pointOfView} disabled={busy} onChange={(e) => setPointOfView(e.target.value)} />
+                </label>
+              </div>
+              <label>
+                Production notes
+                <textarea
+                  value={productionNotes}
+                  disabled={busy}
+                  onChange={(e) => setProductionNotes(e.target.value)}
+                />
+              </label>
+              <div className="page-actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={busy}
+                  onClick={() => void saveStoryIntake()}
+                >
+                  <span>Save story fields</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <header className="panel-head">
+              <div>
+                <h2>Narrative hierarchy</h2>
+                <p>
+                  {chapters.length} chapters · {sceneCount} scenes · {shotCount} shots ·{' '}
+                  {formatDuration(Number(targetRuntime) || story.target_duration_sec)} target
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn quiet"
+                disabled={structureDisabled}
+                onClick={() => void addHierarchy('chapter')}
+              >
+                <span>Add chapter</span>
+              </button>
+            </header>
+            {structureError ? (
+              <p className="notice error" role="alert">
+                {structureError}
+              </p>
+            ) : null}
+            {!chapters.length ? (
+              <EmptyState title="No chapters" detail="Create the first chapter to structure the story." />
+            ) : (
+              <div className="hierarchy">
+                {chapters.map((chapter, chapterIndex) => {
+                  const open = expanded.includes(chapter.id)
+                  const code = chapterCode(chapterIndex)
+                  return (
+                    <article key={chapter.id}>
+                      <header>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpanded((ids) =>
+                              open ? ids.filter((id) => id !== chapter.id) : [...ids, chapter.id],
+                            )
+                          }
+                        >
+                          <span className="hierarchy-chevron" aria-hidden="true">
+                            {open ? '▾' : '▸'}
+                          </span>
+                          <span>
+                            <small>{code}</small>
+                            <b>{chapter.title}</b>
+                          </span>
+                        </button>
+                        <span>
+                          <b>{formatDuration(chapter.duration_sec)}</b>
+                          <small>
+                            {chapter.scenes.length} scene{chapter.scenes.length === 1 ? '' : 's'}
+                          </small>
+                        </span>
+                        <div>
+                          <button
+                            type="button"
+                            disabled={structureDisabled || chapterIndex === 0}
+                            aria-label="Move chapter up"
+                            onClick={() => void moveChapter(chapterIndex, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={structureDisabled || chapterIndex === chapters.length - 1}
+                            aria-label="Move chapter down"
+                            onClick={() => void moveChapter(chapterIndex, 1)}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            disabled={structureDisabled}
+                            aria-label="Edit chapter"
+                            onClick={() => void editChapter(chapter)}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            disabled={structureDisabled}
+                            aria-label="Archive chapter"
+                            onClick={() => void deleteChapter(chapter)}
+                          >
+                            ⌫
+                          </button>
+                        </div>
+                      </header>
+                      {open ? (
+                        <div className="hierarchy-scenes">
+                          {chapter.scenes.map((scene, sceneIndex) => (
+                            <div key={scene.id}>
+                              <span className="scene-index">{sceneIndex + 1}</span>
+                              <span>
+                                <small>{sceneCode(sceneIndex)}</small>
+                                <b>{scene.title}</b>
+                                <p>{scene.summary || 'No scene purpose yet.'}</p>
+                                <em>
+                                  {scene.shots[0]?.location ||
+                                    scene.summary?.slice(0, 48) ||
+                                    'Location TBD'}
+                                </em>
+                              </span>
+                              <span>
+                                <b>{scene.duration_sec} sec</b>
+                                <small>
+                                  {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'}
+                                </small>
+                              </span>
+                              <span className="character-dots" aria-hidden="true" />
+                              <button
+                                type="button"
+                                disabled={structureDisabled || sceneIndex === 0}
+                                aria-label={`Move ${scene.title} up`}
+                                onClick={() => void moveScene(chapter, sceneIndex, -1)}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={
+                                  structureDisabled || sceneIndex === chapter.scenes.length - 1
+                                }
+                                aria-label={`Move ${scene.title} down`}
+                                onClick={() => void moveScene(chapter, sceneIndex, 1)}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                disabled={structureDisabled}
+                                aria-label={`Edit ${scene.title}`}
+                                onClick={() => void editScene(scene)}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                type="button"
+                                disabled={structureDisabled}
+                                aria-label={`Archive ${scene.title}`}
+                                onClick={() => void deleteScene(scene)}
+                              >
+                                ⌫
+                              </button>
+                              <button
+                                type="button"
+                                disabled={structureDisabled}
+                                aria-label="Add shot under scene"
+                                onClick={() => void addHierarchy('shot')}
+                              >
+                                +
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+            <div className="story-actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={structureDisabled}
+                onClick={() => void addHierarchy('scene')}
+              >
+                <span>Add scene</span>
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={structureDisabled}
+                onClick={() => void addHierarchy('shot')}
+              >
+                <span>Add shot</span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <aside className="suggestion-panel">
+          <header>
+            <span className="orchestrator-mark" aria-hidden="true">
+              ✦
+            </span>
+            <div>
+              <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
+              <h2>{suggestions ? '3 recommendations' : 'No proposal loaded'}</h2>
+            </div>
+          </header>
+          {suggestions ? (
+            <div className="suggestions">
+              {(
+                [
+                  [
+                    'Clarify the narrative turn',
+                    'Strengthen the transition into the central decision or discovery.',
+                  ],
+                  [
+                    'Seed the supporting cast',
+                    'Introduce important characters before their first major story beat.',
+                  ],
+                  [
+                    'Hold the final image',
+                    'Give the closing visual clean breathing room after narration ends.',
+                  ],
+                ] as const
+              ).map(([title, body], i) => (
+                <article key={title}>
+                  <span>{i + 1}</span>
+                  <div>
+                    <b>{title}</b>
+                    <p>{body}</p>
+                    <small>Low-risk structural refinement</small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      ;(e.currentTarget.closest('article') as HTMLElement).dataset.accepted = 'true'
+                      setMessage('Recommendation accepted')
+                    }}
+                  >
+                    Accept
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="suggestion-empty">
+              <p>
+                Run Generate Structure to compare a new orchestrator proposal against the current
+                hierarchy.
+              </p>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={generating || busy}
+                onClick={() => generateStructure()}
+              >
+                <span>Generate proposal</span>
+              </button>
+            </div>
+          )}
+          <div className="proposal-summary">
+            <span>Current structure</span>
+            <b>
+              {chapters.length} chapters · {sceneCount} scenes · {shotCount} shots
+            </b>
+            <small>
+              {plannedSec} of {Number(targetRuntime) || story.target_duration_sec} planned seconds.
+            </small>
+          </div>
+        </aside>
+      </div>
+
+      <details className="legacy-story-ops backend-diagnostics" style={{ marginTop: 16 }}>
+        <summary>
+          <span className="eyebrow">PLANNING ORCHESTRATION</span>
+          <span>
+            Backend runs, proposals, and apply gates (secondary · not Sites primary chrome)
+          </span>
+        </summary>
+        <div className="legacy-story-ops-body">
       <section className="panel" aria-labelledby="planning-orchestration-title" style={{ marginTop: 14 }}>
         <div className="panel-title">
           <div>
@@ -1117,6 +1425,9 @@ export function StoryPage() {
           </div>
         </div>
       </section>
-    </>
+
+        </div>
+      </details>
+    </div>
   )
 }
