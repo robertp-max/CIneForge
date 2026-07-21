@@ -11,15 +11,14 @@
  * provider-grid tiles →
  * routing-layout → Task-routing matrix | route-detail (ROUTE DETAIL).
  *
- * Hybrid T7:
- * - LIVE path when profiles and/or planning catalog exist: profile CRUD, task assignments,
- *   connection-test when advertised, routing validate preflight.
- * - DEMO fallback when backend load fails OR (profiles empty AND catalog empty):
- *   show demoRoutingProviders / demoRoutingMatrix chrome labeled
- *   "Demo planning fixture (offline)" — never claim live Connected.
- * - Availability for live data uses backend evidence only via availabilityLabel
- *   (never invents "Connected"). Demo fixture statuses are prototype labels only.
- * - type="button" on interactive controls (submit only for profile form).
+ * Capabilities (Worker B / T07):
+ * - Provider profile CRUD via storyboard-crud APIs
+ * - Task-provider assignment CRUD
+ * - validateStoryRouting preflight (non-mutating)
+ * - connection-test only when catalog advertises connection_test_supported
+ * - All interactive controls use type="button" (submit only for profile form)
+ *
+ * Availability pills use backend evidence only — never invent "Connected".
  * Credentials are never requested or stored here.
  */
 import {
@@ -43,15 +42,8 @@ import {
 } from '../../api/client'
 import { formatDate } from '../../components/formatDate'
 import { Button, Icon, PageTitle, Section, StatusPill } from '../proto/ui'
-import {
-  demoRoutingDefaults,
-  demoRoutingMatrix,
-  demoRoutingProviders,
-} from '../demoPhaseA'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
-
-const DEMO_FIXTURE_LABEL = 'Demo planning fixture (offline)'
 
 /** Production planning task rows with logical Sol/Terra/Luna defaults (not prototype labels). */
 const TASK_PROFILE_MAP: ReadonlyArray<{
@@ -160,7 +152,6 @@ export function RoutingPage() {
   const [settings, setSettings] = useState<ProjectStoryboardSettings | null>(null)
   const [settingsAvailable, setSettingsAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
-  const [loadFailed, setLoadFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
   const [routingTestBusy, setRoutingTestBusy] = useState(false)
@@ -169,11 +160,10 @@ export function RoutingPage() {
   const [preferHosted, setPreferHosted] = useState(false)
   const [routingMode, setRoutingMode] = useState<OrchestrationRoutingMode>('hybrid')
   const [defaultProfileId, setDefaultProfileId] = useState('')
-  const [speedPreference, setSpeedPreference] = useState(demoRoutingDefaults.qualityPreference)
-  const [costSensitivity, setCostSensitivity] = useState(demoRoutingDefaults.costSensitivity)
+  const [speedPreference, setSpeedPreference] = useState('Quality weighted')
+  const [costSensitivity, setCostSensitivity] = useState('Balanced')
   const [routeDrafts, setRouteDrafts] = useState<Record<string, RouteDraft>>({})
   const [drawer, setDrawer] = useState<DrawerFocus>({ kind: 'task', task: 'story_structure' })
-  const [demoSelectedTask, setDemoSelectedTask] = useState(demoRoutingMatrix[0]?.task ?? '')
   const [preflight, setPreflight] = useState<RoutingPreflightResponse | null>(null)
   const [lastConnectionNote, setLastConnectionNote] = useState<string | null>(null)
 
@@ -203,7 +193,6 @@ export function RoutingPage() {
         api.getSettings(data.story.project_id),
         api.listPlanningProviders().catch(() => null),
       ])
-      setLoadFailed(false)
       setProfiles(profileResult)
       setAssignments(assignmentResult)
       setRouteDrafts({})
@@ -221,10 +210,6 @@ export function RoutingPage() {
         return profileResult[0]?.id ?? ''
       })
     } catch (err) {
-      setLoadFailed(true)
-      setProfiles([])
-      setAssignments([])
-      setProviderCatalog([])
       setError(errorText(err, 'Failed to load routing configuration.'))
     } finally {
       setLoading(false)
@@ -588,16 +573,7 @@ export function RoutingPage() {
   const canOverride =
     Boolean(selectedDraft.providerProfileId || defaultProfileId) && profiles.length > 0
 
-  /** Live data present → never show demo Connected strip as real. */
-  const hasLiveProviders = profiles.length > 0 || providerCatalog.length > 0
-  /** Backend fail OR empty profiles+catalog → demo strip/matrix with offline label. */
-  const useDemoFallback = !loading && (loadFailed || !hasLiveProviders)
-  /** When load failed, block mutating live actions; empty-but-reachable still allows profile create. */
-  const demoActionsLocked = useDemoFallback && loadFailed
-  const demoRoute =
-    demoRoutingMatrix.find((row) => row.task === demoSelectedTask) ?? demoRoutingMatrix[0] ?? null
-
-  /** Provider tiles: live profiles → catalog → (render path) demo fixtures. Real availability only. */
+  /** Provider tiles: production profiles first; catalog fallback. Real availability only. */
   const providerCards: Array<{
     key: string
     name: string
@@ -605,8 +581,6 @@ export function RoutingPage() {
     status: string
     selected: boolean
     onClick: () => void
-    /** true only for demo fixture tiles — StatusPill uses fixture label as-is under offline banner */
-    demo?: boolean
   }> = profiles.length
     ? profiles.map((profile) => {
         const catalogEntry = catalogByIdentifier.get(profile.provider_identifier)
@@ -637,30 +611,12 @@ export function RoutingPage() {
         },
       }))
 
-  const demoProviderCards = demoRoutingProviders.map((tile, index) => ({
-    key: `demo-${tile.name}-${index}`,
-    name: tile.name,
-    note: tile.note,
-    status: tile.status,
-    selected: false,
-    demo: true as const,
-    onClick: () =>
-      setMessage(
-        `${DEMO_FIXTURE_LABEL}: “${tile.name}” is prototype planning chrome only — not a live connection.`,
-      ),
-  }))
-
-  const displayProviderCards = useDemoFallback ? demoProviderCards : providerCards
-
   const whyRoute =
     selectedDraft.rationale.trim() ||
     selectedTaskMeta?.description ||
     'No rationale recorded for this route'
 
   const newProfileSelected = drawer.kind === 'profile' && drawer.profileId == null
-  const routingTestTitle = useDemoFallback
-    ? `${DEMO_FIXTURE_LABEL} — routing validate requires live provider profiles.`
-    : 'Runs POST /stories/{id}/routing/validate (non-mutating preflight).'
 
   return (
     <div className="page">
@@ -686,8 +642,8 @@ export function RoutingPage() {
               variant="primary"
               icon="play"
               onClick={() => void onRunRoutingTest()}
-              disabled={disabled || useDemoFallback}
-              title={routingTestTitle}
+              disabled={disabled}
+              title="Runs POST /stories/{id}/routing/validate (non-mutating preflight)."
             >
               {routingTestBusy ? 'Testing routes…' : 'Run routing test'}
             </Button>
@@ -696,25 +652,7 @@ export function RoutingPage() {
       />
 
       {loading ? <LoadingState title="Loading routing records…" /> : null}
-      {error && !useDemoFallback ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
-
-      {useDemoFallback ? (
-        <div className="test-result" role="status" aria-live="polite">
-          <Icon name="warning" />
-          <span>
-            <b>{DEMO_FIXTURE_LABEL}</b>
-            <small>
-              {loadFailed
-                ? 'Provider routing API unreachable — showing prototype strip/matrix only. Status pills are fixture labels, not live connections.'
-                : 'No saved provider profiles or planning catalog — showing prototype strip/matrix. Create a profile to switch to live routing. Status pills are fixture labels, not live connections.'}
-              {error ? ` · ${error}` : ''}
-            </small>
-          </span>
-          <button type="button" onClick={() => void load()} disabled={disabled}>
-            Retry live
-          </button>
-        </div>
-      ) : null}
+      {error ? <ErrorState detail={error} onRetry={() => void load()} /> : null}
 
       {/* Exact control order from pagesOps RoutingPage / screenshot 172754 */}
       <div className="routing-controls">
@@ -744,83 +682,45 @@ export function RoutingPage() {
         <label>
           Default orchestrator provider
           <select
-            value={
-              useDemoFallback && !profiles.length
-                ? demoRoutingDefaults.orchestratorProvider
-                : defaultProfileId
-            }
+            value={defaultProfileId}
             onChange={(event) => setDefaultProfileId(event.target.value)}
-            disabled={disabled || useDemoFallback || !profiles.length}
+            disabled={disabled || !profiles.length}
             title={
-              useDemoFallback
-                ? `${DEMO_FIXTURE_LABEL} — not a live provider assignment.`
-                : profiles.length
-                  ? 'Selects the preferred provider profile for new manual overrides.'
-                  : 'No saved provider profiles yet.'
+              profiles.length
+                ? 'Selects the preferred provider profile for new manual overrides.'
+                : 'No saved provider profiles yet.'
             }
           >
-            {useDemoFallback && !profiles.length ? (
-              demoRoutingDefaults.providerOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))
-            ) : (
-              <>
-                {!profiles.length ? <option value="">No profiles</option> : null}
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.display_name}
-                  </option>
-                ))}
-              </>
-            )}
+            {!profiles.length ? <option value="">No profiles</option> : null}
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.display_name}
+              </option>
+            ))}
           </select>
         </label>
         <label>
           Default orchestrator model
           <select
-            value={
-              useDemoFallback && !defaultProfile
-                ? demoRoutingDefaults.orchestratorModel
-                : (defaultProfile?.provider_model_id ?? '')
-            }
+            value={defaultProfile?.provider_model_id ?? ''}
             disabled
-            title={
-              useDemoFallback
-                ? `${DEMO_FIXTURE_LABEL} — model is fixture chrome only.`
-                : 'Model is stored on the selected provider profile.'
-            }
+            title="Model is stored on the selected provider profile."
           >
-            {useDemoFallback && !defaultProfile ? (
-              demoRoutingDefaults.modelOptions.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))
-            ) : (
-              <>
-                <option value="">
-                  {defaultProfile?.provider_model_id?.trim() ||
-                    (modelOptions[0] ?? 'From provider profiles')}
-                </option>
-                {defaultProfile?.provider_model_id ? (
-                  <option value={defaultProfile.provider_model_id}>
-                    {defaultProfile.provider_model_id}
-                  </option>
-                ) : null}
-              </>
-            )}
+            <option value="">
+              {defaultProfile?.provider_model_id?.trim() ||
+                (modelOptions[0] ?? 'From provider profiles')}
+            </option>
+            {defaultProfile?.provider_model_id ? (
+              <option value={defaultProfile.provider_model_id}>
+                {defaultProfile.provider_model_id}
+              </option>
+            ) : null}
           </select>
         </label>
         <label>
           Privacy preference
           <select
-            value={
-              useDemoFallback && !settings
-                ? 'prefer_local'
-                : privacyPreferenceValue(preferLocal, preferHosted)
-            }
+            value={privacyPreferenceValue(preferLocal, preferHosted)}
             onChange={(event) => {
               const next = applyPrivacyPreference(event.target.value)
               setPreferLocal(next.preferLocal)
@@ -828,13 +728,6 @@ export function RoutingPage() {
               if (settings) void onSavePreferences(next.preferLocal, next.preferHosted)
             }}
             disabled={disabled || !settings}
-            title={
-              !settings
-                ? useDemoFallback
-                  ? `${DEMO_FIXTURE_LABEL} — privacy preference not persisted.`
-                  : 'Project settings unavailable — privacy preference not persisted.'
-                : undefined
-            }
           >
             <option value="prefer_local">Prefer local for bulk work</option>
             <option value="hosted_allowed">Hosted allowed</option>
@@ -869,13 +762,13 @@ export function RoutingPage() {
         </label>
       </div>
 
-      {!settingsAvailable && !loading && !useDemoFallback ? (
+      {!settingsAvailable && !loading ? (
         <p className="form-hint" style={{ marginBottom: 8 }}>
           Project settings unavailable — privacy preference not persisted.
         </p>
       ) : null}
 
-      {preflight && !useDemoFallback ? (
+      {preflight ? (
         <div className="test-result">
           <Icon name="check" />
           <span>
@@ -898,16 +791,16 @@ export function RoutingPage() {
         </div>
       ) : null}
 
-      {!loading && !useDemoFallback && !displayProviderCards.length ? (
+      {!profiles.length && !providerCatalog.length && !loading ? (
         <EmptyState
           title="No provider profiles"
           detail="Create a disabled or manually controlled provider record. Availability begins Unknown — never Connected unless the backend reports it."
         />
       ) : null}
 
-      {displayProviderCards.length || useDemoFallback || !loading ? (
+      {providerCards.length || !loading ? (
         <div className="provider-grid">
-          {displayProviderCards.map((card, index) => (
+          {providerCards.map((card, index) => (
             <button
               key={card.key}
               type="button"
@@ -915,21 +808,13 @@ export function RoutingPage() {
               onClick={card.onClick}
               disabled={disabled}
               aria-pressed={card.selected}
-              title={
-                card.demo
-                  ? `${DEMO_FIXTURE_LABEL} — fixture status “${card.status}” is not a live connection.`
-                  : undefined
-              }
             >
               <span className={`provider-logo provider-${index % 6}`}>{card.name.charAt(0)}</span>
               <span>
                 <b>{card.name}</b>
                 <small>{card.note}</small>
               </span>
-              {/* Live: humanize backend status only. Demo: fixture label under offline banner. */}
-              <StatusPill
-                status={card.demo ? card.status : availabilityLabel(card.status)}
-              />
+              <StatusPill status={availabilityLabel(card.status)} />
               <Icon name="chevron" />
             </button>
           ))}
@@ -937,22 +822,13 @@ export function RoutingPage() {
             type="button"
             className={newProfileSelected ? 'selected' : ''}
             onClick={resetProfileForm}
-            disabled={disabled || demoActionsLocked}
+            disabled={disabled}
             aria-pressed={newProfileSelected}
-            title={
-              demoActionsLocked
-                ? `${DEMO_FIXTURE_LABEL} — profile create requires a reachable routing API.`
-                : 'Create a configuration record. New profiles start as Unknown.'
-            }
           >
             <span className="provider-logo provider-0">+</span>
             <span>
               <b>New profile</b>
-              <small>
-                {demoActionsLocked
-                  ? DEMO_FIXTURE_LABEL
-                  : 'Create a configuration record'}
-              </small>
+              <small>Create a configuration record</small>
             </span>
             <StatusPill status="Draft" />
             <Icon name="chevron" />
@@ -963,11 +839,7 @@ export function RoutingPage() {
       <div className="routing-layout">
         <Section
           title="Task-routing matrix"
-          subtitle={
-            useDemoFallback
-              ? `${DEMO_FIXTURE_LABEL} — matrix is planning chrome only.`
-              : 'Recommendations remain editable per task.'
-          }
+          subtitle="Recommendations remain editable per task."
           className="routing-table-panel"
         >
           <div className="data-table routing-table" role="table" aria-label="Task-routing matrix">
@@ -980,215 +852,79 @@ export function RoutingPage() {
               <span role="columnheader">Usage</span>
               <span role="columnheader">Status</span>
             </div>
-            {useDemoFallback
-              ? demoRoutingMatrix.map((row) => {
-                  const selected = demoSelectedTask === row.task
-                  return (
-                    <div
-                      key={row.task}
-                      role="button"
-                      tabIndex={0}
-                      className={`data-row${selected ? ' selected' : ''}`}
-                      onClick={() => setDemoSelectedTask(row.task)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          setDemoSelectedTask(row.task)
-                        }
-                      }}
-                      aria-pressed={selected}
-                      title={`${DEMO_FIXTURE_LABEL} — fixture row, not a live assignment.`}
+            {TASK_PROFILE_MAP.map((row) => {
+              const assignment = assignments.find((item) => item.task_type === row.task)
+              const draft = getDraft(row.task)
+              const profile = draft.providerProfileId
+                ? profilesById.get(draft.providerProfileId) ?? null
+                : null
+              const status = profile?.availability_status ?? ''
+              const mode = modeLabel(assignment?.assignment_mode, Boolean(draft.providerProfileId))
+              const selected = drawer.kind === 'task' && drawer.task === row.task
+              return (
+                <div
+                  key={row.task}
+                  role="button"
+                  tabIndex={0}
+                  className={`data-row${selected ? ' selected' : ''}`}
+                  onClick={() => selectTask(row.task)}
+                  onKeyDown={(event) => onTaskKeyDown(event, row.task)}
+                  aria-pressed={selected}
+                >
+                  <span>
+                    <b>{row.label}</b>
+                    <small>
+                      {row.description} · {row.logicalProfile}
+                    </small>
+                  </span>
+                  <span
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <select
+                      aria-label={`Provider for ${row.label}`}
+                      value={draft.providerProfileId}
+                      onChange={(event) =>
+                        updateRouteDraft(row.task, { providerProfileId: event.target.value })
+                      }
+                      disabled={disabled || !profiles.length}
                     >
-                      <span>
-                        <b>{row.task}</b>
-                        <small>{row.reason}</small>
-                      </span>
-                      <span
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        <select
-                          aria-label={`Provider for ${row.task}`}
-                          value={row.provider}
-                          disabled
-                          title={`${DEMO_FIXTURE_LABEL} — not editable.`}
-                        >
-                          <option value={row.provider}>{row.provider}</option>
-                        </select>
-                        <input
-                          aria-label={`Model for ${row.task}`}
-                          value={row.model}
-                          readOnly
-                          title={`${DEMO_FIXTURE_LABEL} — fixture model label.`}
-                        />
-                      </span>
-                      <span>
-                        <StatusPill status={row.mode} />
-                      </span>
-                      <span>{row.privacy}</span>
-                      <span>{row.speed}</span>
-                      <span>{row.cost}</span>
-                      <span>
-                        <StatusPill status={row.availability} />
-                      </span>
-                    </div>
-                  )
-                })
-              : TASK_PROFILE_MAP.map((row) => {
-                  const assignment = assignments.find((item) => item.task_type === row.task)
-                  const draft = getDraft(row.task)
-                  const profile = draft.providerProfileId
-                    ? profilesById.get(draft.providerProfileId) ?? null
-                    : null
-                  const status = profile?.availability_status ?? ''
-                  const mode = modeLabel(
-                    assignment?.assignment_mode,
-                    Boolean(draft.providerProfileId),
-                  )
-                  const selected = drawer.kind === 'task' && drawer.task === row.task
-                  return (
-                    <div
-                      key={row.task}
-                      role="button"
-                      tabIndex={0}
-                      className={`data-row${selected ? ' selected' : ''}`}
-                      onClick={() => selectTask(row.task)}
-                      onKeyDown={(event) => onTaskKeyDown(event, row.task)}
-                      aria-pressed={selected}
-                    >
-                      <span>
-                        <b>{row.label}</b>
-                        <small>
-                          {row.description} · {row.logicalProfile}
-                        </small>
-                      </span>
-                      <span
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        <select
-                          aria-label={`Provider for ${row.label}`}
-                          value={draft.providerProfileId}
-                          onChange={(event) =>
-                            updateRouteDraft(row.task, {
-                              providerProfileId: event.target.value,
-                            })
-                          }
-                          disabled={disabled || !profiles.length}
-                        >
-                          <option value="">Unassigned</option>
-                          {profiles.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.display_name}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          aria-label={`Model for ${row.label}`}
-                          value={profile?.provider_model_id ?? ''}
-                          readOnly
-                          title="Model comes from the selected provider profile."
-                          placeholder="No model"
-                        />
-                      </span>
-                      <span>
-                        <StatusPill status={mode} />
-                      </span>
-                      <span>{privacyLabel(profile?.privacy_classification)}</span>
-                      <span title="Backend does not expose estimated speed for planning routes.">
-                        Not recorded
-                      </span>
-                      <span title="Backend does not expose usage/cost indicators for planning routes.">
-                        Not recorded
-                      </span>
-                      <span>
-                        <StatusPill status={!profile ? 'Draft' : availabilityLabel(status)} />
-                      </span>
-                    </div>
-                  )
-                })}
+                      <option value="">Unassigned</option>
+                      {profiles.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.display_name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`Model for ${row.label}`}
+                      value={profile?.provider_model_id ?? ''}
+                      readOnly
+                      title="Model comes from the selected provider profile."
+                      placeholder="No model"
+                    />
+                  </span>
+                  <span>
+                    <StatusPill status={mode} />
+                  </span>
+                  <span>{privacyLabel(profile?.privacy_classification)}</span>
+                  <span title="Backend does not expose estimated speed for planning routes.">
+                    Not recorded
+                  </span>
+                  <span title="Backend does not expose usage/cost indicators for planning routes.">
+                    Not recorded
+                  </span>
+                  <span>
+                    <StatusPill status={!profile ? 'Draft' : availabilityLabel(status)} />
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </Section>
 
         <aside className="route-detail" aria-label="Route or provider detail">
-          {useDemoFallback && demoRoute && drawer.kind === 'task' ? (
-            <>
-              <header>
-                <span className="orchestrator-mark">
-                  <Icon name="cpu" />
-                </span>
-                <div>
-                  <span className="eyebrow">ROUTE DETAIL</span>
-                  <h2>{demoRoute.task}</h2>
-                </div>
-              </header>
-              <p className="form-hint" style={{ marginBottom: 8 }}>
-                {DEMO_FIXTURE_LABEL} — availability “{demoRoute.availability}” is fixture chrome,
-                not a live connection.
-              </p>
-              <dl>
-                <div>
-                  <dt>Provider</dt>
-                  <dd>{demoRoute.provider}</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>{demoRoute.model}</dd>
-                </div>
-                <div>
-                  <dt>Control</dt>
-                  <dd>{demoRoute.mode}</dd>
-                </div>
-                <div>
-                  <dt>Privacy</dt>
-                  <dd>{demoRoute.privacy}</dd>
-                </div>
-                <div>
-                  <dt>Availability</dt>
-                  <dd>
-                    <StatusPill status={demoRoute.availability} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>Estimated speed</dt>
-                  <dd>{demoRoute.speed}</dd>
-                </div>
-                <div>
-                  <dt>Usage indicator</dt>
-                  <dd>{demoRoute.cost}</dd>
-                </div>
-              </dl>
-              <div className="recommendation">
-                <Icon name="spark" />
-                <p>
-                  <b>Why this route</b>
-                  {demoRoute.reason}. CineForge will validate returned structure before storing it
-                  when live routing is available.
-                </p>
-              </div>
-              <div className="page-actions" style={{ marginTop: 12 }}>
-                <Button
-                  type="button"
-                  variant="primary"
-                  disabled
-                  title={`${DEMO_FIXTURE_LABEL} — override requires live provider profiles.`}
-                >
-                  Override routing
-                </Button>
-                {!loadFailed ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={resetProfileForm}
-                    disabled={disabled}
-                    title="Create a live provider profile to leave the demo fixture."
-                  >
-                    New profile
-                  </Button>
-                ) : null}
-              </div>
-            </>
-          ) : drawer.kind === 'task' && selectedTaskMeta ? (
+          {drawer.kind === 'task' && selectedTaskMeta ? (
             <>
               <header>
                 <span className="orchestrator-mark">
@@ -1332,9 +1068,6 @@ export function RoutingPage() {
               <p className="form-hint">
                 Availability remains factual backend evidence and is not editable here. New profiles
                 start as Unknown — never Connected.
-                {useDemoFallback
-                  ? ` ${DEMO_FIXTURE_LABEL}: saving a profile switches this page to live routing when the API accepts it.`
-                  : ''}
               </p>
               <label>
                 Provider identifier
@@ -1342,7 +1075,7 @@ export function RoutingPage() {
                   name="provider_identifier"
                   required
                   defaultValue={selectedProfile?.provider_identifier ?? ''}
-                  disabled={disabled || demoActionsLocked}
+                  disabled={disabled}
                   readOnly={Boolean(selectedProfileId)}
                   placeholder="openai, xai, local_cli…"
                 />
@@ -1437,16 +1170,7 @@ export function RoutingPage() {
                 </dl>
               ) : null}
               <div className="page-actions">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={disabled || demoActionsLocked}
-                  title={
-                    demoActionsLocked
-                      ? `${DEMO_FIXTURE_LABEL} — profile save requires a reachable routing API.`
-                      : undefined
-                  }
-                >
+                <Button type="submit" variant="primary" disabled={disabled}>
                   {saving ? 'Saving…' : 'Save provider profile'}
                 </Button>
                 {selectedProfile ? (
@@ -1454,7 +1178,7 @@ export function RoutingPage() {
                     type="button"
                     variant="danger"
                     onClick={() => void onDeleteProfile()}
-                    disabled={disabled || demoActionsLocked}
+                    disabled={disabled}
                   >
                     Delete profile
                   </Button>
@@ -1465,18 +1189,11 @@ export function RoutingPage() {
                 variant="secondary"
                 icon="play"
                 onClick={() => void onTestConnection()}
-                disabled={
-                  disabled ||
-                  demoActionsLocked ||
-                  !selectedProfile ||
-                  !connectionSupport.supported
-                }
+                disabled={disabled || !selectedProfile || !connectionSupport.supported}
                 title={
-                  demoActionsLocked
-                    ? `${DEMO_FIXTURE_LABEL} — connection test requires live catalog advertisement.`
-                    : connectionSupport.supported
-                      ? 'POST /providers/{id}/connection-test (bounded, explicit).'
-                      : connectionSupport.reason
+                  connectionSupport.supported
+                    ? 'POST /providers/{id}/connection-test (bounded, explicit).'
+                    : connectionSupport.reason
                 }
               >
                 {testingConnection ? 'Testing…' : 'Test connection'}
@@ -1502,7 +1219,7 @@ export function RoutingPage() {
         </aside>
       </div>
 
-      {!settingsAvailable && !loading && !useDemoFallback ? (
+      {!settingsAvailable && !loading ? (
         <UnavailableState
           title="Project settings unavailable"
           detail="Privacy preference save is disabled until the project settings API responds."
