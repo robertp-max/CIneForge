@@ -288,8 +288,28 @@ def delete_recommendation(
 
 @router.get("/provider-profiles", response_model=list[ProviderProfileRead])
 def list_provider_profiles(db: Session = Depends(get_db)) -> list[ProviderProfileRead]:
+    """Return declared profiles with factual catalog availability overlaid.
+
+    Profile CRUD stores availability as ``unknown`` until a bounded connection
+    test updates it.  The planning provider catalog already has runtime facts
+    (mock always available, OpenAI when configured, Qwen when local discovery
+    finds an approved install).  Overlay those facts onto ``unknown`` rows so
+    live Model routing can show real status without inventing Connected in the
+    frontend.
+    """
+    from backend.app.services.planning.provider_registry import provider_status_map
+
+    catalog_status = provider_status_map()
     rows = service.list_provider_profiles(db)
-    return [ProviderProfileRead.model_validate(row) for row in rows]
+    out: list[ProviderProfileRead] = []
+    for row in rows:
+        item = ProviderProfileRead.model_validate(row)
+        if (item.availability_status or "unknown").lower() in {"", "unknown"}:
+            fact = catalog_status.get(item.provider_identifier)
+            if fact:
+                item = item.model_copy(update={"availability_status": fact})
+        out.append(item)
+    return out
 
 
 @router.post(
