@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type FormEvent,
@@ -21,76 +22,194 @@ import {
 import { demoAggregate, demoReadiness } from './demoPhaseA'
 import { StudioContext, type LoadState, type StudioContextValue } from './StudioState'
 
+const LEGACY_DEMO_SLUG = 'a-new-journey'
+
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
 }
 
+function isDemoCapableProjectId(projectId: string | null | undefined): boolean {
+  if (!projectId) return false
+  return projectId === demoAggregate.story.project_id || projectId === LEGACY_DEMO_SLUG
+}
+
+async function resolveProjectIdForStories(selectedProjectId: string): Promise<string> {
+  // Legacy URL slug is not a DB id — resolve by project list name when possible.
+  if (selectedProjectId !== LEGACY_DEMO_SLUG) return selectedProjectId
+  try {
+    const projects = await api.listProjects()
+    const match =
+      projects.find((p) => p.id === demoAggregate.story.project_id) ??
+      projects.find((p) => p.name.toLowerCase() === 'a new journey') ??
+      projects.find((p) => p.id === selectedProjectId)
+    return match?.id ?? selectedProjectId
+  } catch {
+    return selectedProjectId
+  }
+}
+
 export function StudioProvider({
+  projectId: selectedProjectId,
   backendStatus,
   onNavigate,
   children,
 }: {
+  projectId: string
   backendStatus: string
   onNavigate: (page: PageId) => void
   children: ReactNode
 }) {
-  const [projectId, setProjectId] = useState(demoAggregate.story.project_id)
-  const [storyId, setStoryId] = useState(demoAggregate.story.id)
-  const [data, setData] = useState<StoryboardAggregate | null>(demoAggregate)
-  const [readiness, setReadiness] = useState<Readiness | null>(demoReadiness)
-  const [message, setMessage] = useState(
-    'A New Journey demo plan is loaded for this local Studio session. Server data remains canonical when available.',
-  )
-  const [loadState, setLoadState] = useState<LoadState>('ready')
+  // Demo fallback only for the local demo UUID or the screenshot route slug.
+  // Real project UUIDs always load from the server — never silent demo overlay.
+  const isDemoProject = isDemoCapableProjectId(selectedProjectId)
+  const [projectId, setProjectId] = useState(selectedProjectId || demoAggregate.story.project_id)
+  const [storyId, setStoryId] = useState('')
+  const [data, setData] = useState<StoryboardAggregate | null>(null)
+  const [readiness, setReadiness] = useState<Readiness | null>(null)
+  const [message, setMessage] = useState('Loading the selected project from the CineForge backend.')
+  const [loadState, setLoadState] = useState<LoadState>('loading')
   const [error, setError] = useState<string | null>(null)
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null)
   const [animaticOpen, setAnimaticOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const reload = useCallback(async (id = storyId) => {
-    if (!id) {
-      setLoadState('empty')
+  const applyDemoFallback = useCallback((prefix?: string) => {
+    setData(demoAggregate)
+    setReadiness(demoReadiness)
+    setStoryId(demoAggregate.story.id)
+    setProjectId(demoAggregate.story.project_id)
+    setError(null)
+    setLoadState('ready')
+    setMessage(
+      prefix
+        ? `${prefix} Showing the local A New Journey Phase A demo plan instead.`
+        : 'A New Journey demo plan is loaded for this local Studio session. Server data remains canonical when available.',
+    )
+  }, [])
+
+  const reload = useCallback(
+    async (id = storyId) => {
+      if (!id) {
+        setLoadState('empty')
+        setData(null)
+        setReadiness(null)
+        return
+      }
+
+      setBusy(true)
+      setLoadState('loading')
+      setError(null)
+      try {
+        const snapshot = await api.phaseA(id)
+        const aggregate = normalizePhaseASnapshot(snapshot)
+        setData(aggregate)
+        setReadiness(snapshot.readiness)
+        setStoryId(aggregate.story.id)
+        setProjectId(aggregate.story.project_id)
+        setLoadState('ready')
+        setMessage('Live planning data loaded from the CineForge backend.')
+        setSelectedShot((current) => {
+          if (!current) return null
+          for (const chapter of aggregate.chapters) {
+            for (const scene of chapter.scenes) {
+              const match = scene.shots.find((shot) => shot.id === current.id)
+              if (match) return match
+            }
+          }
+          return null
+        })
+      } catch (err) {
+        const text = errorMessage(err, 'Unable to load storyboard data.')
+        if (isDemoProject) {
+          applyDemoFallback(text)
+        } else {
+          setData(null)
+          setReadiness(null)
+          setError(text)
+          setLoadState('error')
+          setMessage(text)
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [applyDemoFallback, isDemoProject, storyId],
+  )
+
+  useEffect(() => {
+    let active = true
+    const loadSelectedProject = async () => {
+      setBusy(true)
+      setLoadState('loading')
+      setError(null)
+      setProjectId(selectedProjectId)
       setData(null)
       setReadiness(null)
-      return
+      setStoryId('')
+      try {
+        const resolvedProjectId = await resolveProjectIdForStories(selectedProjectId)
+        if (!active) return
+        // If resolve still returns the non-DB slug, use demo fallback when allowed.
+        if (resolvedProjectId === LEGACY_DEMO_SLUG) {
+          if (isDemoProject) {
+            applyDemoFallback()
+            return
+          }
+          setLoadState('empty')
+          setMessage('Project id is not a server project. Select a real project from the shell.')
+          return
+        }
+
+        const stories = await api.listStories(resolvedProjectId)
+        if (!active) return
+        const story = stories[0]
+        if (!story) {
+          if (isDemoProject) {
+            applyDemoFallback('No planning story on the server for this project.')
+            return
+          }
+          setStoryId('')
+          setData(null)
+          setReadiness(null)
+          setLoadState('empty')
+          setMessage(
+            'This project has no planning story yet. Create one below to begin Storyboard Studio work.',
+          )
+          return
+        }
+
+        const snapshot = await api.phaseA(story.id)
+        if (!active) return
+        const aggregate = normalizePhaseASnapshot(snapshot)
+        setData(aggregate)
+        setReadiness(snapshot.readiness)
+        setStoryId(aggregate.story.id)
+        setProjectId(aggregate.story.project_id)
+        setLoadState('ready')
+        setMessage('Live planning data loaded from the CineForge backend.')
+      } catch (err) {
+        if (!active) return
+        const text = errorMessage(err, 'Unable to load the selected project in Storyboard Studio.')
+        if (isDemoProject) {
+          applyDemoFallback(text)
+        } else {
+          setData(null)
+          setReadiness(null)
+          setError(text)
+          setLoadState('error')
+          setMessage(text)
+        }
+      } finally {
+        if (active) setBusy(false)
+      }
     }
 
-    setBusy(true)
-    setLoadState('loading')
-    setError(null)
-    try {
-      const snapshot = await api.phaseA(id)
-      const aggregate = normalizePhaseASnapshot(snapshot)
-      setData(aggregate)
-      setReadiness(snapshot.readiness)
-      setStoryId(aggregate.story.id)
-      setProjectId(aggregate.story.project_id)
-      setLoadState('ready')
-      setMessage('Live planning data loaded from the CineForge backend.')
-      setSelectedShot((current) => {
-        if (!current) return null
-        for (const chapter of aggregate.chapters) {
-          for (const scene of chapter.scenes) {
-            const match = scene.shots.find((shot) => shot.id === current.id)
-            if (match) return match
-          }
-        }
-        return null
-      })
-    } catch (err) {
-      const text = errorMessage(err, 'Unable to load storyboard data.')
-      setData(demoAggregate)
-      setReadiness(demoReadiness)
-      setStoryId(demoAggregate.story.id)
-      setProjectId(demoAggregate.story.project_id)
-      setError(null)
-      setLoadState('ready')
-      setMessage(`${text} Showing the local A New Journey Phase A demo plan instead.`)
-    } finally {
-      setBusy(false)
+    void loadSelectedProject()
+    return () => {
+      active = false
     }
-  }, [storyId])
+  }, [applyDemoFallback, isDemoProject, selectedProjectId])
 
   const createStory = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -108,7 +227,7 @@ export function StudioProvider({
         setProjectId(story.project_id)
         setStoryId(story.id)
         await reload(story.id)
-        setMessage(`Created planning story “${story.title}”. No rendering was started.`)
+        setMessage(`Created planning story "${story.title}". No rendering was started.`)
       } catch (err) {
         const text = errorMessage(err, 'Could not create story.')
         setError(text)
@@ -162,17 +281,17 @@ export function StudioProvider({
           const chapter = data.chapters[data.chapters.length - 1] ?? data.chapters[0]
           const scene = chapter?.scenes[chapter.scenes.length - 1] ?? chapter?.scenes[0]
           if (!scene) throw new Error('Create a scene before adding a shot.')
-          const durationRaw = window.prompt('Shot duration in seconds (normal range 6–12)', '8')
+          const durationRaw = window.prompt('Shot duration in seconds (normal range 6-12)', '8')
           const duration = Number(durationRaw)
           if (!Number.isFinite(duration) || duration <= 0) {
             throw new Error('Shot duration must be a positive number.')
           }
           const reason =
             duration < 6 || duration > 12
-              ? window.prompt('Override reason is required outside 6–12 seconds') ?? ''
+              ? (window.prompt('Override reason is required outside 6-12 seconds') ?? '')
               : undefined
           if ((duration < 6 || duration > 12) && !reason?.trim()) {
-            throw new Error('Override reason is required for durations outside 6–12 seconds.')
+            throw new Error('Override reason is required for durations outside 6-12 seconds.')
           }
           await api.createShot(scene.id, {
             title: title.trim(),
@@ -202,7 +321,7 @@ export function StudioProvider({
       try {
         await api.createCharacter(data.story.id, payload)
         await reload()
-        setMessage(`Character “${payload.name}” saved. No image generation was started.`)
+        setMessage(`Character "${payload.name}" saved. No image generation was started.`)
       } catch (err) {
         const text = errorMessage(err, 'Could not add character.')
         setMessage(text)
@@ -221,12 +340,14 @@ export function StudioProvider({
       try {
         const created = await api.createVoiceProfile(data.story.id, payload)
         if (!created) {
-          setMessage('Voice profile API is unavailable on this backend. No profile or preview was created.')
+          setMessage(
+            'Voice profile API is unavailable on this backend. No profile or preview was created.',
+          )
           return false
         }
         await reload()
         setMessage(
-          `Voice profile “${payload.name}” saved as planning data. Cloning and audio generation were not performed.`,
+          `Voice profile "${payload.name}" saved as planning data. Cloning and audio generation were not performed.`,
         )
         return true
       } catch (err) {

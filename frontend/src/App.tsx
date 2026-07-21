@@ -136,8 +136,8 @@ function App() {
   const [backendStatus, setBackendStatus] = useState('checking')
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsError, setProjectsError] = useState<string | null>(null)
-  const [runtimeLabel, setRuntimeLabel] = useState('ComfyUI ready')
-  const [runtimeDetail, setRuntimeDetail] = useState('RTX 5090 Laptop · 24 GB')
+  const [runtimeLabel, setRuntimeLabel] = useState('Checking runtime…')
+  const [runtimeDetail, setRuntimeDetail] = useState('GPU inventory pending')
   const activePage = routeState.page
 
   const navigate = useCallback(
@@ -162,9 +162,7 @@ function App() {
   )
 
   const refreshBackendStatus = useCallback(async () => {
-    // Demo/parity GPU strip: always pin authority chrome unless real ComfyUI ok + real GPU name.
-    const AUTHORITY_LABEL = 'ComfyUI ready'
-    const AUTHORITY_DETAIL = 'RTX 5090 Laptop · 24 GB'
+    // Honest GPU/Comfy strip — never pin "ComfyUI ready" / fake VRAM when offline or unknown.
     try {
       const [health, runtime] = await Promise.all([
         api.health(),
@@ -172,7 +170,7 @@ function App() {
       ])
       setBackendStatus(normalizeBackendStatus(runtime?.status || health.status))
       if (runtime) {
-        const comfy = String(runtime.comfyui?.status ?? 'unknown')
+        const comfy = String(runtime.comfyui?.status ?? 'unknown').toLowerCase()
         const gpu = runtime.gpu && typeof runtime.gpu === 'object' ? runtime.gpu : null
         const gpuName =
           gpu && 'name' in gpu && typeof gpu.name === 'string'
@@ -187,24 +185,38 @@ function App() {
               ? `${gpu.memory_gb} GB`
               : null
         const ready = comfy === 'ok' || comfy === 'healthy' || comfy === 'ready' || comfy === 'connected'
-        if (ready && gpuName) {
-          setRuntimeLabel(AUTHORITY_LABEL)
-          setRuntimeDetail(vram ? `${gpuName} · ${vram}` : gpuName)
+        if (ready) {
+          setRuntimeLabel('ComfyUI ready')
+          setRuntimeDetail(
+            gpuName ? (vram ? `${gpuName} · ${vram}` : gpuName) : 'GPU name not reported',
+          )
+        } else if (comfy === 'unavailable' || comfy === 'down' || comfy === 'offline' || comfy === 'error') {
+          setRuntimeLabel('ComfyUI offline')
+          setRuntimeDetail(
+            gpuName
+              ? vram
+                ? `${gpuName} · ${vram} · external HTTP only`
+                : `${gpuName} · external HTTP only`
+              : 'External HTTP only — CineForge does not start ComfyUI',
+          )
         } else {
-          // Partial inventory, failed ComfyUI, or missing GPU — pin authority chrome.
-          setRuntimeLabel(AUTHORITY_LABEL)
-          setRuntimeDetail(AUTHORITY_DETAIL)
+          setRuntimeLabel(`ComfyUI ${comfy || 'unknown'}`)
+          setRuntimeDetail(
+            gpuName
+              ? vram
+                ? `${gpuName} · ${vram}`
+                : gpuName
+              : 'Runtime inventory incomplete — no fake GPU pin',
+          )
         }
       } else {
-        // Runtime null / health-only path — never show "Backend unavailable" / "Runtime status unavailable".
-        setRuntimeLabel(AUTHORITY_LABEL)
-        setRuntimeDetail(AUTHORITY_DETAIL)
+        setRuntimeLabel(normalizeBackendStatus(health.status) === 'ok' ? 'API online' : 'API degraded')
+        setRuntimeDetail('Runtime status endpoint unavailable — Comfy/GPU not verified')
       }
     } catch {
       setBackendStatus('unavailable')
-      // Keep prototype GPU strip chrome when offline so shell matches ref frame.
-      setRuntimeLabel(AUTHORITY_LABEL)
-      setRuntimeDetail(AUTHORITY_DETAIL)
+      setRuntimeLabel('Backend unavailable')
+      setRuntimeDetail('API offline — ComfyUI and GPU not verified')
     }
   }, [])
 
@@ -250,7 +262,12 @@ function App() {
   }, [refreshBackendStatus, refreshProjects])
 
   return (
-    <StudioProvider backendStatus={backendStatus} onNavigate={navigate}>
+    <StudioProvider
+      key={routeState.projectId}
+      projectId={routeState.projectId}
+      backendStatus={backendStatus}
+      onNavigate={navigate}
+    >
       <StudioAppShell
         activePage={activePage}
         backendStatus={backendStatus}

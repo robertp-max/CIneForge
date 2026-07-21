@@ -106,11 +106,11 @@ export function ExportsPage() {
       name: 'Full Storyboard PDF',
       description: 'Review-ready visual storyboard',
       format: 'PDF',
-      // REF shows Ready when shot hierarchy is present; download stays non-live (no PDF endpoint).
+      // Ready only when a live download exists — never claim Ready for unimplemented PDF.
       requirement: shotCount > 0 ? 'All shot data present' : 'PDF export is a future phase',
       lastExport: history.find((h) => h.name === 'Full Storyboard PDF')?.time ?? DEMO_LAST_EXPORT,
       version: DEMO_VERSION,
-      ready: shotCount > 0,
+      ready: links.pdf_available === true,
       live: links.pdf_available === true,
       reason: PDF_DISABLED_REASON,
     },
@@ -134,8 +134,8 @@ export function ExportsPage() {
       requirement: 'Story structure present',
       lastExport: history.find((h) => h.name === 'Chapter / Scene Outline')?.time ?? DEMO_LAST_EXPORT,
       version: DEMO_VERSION,
-      // Visual Ready when hierarchy exists (demo always has chapters); download not live.
-      ready: data.chapters.length > 0,
+      // Planning data may exist, but Ready requires a live export endpoint.
+      ready: false,
       live: false,
       reason: OUTLINE_DISABLED_REASON,
     },
@@ -159,7 +159,7 @@ export function ExportsPage() {
       requirement: voiceGap ? 'Resolve 2 voice gaps' : 'All shots have narration',
       lastExport: 'Never',
       version: '—',
-      ready: !voiceGap,
+      ready: false,
       live: false,
       reason: voiceGap
         ? `Narration script blocked — ${voiceGap}`
@@ -173,7 +173,7 @@ export function ExportsPage() {
       requirement: characterGap ? 'Approve Maya and Jordan' : 'Character references approved',
       lastExport: 'Never',
       version: '—',
-      ready: !characterGap,
+      ready: false,
       live: false,
       reason: characterGap
         ? `Character bible blocked — ${characterGap}`
@@ -187,7 +187,7 @@ export function ExportsPage() {
       requirement: voiceGap || characterGap ? 'Jordan consent required' : 'Voice coverage complete',
       lastExport: 'Never',
       version: '—',
-      ready: !voiceGap && !characterGap,
+      ready: false,
       live: false,
       reason:
         voiceGap || characterGap
@@ -202,7 +202,7 @@ export function ExportsPage() {
       requirement: imageGap ? 'Approve remaining images' : 'Starting images present',
       lastExport: 'Never',
       version: '—',
-      ready: !imageGap,
+      ready: false,
       live: false,
       reason: imageGap
         ? `Starting-image manifest blocked — ${imageGap}`
@@ -216,7 +216,7 @@ export function ExportsPage() {
       requirement: blockedShot ? 'Resolve blocked shot' : 'Prompt packages present',
       lastExport: 'Never',
       version: '—',
-      ready: !blockedShot,
+      ready: false,
       live: false,
       reason: blockedShot
         ? `Prompt package blocked — ${blockedShot}`
@@ -227,11 +227,10 @@ export function ExportsPage() {
       name: 'Model Gap Report',
       description: 'Installed and missing dependencies',
       format: 'PDF · JSON',
-      // REF shows Ready for Model Gap Report even with model inventory open (report itself is generable).
       requirement: modelGap ? 'Model inventory recorded' : 'Model inventory complete',
       lastExport: history.find((h) => h.name === 'Model Gap Report')?.time ?? 'Yesterday · 5:08 PM',
       version: DEMO_VERSION,
-      ready: true,
+      ready: false,
       live: false,
       reason: GAPS_DISABLED_REASON,
     },
@@ -256,7 +255,7 @@ export function ExportsPage() {
       requirement: continuityGap ? 'Repair continuity links' : 'Continuity links valid',
       lastExport: 'Never',
       version: '—',
-      ready: !continuityGap,
+      ready: false,
       live: false,
       reason: continuityGap
         ? `Continuity report blocked — ${continuityGap}`
@@ -281,15 +280,12 @@ export function ExportsPage() {
       }, 350)
       return
     }
-    // Ready in planning UI but no live endpoint — record local history only (prototype honesty).
-    setRunning(item.id)
-    window.setTimeout(() => {
-      setRunning('')
-      setHistory((prev) => [{ name: item.name, time: 'Just now', status: 'Ready' }, ...prev])
-      setMessage(
-        `${item.name} recorded in local package history only (${scope}). No binary media, PDF bytes, or render package was created — live downloads remain JSON and CSV.`,
-      )
-    }, 350)
+    // Non-live packages never claim Ready success — surface the missing endpoint.
+    setBlocked(item)
+    setMessage(
+      item.reason ??
+        `${item.name} has no live export endpoint. Only Storyboard JSON and Shot List CSV download from the API.`,
+    )
   }
 
   return (

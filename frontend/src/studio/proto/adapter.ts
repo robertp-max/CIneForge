@@ -239,26 +239,41 @@ export function toProtoProject(
       shots,
       characters,
       voices,
-      workflows: [
-        { id: 'wf-char', name: 'Character Reference Studio', installed: true, type: 'Image' },
-        { id: 'wf-start', name: 'Cinematic Starting Image', installed: true, type: 'Image' },
-        { id: 'wf-wan', name: 'Wan 2.2 Subtle I2V', installed: true, type: 'Video' },
-        { id: 'wf-ltx', name: 'LTX Cinematic I2V', installed: true, type: 'Video' },
-        { id: 'wf-cont', name: 'Final Frame Continuity', installed: true, type: 'Utility' },
-        { id: 'wf-up', name: 'Production Upscale', installed: true, type: 'Utility' },
-        { id: 'wf-int', name: 'Motion Interpolation', installed: false, type: 'Utility' },
-      ],
-      routing: demoRoutingMatrix.map((row) => ({
-        task: row.task,
-        provider: row.provider,
-        model: row.model,
-        mode: row.mode,
-        privacy: row.privacy,
-        availability: row.availability,
-        speed: row.speed,
-        cost: row.cost,
-        reason: row.reason,
-      })),
+      // Installed flags are demo-screenshot density only for the local fixture.
+      // Live plans stay unverified until a Comfy inventory API proves presence.
+      workflows: isDemoFixture
+        ? [
+            { id: 'wf-char', name: 'Character Reference Studio', installed: true, type: 'Image' },
+            { id: 'wf-start', name: 'Cinematic Starting Image', installed: true, type: 'Image' },
+            { id: 'wf-wan', name: 'Wan 2.2 Subtle I2V', installed: true, type: 'Video' },
+            { id: 'wf-ltx', name: 'LTX Cinematic I2V', installed: true, type: 'Video' },
+            { id: 'wf-cont', name: 'Final Frame Continuity', installed: true, type: 'Utility' },
+            { id: 'wf-up', name: 'Production Upscale', installed: true, type: 'Utility' },
+            { id: 'wf-int', name: 'Motion Interpolation', installed: false, type: 'Utility' },
+          ]
+        : [
+            { id: 'wf-char', name: 'Character Reference Studio', installed: false, type: 'Image' },
+            { id: 'wf-start', name: 'Cinematic Starting Image', installed: false, type: 'Image' },
+            { id: 'wf-wan', name: 'Wan 2.2 Subtle I2V', installed: false, type: 'Video' },
+            { id: 'wf-ltx', name: 'LTX Cinematic I2V', installed: false, type: 'Video' },
+            { id: 'wf-cont', name: 'Final Frame Continuity', installed: false, type: 'Utility' },
+            { id: 'wf-up', name: 'Production Upscale', installed: false, type: 'Utility' },
+            { id: 'wf-int', name: 'Motion Interpolation', installed: false, type: 'Utility' },
+          ],
+      // Demo fixture may show screenshot routing matrix; live plans leave routing to RoutingPage live APIs.
+      routing: isDemoFixture
+        ? demoRoutingMatrix.map((row) => ({
+            task: row.task,
+            provider: row.provider,
+            model: row.model,
+            mode: row.mode,
+            privacy: row.privacy,
+            availability: row.availability,
+            speed: row.speed,
+            cost: row.cost,
+            reason: row.reason,
+          }))
+        : [],
     },
     plannedRuntime: planned,
     readinessPct,
