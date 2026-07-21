@@ -19,6 +19,7 @@ type ProjectsProps = {
   onCreateNew?: () => void
   onBackToProjects?: () => void
   onOpenProject?: (projectId: string, projectName?: string) => void
+  onOpenProjectPage?: (projectId: string, projectName: string, page: PageId) => void
   onProjectsLoaded?: (projects: Project[]) => void
   onNavigateStudio?: (page: PageId) => void
   /** Currently selected workspace project — used for the Gold "Current project" cover chip. */
@@ -169,16 +170,17 @@ function phaseLabel(story: Story | null, snapshot: PhaseASnapshot | null) {
 function ProjectList({
   onCreateNew,
   onOpenProject,
+  onOpenProjectPage,
   onProjectsLoaded,
   onNavigateStudio,
   currentProjectId,
-}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onProjectsLoaded' | 'onNavigateStudio' | 'currentProjectId'>) {
+}: Pick<ProjectsProps, 'onCreateNew' | 'onOpenProject' | 'onOpenProjectPage' | 'onProjectsLoaded' | 'onNavigateStudio' | 'currentProjectId'>) {
   const [summaries, setSummaries] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('All')
-  const [sort, setSort] = useState('Recently updated')
+  const [sort, setSort] = useState('Recently created')
 
   useEffect(() => {
     let active = true
@@ -234,10 +236,18 @@ function ProjectList({
       {onNavigateStudio ? (
         <StudioHomeHero
           onNavigateStudio={(page) => {
-            // Open first loaded project into studio page when available
-            const first = summaries[0]?.project
-            if (first) onOpenProject?.(first.id, first.name)
-            onNavigateStudio(page)
+            const target =
+              summaries.find(({ project }) => project.id === currentProjectId)?.project ??
+              summaries[0]?.project
+            if (target && onOpenProjectPage) {
+              onOpenProjectPage(target.id, target.name, page)
+              return
+            }
+            if (target) {
+              onOpenProject?.(target.id, target.name)
+              return
+            }
+            onCreateNew?.()
           }}
         />
       ) : (
@@ -278,7 +288,7 @@ function ProjectList({
         <label className="sort-select">
           <span>Sort</span>
           <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort">
-            <option>Recently updated</option><option>Name</option><option>Readiness</option>
+            <option>Recently created</option><option>Name</option><option>Readiness</option>
           </select>
         </label>
       </div>
@@ -315,7 +325,6 @@ function ProjectList({
                 <div className="project-card-body">
                   <div className="project-card-title">
                     <button type="button" onClick={open}><h2>{project.name}</h2><p>{project.description || 'A CineForge production plan.'}</p></button>
-                    <button type="button" className="icon-button" aria-label={`More actions for ${project.name}`}>•••</button>
                   </div>
                   <div className="project-meta">
                     <span>{phaseLabel(story, snapshot)}</span><i /><span>{formatRuntime(snapshot?.target_duration_sec ?? story?.target_duration_sec ?? 300)} target</span><i /><span>16:9</span>
@@ -344,7 +353,7 @@ function ProjectList({
                     {characters.slice(0, 3).map((character) => <i key={character.id}>{projectInitials(character.name)}</i>)}
                     {characters.length > 3 ? <i>+{characters.length - 3}</i> : null}
                   </span>
-                  <span>Updated {formatUpdated(project.created_at)}</span>
+                  <span>Created {formatUpdated(project.created_at)}</span>
                   <button type="button" onClick={open}>Open project →</button>
                 </footer>
               </article>
@@ -579,6 +588,7 @@ export function Projects({
   onCreateNew,
   onBackToProjects,
   onOpenProject,
+  onOpenProjectPage,
   onProjectsLoaded,
   onNavigateStudio,
   currentProjectId,
@@ -589,6 +599,7 @@ export function Projects({
       <ProjectList
         onCreateNew={onCreateNew}
         onOpenProject={onOpenProject}
+        onOpenProjectPage={onOpenProjectPage}
         onProjectsLoaded={onProjectsLoaded}
         onNavigateStudio={onNavigateStudio}
         currentProjectId={currentProjectId}

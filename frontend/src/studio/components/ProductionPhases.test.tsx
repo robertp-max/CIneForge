@@ -657,7 +657,12 @@ describe('ProductionPhases', () => {
       />,
     )
 
-    expect(await screen.findByText(/Script and Narrative Development|PHASE 1 · PROTOTYPE DATA/i)).toBeTruthy()
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Script and Narrative Development',
+        level: 3,
+      }),
+    ).toBeTruthy()
     expect(screen.getAllByText('The Transfiguration').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Jesus leads Peter, James and John/).length).toBeGreaterThan(0)
     expect(screen.getAllByText('All blocking checks passed').length).toBeGreaterThan(0)

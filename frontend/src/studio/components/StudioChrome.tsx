@@ -23,29 +23,26 @@ export function StudioChrome({
     reload,
     animaticOpen,
     setAnimaticOpen,
-    setMessage,
     loadState,
     error,
   } = useStudio()
 
-  // Sites puts Save draft / Preview animatic in the AppShell topbar — register handlers here.
+  // Pages persist through their canonical API actions. The shell only owns preview.
   useEffect(() => {
     setShellTopbarActions({
       canPreview: Boolean(data),
-      saveDraft: () => {
-        setMessage('Draft state is current in the browser session. Server data remains canonical.')
-      },
       previewAnimatic: () => setAnimaticOpen(true),
     })
     return () => setShellTopbarActions(null)
-  }, [data, setAnimaticOpen, setMessage])
-
-  // Keep a11y name for the workspace without painting Sites-unlike chrome.
-  void title
-  void description
+  }, [data, setAnimaticOpen])
 
   return (
-    <section className="studio page sites-studio" aria-busy={busy || loadState === 'loading'}>
+    <section
+      className="studio sites-studio"
+      aria-label={title}
+      aria-description={description}
+      aria-busy={busy || loadState === 'loading'}
+    >
       {loadState === 'loading' ? (
         <div className="loading-block" role="status">
           <strong>Loading planning data…</strong>

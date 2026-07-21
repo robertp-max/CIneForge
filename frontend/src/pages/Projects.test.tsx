@@ -7,6 +7,8 @@ import { Projects } from './Projects'
 vi.mock('../api/client', () => ({
   api: {
     createProjectWorkspace: vi.fn(),
+    listProjects: vi.fn(),
+    listStories: vi.fn(),
   },
 }))
 
@@ -99,5 +101,27 @@ describe('new project workspace', () => {
     const firstKey = vi.mocked(api.createProjectWorkspace).mock.calls[0][0].idempotency_key
     const secondKey = vi.mocked(api.createProjectWorkspace).mock.calls[1][0].idempotency_key
     expect(secondKey).toBe(firstKey)
+  })
+})
+
+describe('project workspace navigation', () => {
+  it('opens a Gold home shortcut directly in the selected project', async () => {
+    vi.mocked(api.listProjects).mockResolvedValue([workspace.project] as never)
+    vi.mocked(api.listStories).mockResolvedValue([])
+    const onOpenProjectPage = vi.fn()
+    const onNavigateStudio = vi.fn()
+
+    render(
+      <Projects
+        currentProjectId="project-1"
+        onOpenProjectPage={onOpenProjectPage}
+        onNavigateStudio={onNavigateStudio}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /Storyboard/ }))
+
+    expect(onOpenProjectPage).toHaveBeenCalledWith('project-1', 'The Test Film', 'storyboard')
+    expect(onNavigateStudio).not.toHaveBeenCalled()
   })
 })

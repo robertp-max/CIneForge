@@ -76,10 +76,11 @@ export function StudioRouter({ page }: { page: PageId }) {
     exports: <ExportsPage />,
     settings: <SettingsPage />,
   }[page]
+  const pageOwnsLayout = !(['overview', 'characters', 'settings'] as PageId[]).includes(page)
 
   return (
     <StudioChrome title={meta.title} description={meta.description}>
-      {content}
+      {pageOwnsLayout ? content : <div className="page">{content}</div>}
     </StudioChrome>
   )
 }

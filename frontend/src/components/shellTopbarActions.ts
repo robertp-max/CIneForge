@@ -1,14 +1,12 @@
 /**
  * Lightweight bridge so studio pages (inside AppShell children) can own
- * Save draft / Preview animatic handlers while the topbar (Sites chrome)
- * renders the matching actions.
+ * Preview animatic handlers while the topbar (Sites chrome) renders the
+ * matching action.
  */
 
 export type ShellTopbarActions = {
-  saveDraft?: () => void
   previewAnimatic?: () => void
   canPreview?: boolean
-  saving?: boolean
 }
 
 let actions: ShellTopbarActions = {}

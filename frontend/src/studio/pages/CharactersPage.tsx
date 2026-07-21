@@ -133,7 +133,7 @@ export function CharactersPage() {
     return () => window.clearTimeout(timer)
   }, [loadReferences])
 
-  const characters = data?.characters ?? []
+  const characters = useMemo(() => data?.characters ?? [], [data?.characters])
   const filteredCharacters = useMemo(
     () => characters.filter((character) => matchesStatusFilter(character.approval_state, statusFilter)),
     [characters, statusFilter],

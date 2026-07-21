@@ -155,6 +155,16 @@ function App() {
     [navigateTo],
   )
 
+  const openProjectPage = useCallback(
+    (projectId: string, name: string, page: PageId) => {
+      if (!isRealProjectId(projectId)) return
+      setSelectedProjectId(projectId)
+      setProjectName(name)
+      navigateTo({ kind: 'studio', projectId, page })
+    },
+    [navigateTo],
+  )
+
   const handleProjectsLoaded = useCallback((projects: Project[]) => {
     setProjectCount(projects.length)
     setSelectedProjectId((currentId) => {
@@ -271,6 +281,7 @@ function App() {
           currentProjectId={selectedProjectId}
           onCreateNew={() => navigateTo({ kind: 'new-project' })}
           onOpenProject={openProject}
+          onOpenProjectPage={openProjectPage}
           onProjectsLoaded={handleProjectsLoaded}
           onNavigateStudio={(page) => {
             if (!isRealProjectId(selectedProjectId)) {

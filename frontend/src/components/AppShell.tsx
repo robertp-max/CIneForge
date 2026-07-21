@@ -35,8 +35,6 @@ type ShellIconName =
   | 'chevron'
   | 'plus'
   | 'image'
-  | 'search'
-  | 'bell'
   | 'menu'
   | 'folder'
   | 'arrow'
@@ -158,17 +156,6 @@ function Icon({ name, size = 18 }: { name: ShellIconName; size?: number }) {
         <path d="m21 15-5-5L5 20" />
       </>
     ),
-    search: (
-      <>
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-4-4" />
-      </>
-    ),
-    bell: (
-      <>
-        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
-      </>
-    ),
     menu: <path d="M4 7h16M4 12h16M4 17h16" />,
     folder: <path d="M3 6h7l2 2h9v11H3z" />,
     arrow: <path d="M5 12h14M14 7l5 5-5 5" />,
@@ -249,6 +236,19 @@ export function AppShell({
   }, [mobile, profile, projectMenu, runtime])
 
   useEffect(() => {
+    if (!projectMenu && !profile && !runtime) return
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[data-shell-popover-root]')) return
+      setProjectMenu(false)
+      setProfile(false)
+      setRuntime(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [profile, projectMenu, runtime])
+
+  useEffect(() => {
     const breakpoint = window.matchMedia('(max-width: 900px)')
     const closeAtDesktop = () => {
       if (!breakpoint.matches) setMobile(false)
@@ -275,7 +275,7 @@ export function AppShell({
   }
 
   return (
-    <main className="app-shell">
+    <div className="app-shell">
       <a className="skip-link sr-only" href="#main-content">
         Skip to main content
       </a>
@@ -307,12 +307,13 @@ export function AppShell({
           </nav>
         </section>
 
-        <div className="project-switcher">
+        <div className="project-switcher" data-shell-popover-root>
           <button
             type="button"
             className="project-switch"
             title={projectId}
             aria-expanded={projectMenu}
+            aria-haspopup="menu"
             onClick={() => {
               setProjectMenu((open) => !open)
               setProfile(false)
@@ -381,7 +382,7 @@ export function AppShell({
           </nav>
         </section>
 
-        <div className="sidebar-bottom">
+        <div className="sidebar-bottom" data-shell-popover-root>
           <button
             type="button"
             className={isStudio && activePage === 'settings' ? 'active' : ''}
@@ -394,6 +395,9 @@ export function AppShell({
           <button
             type="button"
             className="gpu"
+            aria-expanded={runtime}
+            aria-controls="runtime-preview-popover"
+            aria-haspopup="dialog"
             onClick={() => {
               setRuntime((open) => !open)
               setProfile(false)
@@ -407,7 +411,12 @@ export function AppShell({
             </span>
           </button>
           {runtime ? (
-            <div className="popover runtime-pop">
+            <div
+              id="runtime-preview-popover"
+              className="popover runtime-pop"
+              role="dialog"
+              aria-label="Preview runtime status"
+            >
               <b>Preview boundary</b>
               <p>
                 This local shell never submits a workflow, downloads a model, or starts rendering.
@@ -441,6 +450,9 @@ export function AppShell({
           <button
             type="button"
             className="user"
+            aria-expanded={profile}
+            aria-controls="profile-popover"
+            aria-haspopup="menu"
             onClick={() => {
               setProfile((open) => !open)
               setRuntime(false)
@@ -455,10 +467,10 @@ export function AppShell({
             <Icon name="more" size={18} />
           </button>
           {profile ? (
-            <div className="popover profile-pop">
+            <div id="profile-popover" className="popover profile-pop" role="menu">
               <b>Robert Padilla</b>
               <small>Project owner · Producer</small>
-              <button type="button" onClick={() => goPage('settings')}>
+              <button type="button" role="menuitem" onClick={() => goPage('settings')}>
                 Project settings
               </button>
             </div>
@@ -521,11 +533,8 @@ export function AppShell({
               ) : null}
             </div>
           </div>
-          {/* Sites top-actions: search · bell · Save draft · Preview animatic */}
+          {/* Only real actions are presented; project fields persist through their API forms. */}
           <div className="top-actions">
-            <button type="button" className="icon-button" aria-label="Search project">
-              <Icon name="search" size={16} />
-            </button>
             {view === 'projects' ? (
               <button type="button" className="btn primary" onClick={onCreateProject}>
                 <Icon name="plus" size={15} />
@@ -533,38 +542,24 @@ export function AppShell({
               </button>
             ) : null}
             {isStudio ? (
-              <>
-                <button type="button" className="icon-button has-dot" aria-label="Open notifications">
-                  <Icon name="bell" size={16} />
-                  <i />
-                </button>
-                <button
-                  type="button"
-                  className="btn secondary"
-                  disabled={shellActions.saving}
-                  onClick={() => shellActions.saveDraft?.()}
-                >
-                  <span>{shellActions.saving ? 'Saving…' : 'Save draft'}</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={shellActions.canPreview === false}
-                  title="Timing prototype only — no video rendering"
-                  onClick={() => shellActions.previewAnimatic?.()}
-                >
-                  <Icon name="play" size={15} />
-                  <span>Preview animatic</span>
-                </button>
-              </>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={shellActions.canPreview === false}
+                title="Timing prototype only — no video rendering"
+                onClick={() => shellActions.previewAnimatic?.()}
+              >
+                <Icon name="play" size={15} />
+                <span>Preview animatic</span>
+              </button>
             ) : null}
           </div>
         </header>
 
-        <div id="main-content" className="page-scroll" tabIndex={-1}>
+        <main id="main-content" className="page-scroll" tabIndex={-1}>
           {children}
-        </div>
+        </main>
       </section>
-    </main>
+    </div>
   )
 }

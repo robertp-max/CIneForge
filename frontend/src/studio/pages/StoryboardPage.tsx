@@ -720,7 +720,7 @@ export function StoryboardPage() {
   } = useStudio()
   const [runtimeCatalog, setRuntimeCatalog] = useState<RuntimeCatalog | null>(null)
   const [filter, setFilter] = useState<ShotFilter>('all')
-  const [expandedChapters, setExpandedChapters] = useState<string[]>([])
+  const [collapsedChapterIds, setCollapsedChapterIds] = useState<string[]>([])
   const [inspectorOpen, setInspectorOpen] = useState(true)
 
   useEffect(() => {
@@ -734,11 +734,6 @@ export function StoryboardPage() {
       active = false
     }
   }, [])
-
-  useEffect(() => {
-    if (!data?.chapters.length) return
-    setExpandedChapters((prev) => (prev.length ? prev : data.chapters.map((c) => c.id)))
-  }, [data?.chapters])
 
   if (!data) return null
 
@@ -864,7 +859,7 @@ export function StoryboardPage() {
             />
           ) : (
             data.chapters.map((chapter, index) => {
-              const open = expandedChapters.includes(chapter.id)
+              const open = !collapsedChapterIds.includes(chapter.id)
               const chapterShots = chapter.scenes.flatMap((s) => s.shots)
               const visibleShotCount = chapterShots.filter((s) => matchesShotFilter(s, filter)).length
               return (
@@ -874,8 +869,8 @@ export function StoryboardPage() {
                     className="chapter-bar"
                     aria-expanded={open}
                     onClick={() =>
-                      setExpandedChapters((ids) =>
-                        open ? ids.filter((id) => id !== chapter.id) : [...ids, chapter.id],
+                      setCollapsedChapterIds((ids) =>
+                        open ? [...ids, chapter.id] : ids.filter((id) => id !== chapter.id),
                       )
                     }
                   >
