@@ -109,6 +109,48 @@ def _assert_no_shell_registration(options: dict[str, Any] | None) -> None:
                 )
 
 
+def _qwen_descriptor(cfg: Settings) -> ProviderDescriptor:
+    """Factual Qwen availability from bounded local discovery — never invent adapters.
+
+    Voice/TTS Qwen runtime may already be present on the workstation. When discovery
+    finds the approved local install, report available for catalog status. Planning
+    task execution still uses mock/OpenAI unless a planning Qwen adapter is registered.
+    """
+    try:
+        from backend.app.services.runtime.discovery import discover_qwen_runtime
+
+        evidence = discover_qwen_runtime()
+    except Exception:  # pragma: no cover - defensive isolation
+        evidence = None
+
+    if evidence is not None and evidence.available:
+        detail = evidence.message or "Configured local Qwen runtime discovered (no model load)."
+        return ProviderDescriptor(
+            provider_identifier="qwen",
+            display_name="Qwen",
+            availability_status=ProviderAvailability.available,
+            execution_mode="local",
+            privacy_classification="local",
+            capabilities=("voice", "tts"),
+            detail=detail,
+        )
+
+    message = (
+        evidence.message
+        if evidence is not None and evidence.message
+        else "Qwen local runtime not configured or incomplete; voice discovery will report separately"
+    )
+    return ProviderDescriptor(
+        provider_identifier="qwen",
+        display_name="Qwen",
+        availability_status=ProviderAvailability.not_configured,
+        execution_mode="disabled",
+        privacy_classification="local",
+        capabilities=tuple(),
+        detail=message,
+    )
+
+
 def describe_providers(settings: Settings | None = None) -> list[ProviderDescriptor]:
     """Catalog of planning providers with explicit availability."""
     cfg = settings or get_settings()
@@ -160,15 +202,7 @@ def describe_providers(settings: Settings | None = None) -> list[ProviderDescrip
             capabilities=tuple(),
             detail="Not implemented in Storyboard Phase 1",
         ),
-        ProviderDescriptor(
-            provider_identifier="qwen",
-            display_name="Qwen",
-            availability_status=ProviderAvailability.not_implemented,
-            execution_mode="disabled",
-            privacy_classification="hosted",
-            capabilities=tuple(),
-            detail="Not implemented in Storyboard Phase 1",
-        ),
+        _qwen_descriptor(cfg),
         ProviderDescriptor(
             provider_identifier="local_cli",
             display_name="Local CLI",
