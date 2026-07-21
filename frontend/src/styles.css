@@ -2606,7 +2606,8 @@ tbody tr {
 .status-pill[data-status='installed'],
 .status-pill[data-status='connected'],
 .status-pill[data-status='complete'],
-.status-pill[data-status='verified'] {
+.status-pill[data-status='verified'],
+.status-pill[data-status='available'] {
   background: rgba(88, 221, 161, 0.12);
   border-color: rgba(88, 221, 161, 0.4);
   color: var(--mint);
@@ -2625,7 +2626,9 @@ tbody tr {
 .status-pill[data-status='missing'],
 .status-pill[data-status='not installed'],
 .status-pill[data-status='error'],
-.status-pill[data-status='not configured'] {
+.status-pill[data-status='not configured'],
+.status-pill[data-status='unavailable'],
+.status-pill[data-status='not approved'] {
   background: rgba(241, 120, 116, 0.12);
   border-color: rgba(241, 120, 116, 0.4);
   color: #f17874;
@@ -2633,9 +2636,69 @@ tbody tr {
 .status-pill[data-status='draft'],
 .status-pill[data-status='auto'],
 .status-pill[data-status='local'],
-.status-pill[data-status='disabled'] {
+.status-pill[data-status='disabled'],
+.status-pill[data-status='unknown'],
+.status-pill[data-status='not reported'] {
   background: #25292d;
   color: #9aa3ad;
+}
+
+/* Voices page — factual provider discovery strip (no previews). */
+.voice-provider-discovery {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  margin-bottom: 10px;
+  padding: 8px 12px;
+}
+.voice-provider-discovery > header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.voice-provider-discovery > header .eyebrow {
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.voice-provider-discovery > header small {
+  font-size: 8px;
+  color: #858b92;
+}
+.voice-provider-discovery-empty {
+  margin: 0;
+  font-size: 9px;
+  color: #858b92;
+}
+.voice-provider-discovery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.voice-provider-discovery-list > li {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.voice-provider-discovery-list > li > b {
+  font-size: 10px;
+  font-weight: 700;
+  color: #d7dbe0;
+}
+.voice-provider-discovery-list > li > small {
+  font-size: 8px;
+  color: #858b92;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn {
@@ -3277,15 +3340,26 @@ tbody tr {
   border-radius: 10px;
   padding: 10px;
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   text-align: left;
   color: var(--text);
+  min-width: 0;
+  cursor: pointer;
 }
 .provider-grid > button:hover,
 .provider-grid > button.selected {
   border-color: rgba(88, 221, 161, 0.45);
+}
+.provider-grid > button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.provider-grid > button > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
 }
 .provider-logo {
   width: 28px;
@@ -3297,6 +3371,8 @@ tbody tr {
   color: #cfd2d5;
   font-weight: 700;
   font-size: 0.85rem;
+  grid-row: 1 / 3;
+  flex-shrink: 0;
 }
 .provider-0 {
   color: #76d9ad;
@@ -3325,6 +3401,9 @@ tbody tr {
 .provider-grid b,
 .provider-grid small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .provider-grid b {
   font-size: 0.78rem;
@@ -3334,14 +3413,175 @@ tbody tr {
   color: var(--muted);
   margin-top: 2px;
 }
+/* Live RoutingPage tiles: logo | name+note · pill under name | chevron */
 .provider-grid .status-pill {
   grid-column: 2;
   justify-self: start;
+  max-width: 100%;
 }
 .provider-grid svg:last-child {
   grid-row: 1 / 3;
   grid-column: 3;
+  align-self: center;
   color: var(--dim);
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+   T7 voice / routing ops surfaces
+   - discovery strip (compact status pills)
+   - Parler optional-provider message (muted warning)
+   - demo offline routing banner
+   Do not touch .metric-grid.eight or 232px shell rules.
+   ------------------------------------------------------------------------- */
+
+/* Compact row of factual provider status pills (Voices discovery / routing ops). */
+.provider-discovery,
+.voice-provider-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-height: 40px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #17191b;
+  color: var(--text);
+}
+.provider-discovery > .eyebrow,
+.voice-provider-status > .eyebrow,
+.provider-discovery-label,
+.voice-provider-status-label {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.provider-discovery .status-pill,
+.voice-provider-status .status-pill {
+  flex: 0 1 auto;
+  max-width: 100%;
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.provider-discovery > small,
+.voice-provider-status > small,
+.provider-discovery-note,
+.voice-provider-status-note {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--dim);
+  line-height: 1.35;
+}
+.provider-discovery-item,
+.voice-provider-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.provider-discovery-item > b,
+.voice-provider-status-item > b {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: #cfd4d8;
+  white-space: nowrap;
+}
+
+/* Exact Parler unavailable message — muted amber warning, not a red error wall. */
+.parler-unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 184, 92, 0.22);
+  background: rgba(239, 184, 92, 0.06);
+  color: #b8a888;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.parler-unavailable svg,
+.parler-unavailable .icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #c4a86a;
+  opacity: 0.85;
+}
+.parler-unavailable b,
+.parler-unavailable strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #d4c09a;
+  font-weight: 650;
+  font-size: 0.78rem;
+}
+
+/* Offline / demo planning banner for Model routing — informational, not error. */
+.demo-routing-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 167, 255, 0.26);
+  background: rgba(120, 167, 255, 0.07);
+  color: #a9c0e6;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.demo-routing-banner svg,
+.demo-routing-banner .icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #8eb0e8;
+}
+.demo-routing-banner b,
+.demo-routing-banner strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #c5d6f2;
+  font-weight: 650;
+  font-size: 0.8rem;
+}
+.demo-routing-banner small {
+  display: block;
+  color: #7f96b8;
+  font-size: 0.74rem;
+  margin-top: 2px;
+}
+.demo-routing-banner button {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  color: #8eb0e8;
+  font-size: 0.74rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.demo-routing-banner button:hover {
+  color: #c5d6f2;
+}
+
+/* Discovery / availability neutrals used on voice + routing ops pills */
+.status-pill[data-status='unknown'],
+.status-pill[data-status='unavailable'],
+.status-pill[data-status='not available'],
+.status-pill[data-status='offline'] {
+  background: #25292d;
+  border-color: #383c41;
+  color: #9aa3ad;
 }
 
 .routing-layout {

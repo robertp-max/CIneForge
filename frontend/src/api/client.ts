@@ -235,6 +235,9 @@ export const VOICE_SETUP_MODE_LABELS: Record<VoiceSetupMode, string> = {
   user_provided_consented: 'User-provided, consented',
 }
 
+/** Exact unavailable message required for Parler (optional local provider). */
+export const PARLER_UNAVAILABLE_MESSAGE = 'Parler-TTS is not installed or approved.'
+
 export type Voice = {
   id: string
   story_id?: string
@@ -823,6 +826,48 @@ export type VoicePreviewJob = {
   message: string | null
 }
 
+/** Voice routing actions from POST /voices/routing/recommend — advisory only. */
+export type VoiceRoutingAction =
+  | 'none'
+  | 'recommend_qwen'
+  | 'keep_native'
+  | 'keep_approved'
+
+export type VoiceRoutingRequestPayload = {
+  story_id: string
+  model_variant_id?: string | null
+  generation_family?: string | null
+  /** When true, backend returns keep_approved and never suggests overwrite. */
+  existing_assignment_approved?: boolean
+  existing_provider?: string | null
+}
+
+export type VoiceRoutingRecommendation = {
+  action: VoiceRoutingAction
+  recommend_qwen: boolean
+  rationale: string
+  native_voice_capability: string
+  blocked_reason: string | null
+  provider_suggestion: string | null
+}
+
+/** Factual discovery evidence for a single voice provider — never loads models. */
+export type VoiceProviderEvidence = {
+  provider: string
+  capability: string
+  status: string
+  evidence_level: string
+  evidence_source: string | null
+  details: Record<string, unknown>
+  message: string | null
+  checked_at: string | null
+}
+
+export type VoiceProviderDiscoveryResponse = {
+  providers: VoiceProviderEvidence[]
+  notes: string[]
+}
+
 export type ShotUpdatePayload = {
   order_index: number
   title: string
@@ -1398,6 +1443,9 @@ export const api = {
       { method: 'DELETE' },
     ),
   listVoiceProfiles: (storyId: string) => optionalRequest<Voice[]>(`/voices/stories/${storyId}/profiles`),
+  /** Factual provider discovery without loading models or downloading. */
+  listVoiceProviderDiscovery: () =>
+    optionalRequest<VoiceProviderDiscoveryResponse>('/voices/providers/discovery'),
   listVoiceRecipes: (voiceId: string) =>
     optionalRequest<VoiceRecipe[]>(`/voices/profiles/${voiceId}/recipes`),
   createVoiceRecipe: (voiceId: string, payload: VoiceRecipeCreatePayload) =>
@@ -1427,6 +1475,16 @@ export const api = {
       body: JSON.stringify({ preview_text: previewText, owner: 'cineforge-storyboard-studio' }),
     }),
   getVoicePreviewJob: (jobId: string) => optionalRequest<VoicePreviewJob>(`/voices/preview-jobs/${jobId}`),
+
+  /**
+   * Advisory voice routing recommendation from generation-model native-speech capability.
+   * Never mutates approved assignments (pass existing_assignment_approved when locked).
+   */
+  recommendVoiceRouting: (payload: VoiceRoutingRequestPayload) =>
+    optionalRequest<VoiceRoutingRecommendation>('/voices/routing/recommend', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   listVoiceSourceAssets: (projectId: string) =>
     optionalRequest<PlanningMediaAssetList>(`/assets/projects/${projectId}?kind=voice_source`),

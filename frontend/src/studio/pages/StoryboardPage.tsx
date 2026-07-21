@@ -133,6 +133,7 @@ function ShotInspector({
   onRequestChanges,
   onClose,
   onOpenWorkflows,
+  onOpenVoices,
 }: {
   shot: Shot
   shotCodeLabel: string
@@ -151,6 +152,7 @@ function ShotInspector({
   onRequestChanges: () => void
   onClose: () => void
   onOpenWorkflows: () => void
+  onOpenVoices: () => void
 }) {
   const [tab, setTab] = useState<InspectorTab>('details')
   const [draft, setDraft] = useState(shot)
@@ -426,6 +428,12 @@ function ShotInspector({
   const fps = protoShot?.fps || 24
   const seedPolicy = protoShot?.seedPolicy || 'Fixed'
   const risk = protoShot?.risk || (draft.approval_state === 'blocked' ? 'Blocked' : 'Ready')
+  const assignedVoice = voices.find((v) => v.id === draft.narration_voice_profile_id)
+  const voiceAssignmentHint = assignedVoice
+    ? `Assigned: ${assignedVoice.name}`
+    : draft.narration_voice_profile_id
+      ? `Assigned voice id ${draft.narration_voice_profile_id} is not in the current voice list.`
+      : 'No voice profile is assigned to this shot.'
 
   return (
     <>
@@ -567,6 +575,9 @@ function ShotInspector({
           </label>
           <label>
             Voice profile
+            <p className="form-hint" role="status">
+              {voiceAssignmentHint}
+            </p>
             <select
               disabled={disabled}
               title={fieldsDisabledReason}
@@ -583,6 +594,9 @@ function ShotInspector({
               ))}
             </select>
           </label>
+          <Button type="button" variant="quiet" onClick={onOpenVoices}>
+            Open Voices
+          </Button>
           <label>
             Continuity source
             <input
@@ -1735,6 +1749,7 @@ export function StoryboardPage() {
               onRequestChanges={() => void requestChanges()}
               onClose={() => setInspector(false)}
               onOpenWorkflows={() => navigate('workflows')}
+              onOpenVoices={() => navigate('voices')}
             />
           </aside>
         ) : (

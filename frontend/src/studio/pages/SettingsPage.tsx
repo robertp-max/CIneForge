@@ -845,9 +845,11 @@ export function SettingsPage() {
             <div className="safety-note">
               <Icon name="lock" />
               <p>
-                Rendering, model downloads, voice cloning, and external execution remain unavailable
-                in Phase A planning regardless of these preferences. Saves force{' '}
+                Rendering remains disabled in Phase A regardless of these preferences; saves force{' '}
                 <code>allow_model_download=false</code> and <code>allow_rendering=false</code>.
+                Voice previews require an explicit action—planning and approval never auto-generate
+                audio. Parler is optional; when absent the UI shows exactly “Parler-TTS is not
+                installed or approved.”
               </p>
             </div>
           </div>
