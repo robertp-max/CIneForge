@@ -199,6 +199,106 @@ def test_queue_service_invalid_transition_rolls_back(db_session):
     assert audit_logs(db_session) == []
 
 
+def test_bounded_retry_creates_new_immutable_job_and_is_idempotent(db_session):
+    job = create_comfy_job(db_session, QueueStatus.runtime_failed)
+    job.attempt_count = 1
+    original_run = db_session.get(WorkflowRun, job.workflow_run_id)
+    assert original_run is not None
+    original_run.status = QueueStatus.runtime_failed.value
+    db_session.commit()
+
+    service = QueueService()
+    retry = service.schedule_bounded_retry(
+        db_session,
+        job.id,
+        max_attempts=2,
+        reason="transient runtime disconnect",
+    )
+
+    assert retry is not None
+    assert retry.id != job.id
+    assert retry.workflow_run_id != job.workflow_run_id
+    assert retry.status == QueueStatus.pending
+    assert retry.attempt_count == 1
+    retry_run = db_session.get(WorkflowRun, retry.workflow_run_id)
+    assert retry_run is not None
+    assert retry_run.patched_workflow_json == original_run.patched_workflow_json
+    assert retry_run.patch_payload_json == original_run.patch_payload_json
+    assert retry.recovery_metadata["retry_of_job_id"] == str(job.id)
+
+    persisted_original = db_session.get(ComfyJob, job.id)
+    assert persisted_original is not None
+    assert persisted_original.status == QueueStatus.runtime_failed
+    assert persisted_original.recovery_metadata["retry_job_id"] == str(retry.id)
+
+    same_retry = service.schedule_bounded_retry(
+        db_session,
+        job.id,
+        max_attempts=2,
+        reason="duplicate scheduler call",
+    )
+    assert same_retry is not None
+    assert same_retry.id == retry.id
+    assert len(db_session.scalars(select(ComfyJob)).all()) == 2
+
+
+def test_bounded_retry_stops_at_attempt_limit_and_never_retries_oom(db_session):
+    exhausted = create_comfy_job(db_session, QueueStatus.runtime_failed)
+    exhausted.attempt_count = 2
+    oom = create_comfy_job(db_session, QueueStatus.oom)
+    oom.attempt_count = 1
+    db_session.commit()
+    service = QueueService()
+
+    assert service.schedule_bounded_retry(
+        db_session,
+        exhausted.id,
+        max_attempts=2,
+        reason="attempt limit",
+    ) is None
+    assert service.schedule_bounded_retry(
+        db_session,
+        oom.id,
+        max_attempts=3,
+        reason="out of memory",
+    ) is None
+    assert len(audit_logs_for_action(db_session, "worker_retry_exhausted")) == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (QueueStatus.validating, QueueStatus.interrupted),
+        (QueueStatus.submitted, QueueStatus.interrupted),
+        (QueueStatus.running, QueueStatus.interrupted),
+        (QueueStatus.collecting_outputs, QueueStatus.runtime_failed),
+    ],
+)
+def test_stale_active_recovery_terminalizes_orphan_and_releases_lease(db_session, status, expected):
+    job = create_comfy_job(db_session, status)
+    job.worker_id = "dead-worker"
+    job.attempt_count = 1
+    job.heartbeat_at = datetime.now(UTC) - timedelta(hours=2)
+    lease = bind_lease(db_session, job, worker_id="dead-worker")
+    db_session.commit()
+
+    recovered = QueueService().recover_stale_active_jobs(
+        db_session,
+        datetime.now(UTC) - timedelta(hours=1),
+    )
+
+    db_session.expire_all()
+    persisted = db_session.get(ComfyJob, job.id)
+    persisted_lease = db_session.get(GpuResourceLease, lease.id)
+    assert [item.id for item in recovered] == [job.id]
+    assert persisted is not None
+    assert persisted.status == expected
+    assert persisted.completed_at is not None
+    assert persisted.recovery_metadata["stale_active_recovered"] is True
+    assert persisted_lease is not None
+    assert persisted_lease.status == "released"
+
+
 def test_queue_transition_writes_audit_log(db_session):
     job = create_comfy_job(db_session)
 

@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -147,6 +149,35 @@ def test_output_collector_missing_outputs_marks_postprocess_failed_and_releases_
     assert persisted_lease.status == "released"
     assert list(db_session.scalars(select(FileOutput)).all()) == []
     assert list(db_session.scalars(select(GeneratedAsset)).all()) == []
+
+
+def test_output_collector_rejects_stale_same_prefix_file(tmp_path: Path, db_session):
+    output_root = tmp_path / "comfy-output"
+    project_dir = output_root / "Project_A"
+    project_dir.mkdir(parents=True)
+    stale_output = project_dir / "run_01_00001_.png"
+    stale_output.write_bytes(b"stale-output")
+    stale_timestamp = (datetime.now(UTC) - timedelta(hours=1)).timestamp()
+    os.utime(stale_output, (stale_timestamp, stale_timestamp))
+    settings = Settings(comfyui_output_root=output_root, storage_root=tmp_path / "storage")
+    job = create_collecting_job(db_session)
+    job.submitted_at = datetime.now(UTC)
+    db_session.commit()
+
+    records = OutputCollector(settings).collect_for_job(
+        db_session,
+        job.id,
+        "Project A",
+        "run 01",
+        worker_id="worker-1",
+        probe=False,
+    )
+
+    persisted = db_session.get(ComfyJob, job.id)
+    assert records == []
+    assert persisted is not None
+    assert persisted.status == QueueStatus.postprocess_failed
+    assert list(db_session.scalars(select(FileOutput)).all()) == []
 
 
 def test_output_collector_rejects_wrong_job_state(tmp_path: Path, db_session):

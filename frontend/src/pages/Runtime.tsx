@@ -21,6 +21,7 @@ import {
   type LocalReadinessSummary,
   type LocalRuntimeCatalog,
   type LocalRuntimeEvidence,
+  type LocalRuntimeLiveStatus,
   type LocalSafeBoundaryReport,
 } from '../api/client'
 import { ErrorNotice } from '../components/Cards'
@@ -30,9 +31,9 @@ import { StatusBadge } from '../components/StatusBadge'
 
 const disabledActions = [
   ['Public submit prompt', 'User-facing /prompt submission is not exposed by the API or UI.'],
-  ['WebSocket monitor', 'Progress streams open after prompt submission is controlled.'],
-  ['Output collection', 'History and output reads remain blocked in this slice.'],
-  ['FFmpeg assembly', 'Assembly is planned after output collection and validation exist.'],
+  ['Worker WebSocket monitor', 'Implemented for controlled worker-owned jobs; unavailable to public clients.'],
+  ['Managed output collection', 'Implemented for worker-owned jobs and restricted to the configured output root.'],
+  ['FFmpeg execution', 'Implemented for persisted allowlisted plans; disabled until the FFmpeg operator gate is enabled.'],
 ]
 
 const READINESS_REASON_LIMIT = 3
@@ -190,6 +191,11 @@ function ReadinessRollupPanel({ report, title, noun }: { report: ReadinessReport
 
 export function Runtime() {
   const [localCatalog, setLocalCatalog] = useState<LocalRuntimeCatalog | null>(null)
+  const [localRuntimeStatus, setLocalRuntimeStatus] = useState<LocalRuntimeLiveStatus | null>(null)
+  const [runtimeRequestedBy, setRuntimeRequestedBy] = useState('local-operator')
+  const [runtimeActionAcknowledged, setRuntimeActionAcknowledged] = useState(false)
+  const [runtimeAction, setRuntimeAction] = useState<'probe' | 'start' | 'restart' | 'stop' | null>(null)
+  const [runtimeMessage, setRuntimeMessage] = useState<string | null>(null)
   const [localPresets, setLocalPresets] = useState<LocalPreset[]>([])
   const [localPresetReadiness, setLocalPresetReadiness] = useState<LocalPresetReadinessReport | null>(null)
   const [localArchetypes, setLocalArchetypes] = useState<LocalArchetype[]>([])
@@ -222,6 +228,7 @@ export function Runtime() {
       try {
         const [
           catalog,
+          runtimeStatus,
           presets,
           presetReadiness,
           archetypes,
@@ -239,6 +246,7 @@ export function Runtime() {
           recipes,
         ] = await Promise.all([
           api.localRuntimeCatalog(),
+          api.localRuntimeLiveStatus(),
           api.listLocalPresets(),
           api.listLocalPresetReadiness(),
           api.listLocalArchetypes(),
@@ -257,6 +265,7 @@ export function Runtime() {
         ])
         if (!cancelled) {
           setLocalCatalog(catalog)
+          setLocalRuntimeStatus(runtimeStatus)
           setLocalPresets(presets)
           setLocalPresetReadiness(presetReadiness)
           setLocalArchetypes(archetypes)
@@ -330,45 +339,157 @@ export function Runtime() {
     }
   }
 
+  async function handleRuntimeAction(action: 'probe' | 'start' | 'restart' | 'stop') {
+    setError(null)
+    setRuntimeMessage(null)
+    if (!runtimeActionAcknowledged) {
+      setError('Acknowledge the live local-runtime action before continuing.')
+      return
+    }
+    if (action !== 'probe' && !runtimeRequestedBy.trim()) {
+      setError('Requested-by is required for runtime mutation audit context.')
+      return
+    }
+    setRuntimeAction(action)
+    try {
+      if (action === 'probe') {
+        const status = await api.probeLocalRuntime()
+        setLocalRuntimeStatus(status)
+        setRuntimeMessage(status.reachable ? 'ComfyUI probe succeeded.' : `ComfyUI probe completed: ${status.detail}`)
+      } else {
+        const response =
+          action === 'start'
+            ? await api.startLocalRuntime(runtimeRequestedBy.trim())
+            : action === 'restart'
+              ? await api.restartLocalRuntime(runtimeRequestedBy.trim())
+              : await api.stopLocalRuntime(runtimeRequestedBy.trim())
+        setLocalRuntimeStatus(await api.localRuntimeLiveStatus())
+        setRuntimeMessage(`${response.action} request completed for ${response.requested_by}.`)
+      }
+      setRuntimeActionAcknowledged(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Unable to ${action} the local runtime.`)
+    } finally {
+      setRuntimeAction(null)
+    }
+  }
+
   return (
     <div className="page">
       <PageHeader
         eyebrow="Runtime"
         title="ComfyUI readiness boundary"
-        description="Read-only local readiness metadata is loaded without automatic ComfyUI, GPU, object_info, phase, FFmpeg execution, or live telemetry probes."
+        description="Readiness loads passively. Live probes and owned ComfyUI process changes require explicit acknowledgement and remain default-off."
       />
 
       {error ? <ErrorNotice message={error} /> : null}
+      {runtimeMessage ? <p className="success-notice">{runtimeMessage}</p> : null}
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Local ComfyUI control</h2>
+          <StatusBadge
+            status={
+              localRuntimeStatus?.reachable
+                ? 'ready'
+                : localRuntimeStatus?.owned_process
+                  ? 'starting'
+                  : localRuntimeStatus?.configured
+                    ? 'stopped'
+                    : 'not_configured'
+            }
+          />
+        </div>
+        <p>{localRuntimeStatus?.detail ?? 'Loading passive local runtime configuration and ownership state…'}</p>
+        <div className="metadata-grid">
+          <span>Base URL: {localRuntimeStatus?.base_url ?? 'loading'}</span>
+          <span>Owned process: {localRuntimeStatus ? String(localRuntimeStatus.owned_process) : 'loading'}</span>
+          <span>PID: {localRuntimeStatus?.pid ?? '—'}</span>
+          <span>Operator gate: {localRuntimeStatus ? String(localRuntimeStatus.hardware_operator_enabled) : 'loading'}</span>
+          <span>Object info ready: {localRuntimeStatus ? String(localRuntimeStatus.object_info_ready) : 'not probed'}</span>
+        </div>
+        <label>
+          Requested by
+          <input value={runtimeRequestedBy} onChange={(event) => setRuntimeRequestedBy(event.target.value)} />
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={runtimeActionAcknowledged}
+            onChange={(event) => setRuntimeActionAcknowledged(event.target.checked)}
+          />
+          I acknowledge this performs a live localhost probe or mutates only CineForge's pinned, owned ComfyUI process.
+        </label>
+        <div className="button-row">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={!runtimeActionAcknowledged || runtimeAction !== null}
+            onClick={() => void handleRuntimeAction('probe')}
+          >
+            {runtimeAction === 'probe' ? 'Probing…' : 'Probe ComfyUI'}
+          </button>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={
+              !runtimeActionAcknowledged ||
+              runtimeAction !== null ||
+              !localRuntimeStatus?.configured ||
+              !localRuntimeStatus.hardware_operator_enabled
+            }
+            onClick={() => void handleRuntimeAction('start')}
+          >
+            {runtimeAction === 'start' ? 'Starting…' : 'Start pinned runtime'}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={!runtimeActionAcknowledged || runtimeAction !== null || !localRuntimeStatus?.owned_process}
+            onClick={() => void handleRuntimeAction('restart')}
+          >
+            {runtimeAction === 'restart' ? 'Restarting…' : 'Restart owned runtime'}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={!runtimeActionAcknowledged || runtimeAction !== null || !localRuntimeStatus?.owned_process}
+            onClick={() => void handleRuntimeAction('stop')}
+          >
+            {runtimeAction === 'stop' ? 'Stopping…' : 'Stop owned runtime'}
+          </button>
+        </div>
+      </section>
 
       <section className="grid three">
         <StatusCard
           title="ComfyUI Reachability"
           status="approval_required"
           detail="Live ComfyUI reachability probes require explicit operator approval and are not auto-run when this page opens."
-          meta="No /runtime/status or /health/comfy request"
+          meta="Passive ownership state only until Probe is pressed"
         />
         <StatusCard
           title="object_info"
           status="approval_required"
-          detail="ComfyUI object_info inventory is a live probe and remains inert until separately approved by an operator."
-          meta="No /object_info request"
+          detail="ComfyUI object_info inventory is checked only by an acknowledged operator probe or controlled worker."
+          meta="No automatic /object_info request"
         />
         <StatusCard
           title="Runtime Boundary"
           status="local_read_only"
-          detail="This page displays file-backed local readiness metadata only; generation and runtime probes remain outside automatic UI loading."
-          meta="No live runtime telemetry"
+          detail="This page loads configuration and ownership state passively; live runtime and GPU checks remain explicit actions."
+          meta="No automatic live telemetry"
         />
       </section>
 
       <section className="panel">
         <div className="panel-title">
-          <h2>Current Phase</h2>
-          <span>not auto-probed</span>
+          <h2>Automatic probe policy</h2>
+          <span>disabled</span>
         </div>
         <p>
-          Current runtime phase, queue capability, GPU telemetry, and ComfyUI availability are not requested automatically.
-          Live probes require explicit operator approval outside this read-only local readiness page.
+          Queue capability and configured process ownership load without contacting ComfyUI. Reachability and object inventory
+          are requested only after the operator acknowledges and presses Probe; start, restart, and stop remain separately gated.
         </p>
       </section>
 
@@ -969,7 +1090,8 @@ export function Runtime() {
           <span>{ffmpegRecipes.length ? `${ffmpegRecipes.length} recipes` : 'loading'}</span>
         </div>
         <p>
-          Recipes are allowlisted command templates only. The catalog is read-only and does not execute FFmpeg or accept raw command strings.
+          Recipes are allowlisted command templates only. The catalog never accepts raw command strings; execution is available
+          only through the separately acknowledged, default-off operator endpoint.
         </p>
         <div className="disabled-action-grid">
           {ffmpegRecipes.map((recipe) => (
@@ -990,8 +1112,8 @@ export function Runtime() {
 
       <section className="panel">
         <div className="panel-title">
-          <h2>Disabled Runtime Actions</h2>
-          <span>Intentional gates</span>
+          <h2>Runtime capability boundaries</h2>
+          <span>Implemented behind gates</span>
         </div>
         <div className="disabled-action-grid">
           {disabledActions.map(([title, detail]) => (
@@ -1000,7 +1122,7 @@ export function Runtime() {
                 <strong>{title}</strong>
                 <p>{detail}</p>
               </div>
-              <StatusBadge status="disabled" />
+              <StatusBadge status={title === 'Public submit prompt' ? 'disabled' : 'gated'} />
             </article>
           ))}
         </div>

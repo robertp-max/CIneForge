@@ -1,6 +1,7 @@
 import re
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,11 +26,25 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = DEFAULT_DATABASE_URL
     comfyui_base_url: AnyHttpUrl = "http://127.0.0.1:8188"
+    comfyui_root: Path = Field(default=Path("C:/AI/ComfyUI_windows_portable/ComfyUI"))
+    comfyui_python_executable: Path = Field(
+        default=Path("C:/AI/ComfyUI_windows_portable/python_embeded/python.exe")
+    )
+    comfyui_main_script: Path = Field(default=Path("C:/AI/ComfyUI_windows_portable/ComfyUI/main.py"))
     comfyui_output_root: Path = Field(default=Path("C:/AI/ComfyUI_windows_portable/ComfyUI/output"))
+    comfyui_autostart_enabled: bool = False
+    comfyui_startup_timeout_sec: float = Field(default=120.0, ge=5.0, le=900.0)
+    comfyui_request_timeout_sec: float = Field(default=30.0, ge=1.0, le=300.0)
+    comfyui_job_timeout_sec: float = Field(default=1800.0, ge=30.0, le=21_600.0)
+    comfyui_progress_poll_interval_sec: float = Field(default=2.0, ge=0.25, le=30.0)
+    comfyui_max_job_attempts: int = Field(default=2, ge=1, le=5)
+    comfyui_active_stale_after_sec: float = Field(default=90.0, ge=10.0, le=3600.0)
     storage_root: Path = Field(default=DEFAULT_STORAGE_ROOT)
     allow_absolute_input_paths: bool = False
     queue_worker_enabled: bool = False
     hardware_operator_enabled: bool = False
+    ffmpeg_operator_enabled: bool = False
+    ffmpeg_timeout_sec: float = Field(default=900.0, ge=10.0, le=21_600.0)
     m4_hardware_probe_approved: bool = False
     autonomy_mode: str = "scaffold_only"
     cors_allowed_origins: list[str] = [
@@ -67,6 +82,29 @@ class Settings(BaseSettings):
         if not path.is_absolute():
             path = REPO_ROOT / path
         return path.resolve()
+
+    @field_validator(
+        "comfyui_root",
+        "comfyui_python_executable",
+        "comfyui_main_script",
+        "comfyui_output_root",
+        mode="before",
+    )
+    @classmethod
+    def resolve_comfyui_paths(cls, value: str | Path) -> Path:
+        return Path(value).expanduser().resolve()
+
+    @field_validator("comfyui_base_url")
+    @classmethod
+    def validate_comfyui_base_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        parsed = urlparse(str(value))
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError("comfyui_base_url must be a localhost-only http URL")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("comfyui_base_url must not contain credentials, a query, or a fragment")
+        if parsed.path not in {"", "/"}:
+            raise ValueError("comfyui_base_url must not contain a path")
+        return value
 
     @field_validator("database_url", mode="before")
     @classmethod

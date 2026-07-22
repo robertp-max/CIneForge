@@ -1,7 +1,8 @@
-"""Schemas for local offline semantic generation request manifests.
+"""Schemas for local semantic generation manifests and explicit queue handoff.
 
-These contracts persist generation intent and gate evidence only. They never
-represent an execution request or public prompt submission.
+The manifest creation path is offline. Promotion to the durable worker queue
+requires an explicit acknowledgement and a default-off operator gate; no
+public raw prompt-submission contract is exposed.
 """
 
 from __future__ import annotations
@@ -28,7 +29,16 @@ class SemanticCompiledWorkflowMetadata(BaseModel):
 
 class SemanticGenerationRequestManifest(BaseModel):
     request_id: UUID
-    state: Literal["blocked_by_gates", "prepared_offline"]
+    state: Literal[
+        "blocked_by_gates",
+        "prepared_offline",
+        "queued",
+        "submitted",
+        "running",
+        "collecting_outputs",
+        "complete",
+        "failed",
+    ]
     created_at: datetime
     manifest_path: Path
     request: SemanticGenerationRequest
@@ -38,6 +48,11 @@ class SemanticGenerationRequestManifest(BaseModel):
     queue_job_id: UUID | None = None
     workflow_snapshot_path: Path | None = None
     compiled_workflow_metadata: SemanticCompiledWorkflowMetadata | None = None
+
+
+class SemanticQueueRequest(BaseModel):
+    requested_by: str = Field(min_length=1, max_length=200)
+    acknowledge_local_gpu_execution: Literal[True]
 
 
 class StoryboardHandoffRequest(BaseModel):

@@ -1,8 +1,9 @@
 """File-backed offline semantic generation request manifest store.
 
 This store is a safe handoff boundary. It evaluates production gates, records
-request intent and evidence, and may snapshot an admitted workflow offline. It
-never submits to ComfyUI, creates queue/database jobs, probes live runtimes, or
+request intent and evidence, and may snapshot an admitted workflow offline.
+Queue promotion is handled by a separate, explicitly gated service below; the
+manifest store itself never submits to ComfyUI, probes live runtimes, or
 acquires GPU resources.
 """
 
@@ -14,11 +15,12 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.errors import not_found
-from backend.app.db.base import Story, StoryboardVersion
+from backend.app.core.errors import ValidationError, not_found
+from backend.app.db.base import AuditLog, ComfyJob, QueueStatus, Story, StoryboardVersion, WorkflowRun, WorkflowTemplate
 from backend.app.schemas.local_generation import (
     SemanticCompiledWorkflowMetadata,
     SemanticGenerationRequestManifest,
@@ -31,6 +33,7 @@ from backend.app.services.production_planner import calculate_geometry, calculat
 from backend.app.services.local_presets import LocalPresetCatalogService
 from backend.app.services.production_gates import ProductionGateService
 from backend.app.services.workflows.compiler import SemanticWorkflowCompiler
+from backend.app.services.workflows.admission import WorkflowAdmissionService
 from backend.app.services.workflows.registry import WorkflowRegistryService
 from backend.app.services.workflows.template_service import WorkflowTemplateService
 from backend.app.utils.path_safety import (
@@ -144,6 +147,228 @@ class SemanticGenerationRequestManifestStore:
         self.root.mkdir(parents=True, exist_ok=True)
         with self.audit_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, sort_keys=True) + "\n")
+
+    def replace(self, manifest: SemanticGenerationRequestManifest, *, event: dict) -> SemanticGenerationRequestManifest:
+        expected = resolve_inside(self.root, f"{manifest.request_id}.json")
+        if manifest.manifest_path.resolve() != expected.resolve():
+            raise ValidationError("Semantic manifest path does not match its request id")
+        self._write_manifest(manifest)
+        self._append_event(event)
+        return manifest
+
+    def update_execution_state(
+        self,
+        request_id: UUID,
+        *,
+        state: str,
+        queue_job_id: UUID,
+        prompt_id: str | None = None,
+        detail: str | None = None,
+    ) -> SemanticGenerationRequestManifest:
+        """Mirror an owned durable job state into its file-backed manifest."""
+
+        state_map = {
+            "pending": "queued",
+            "reserved": "queued",
+            "validating": "queued",
+            "submitted": "submitted",
+            "running": "running",
+            "collecting_outputs": "collecting_outputs",
+            "complete": "complete",
+            "validation_failed": "failed",
+            "comfy_rejected": "failed",
+            "runtime_failed": "failed",
+            "timeout": "failed",
+            "interrupted": "failed",
+            "oom": "failed",
+            "postprocess_failed": "failed",
+            "canceled": "failed",
+        }
+        manifest_state = state_map.get(state)
+        if manifest_state is None:
+            raise ValidationError(f"Unsupported durable queue state for semantic manifest: {state}")
+        manifest = self.get(request_id)
+        if manifest.queue_job_id not in {None, queue_job_id}:
+            raise ValidationError("Semantic manifest is already bound to a different queue job")
+        updated = manifest.model_copy(
+            update={
+                "state": manifest_state,
+                "queue_job_id": queue_job_id,
+                "generation_submitted": manifest.generation_submitted or state in {
+                    "submitted", "running", "collecting_outputs", "complete"
+                },
+                "comfy_prompt_id": prompt_id or manifest.comfy_prompt_id,
+            }
+        )
+        return self.replace(
+            updated,
+            event={
+                "event": "semantic_generation_execution_state_changed",
+                "request_id": str(request_id),
+                "queue_job_id": str(queue_job_id),
+                "queue_state": state,
+                "manifest_state": manifest_state,
+                "comfy_prompt_id": updated.comfy_prompt_id,
+                "detail": detail,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
+    def bind_retry(
+        self,
+        request_id: UUID,
+        *,
+        previous_job_id: UUID,
+        retry_job_id: UUID,
+        detail: str,
+    ) -> SemanticGenerationRequestManifest:
+        """Rebind a failed semantic request to its immutable retry job."""
+
+        manifest = self.get(request_id)
+        if manifest.queue_job_id != previous_job_id:
+            raise ValidationError("Semantic manifest retry source does not match its current queue job")
+        updated = manifest.model_copy(
+            update={
+                "state": "queued",
+                "queue_job_id": retry_job_id,
+                "comfy_prompt_id": None,
+            }
+        )
+        return self.replace(
+            updated,
+            event={
+                "event": "semantic_generation_retry_bound",
+                "request_id": str(request_id),
+                "previous_queue_job_id": str(previous_job_id),
+                "retry_queue_job_id": str(retry_job_id),
+                "detail": detail,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
+
+class SemanticGenerationQueueService:
+    """Promote a gate-approved semantic manifest into the durable DB queue.
+
+    This is the only semantic-to-queue bridge. It re-evaluates gates, reloads
+    the pinned template and manifest, verifies the immutable snapshot, and
+    creates a pending job. It does not submit to ComfyUI or acquire a GPU lease.
+    """
+
+    def __init__(
+        self,
+        store: SemanticGenerationRequestManifestStore | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.store = store or SemanticGenerationRequestManifestStore(self.settings)
+        self.registry = WorkflowRegistryService(self.settings)
+        self.admission = WorkflowAdmissionService(self.registry)
+
+    def enqueue(self, db: Session, request_id: UUID, *, requested_by: str) -> SemanticGenerationRequestManifest:
+        if not self.settings.queue_worker_enabled:
+            raise ValidationError(
+                "Local semantic queue creation requires CINEFORGE_QUEUE_WORKER_ENABLED=true"
+            )
+        manifest = self.store.get(request_id)
+        if manifest.state == "queued" and manifest.queue_job_id is not None:
+            return manifest
+        if manifest.state != "prepared_offline" or not manifest.gate_report.allowed:
+            raise ValidationError("Only a prepared, gate-approved semantic manifest can enter the live queue")
+        current_gate = self.store.gate_service.evaluate_generation_request(manifest.request)
+        if not current_gate.allowed:
+            raise ValidationError("Semantic generation gates changed after manifest preparation; enqueue is blocked")
+        if manifest.workflow_snapshot_path is None or not manifest.workflow_snapshot_path.is_file():
+            raise ValidationError("Prepared semantic manifest is missing its immutable workflow snapshot")
+        if manifest.compiled_workflow_metadata is None:
+            raise ValidationError("Prepared semantic manifest is missing compiled workflow metadata")
+
+        record = self.registry.require(manifest.request.archetype_id)
+        if record.template_dir is None:
+            raise ValidationError("Admitted workflow registry record has no template directory")
+        template_service = WorkflowTemplateService(snapshot_root=self.settings.workflow_snapshot_root)
+        original_workflow, workflow_manifest = template_service.load_template(Path(record.template_dir))
+        compiled = manifest.compiled_workflow_metadata
+        if workflow_manifest.template_id != compiled.template_id or workflow_manifest.version != compiled.template_version:
+            raise ValidationError("Prepared workflow template identity differs from the admitted registry template")
+        if workflow_manifest.original_workflow_sha256 != compiled.workflow_api_sha256:
+            raise ValidationError("Prepared workflow hash differs from the admitted registry template")
+        patched_workflow = json.loads(manifest.workflow_snapshot_path.read_text(encoding="utf-8"))
+        template_service.validate_runtime_workflow(patched_workflow, workflow_manifest)
+        findings = self.admission.static_workflow_findings_for_workflow(patched_workflow)
+        if findings:
+            raise ValidationError("Prepared workflow failed static admission: " + "; ".join(item.message for item in findings))
+
+        template = db.scalars(
+            select(WorkflowTemplate).where(
+                WorkflowTemplate.name == workflow_manifest.template_id,
+                WorkflowTemplate.version == workflow_manifest.version,
+                WorkflowTemplate.sha256 == workflow_manifest.original_workflow_sha256,
+            )
+        ).first()
+        if template is None:
+            template = WorkflowTemplate(
+                name=workflow_manifest.template_id,
+                version=workflow_manifest.version,
+                workflow_api_json=original_workflow,
+                manifest_json=workflow_manifest.model_dump(mode="json", by_alias=True),
+                sha256=workflow_manifest.original_workflow_sha256,
+                comfyui_commit=workflow_manifest.comfyui_snapshot_ref,
+                custom_node_snapshot={"source": "admitted_local_registry", "archetype_id": record.archetype_id},
+            )
+            db.add(template)
+            db.flush()
+        workflow_run = WorkflowRun(
+            workflow_template_id=template.id,
+            patched_workflow_json=patched_workflow,
+            patch_payload_json={
+                **compiled.patch_payload,
+                "semantic_request_id": str(request_id),
+                "output_prefix": compiled.output_prefix,
+            },
+            status=QueueStatus.pending.value,
+        )
+        db.add(workflow_run)
+        db.flush()
+        job = ComfyJob(
+            workflow_run_id=workflow_run.id,
+            status=QueueStatus.pending,
+            attempt_count=0,
+            recovery_metadata={
+                "semantic_request_id": str(request_id),
+                "requested_by": requested_by,
+                "output_prefix": compiled.output_prefix,
+                "max_attempts": self.settings.comfyui_max_job_attempts,
+            },
+        )
+        db.add(job)
+        db.flush()
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=job.id,
+                action="semantic_manifest_enqueued",
+                details={
+                    "semantic_request_id": str(request_id),
+                    "requested_by": requested_by,
+                    "workflow_sha256": compiled.workflow_api_sha256,
+                    "output_prefix": compiled.output_prefix,
+                },
+            )
+        )
+        db.commit()
+        updated = manifest.model_copy(update={"state": "queued", "queue_job_id": job.id})
+        return self.store.replace(
+            updated,
+            event={
+                "event": "semantic_generation_request_enqueued",
+                "request_id": str(request_id),
+                "queue_job_id": str(job.id),
+                "requested_by": requested_by,
+                "generation_submitted": False,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
 
 class StoryboardSemanticHandoffService:

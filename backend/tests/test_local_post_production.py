@@ -164,7 +164,7 @@ def test_local_post_production_recipe_command_routes_handle_invalid_and_missing_
     assert missing.json()["detail"] == "Post-production recipe command plan not found."
 
 
-def test_local_post_production_routes_do_not_expose_execution_endpoint():
+def test_local_post_production_exposes_only_gated_manifest_execution_endpoints():
     paths = {route.path for route in app.routes}
     method_paths = {
         (method, route.path)
@@ -180,11 +180,20 @@ def test_local_post_production_routes_do_not_expose_execution_endpoint():
 
     assert "/local-post-production/execute" not in paths
     assert "/local-post-production/plans/{plan_id}/execute" not in paths
-    assert not any(
-        path.startswith("/local-post-production/recipe-commands") and "execute" in path
-        for path in paths
-    )
+    assert "/local-post-production/recipe-commands/{plan_id}/execute" not in paths
+    assert "/operator-post-production/plans/{plan_id}/execute" in paths
+    assert "/operator-post-production/recipe-commands/{plan_id}/execute" in paths
     assert {method for method, path in method_paths if path == "/local-post-production/plans"} == {"GET", "POST"}
     assert {method for method, path in method_paths if path == "/local-post-production/plans/{plan_id}"} == {"GET"}
+    assert {
+        method
+        for method, path in method_paths
+        if path == "/operator-post-production/plans/{plan_id}/execute"
+    } == {"POST"}
     assert recipe_command_methods == {"GET"}
+    assert {
+        method
+        for method, path in method_paths
+        if path == "/operator-post-production/recipe-commands/{plan_id}/execute"
+    } == {"POST"}
     assert ("POST", "/local-post-production/recipe-commands") not in method_paths

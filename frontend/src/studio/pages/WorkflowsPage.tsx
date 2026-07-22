@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type RuntimeCatalogWorkflowTemplate, type RuntimeStatus } from '../../api/client'
+import { api, type LocalRuntimeLiveStatus, type RuntimeCatalogWorkflowTemplate } from '../../api/client'
 import { useStudio } from '../StudioState'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
 
@@ -14,7 +14,7 @@ function claimStatus(value: boolean | undefined): string {
 export function WorkflowsPage() {
   const { data, busy, backendStatus } = useStudio()
   const [workflows, setWorkflows] = useState<RuntimeCatalogWorkflowTemplate[] | null>(null)
-  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
+  const [runtime, setRuntime] = useState<LocalRuntimeLiveStatus | null>(null)
   const [available, setAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -28,7 +28,7 @@ export function WorkflowsPage() {
     try {
       const [wf, rt] = await Promise.all([
         api.listRuntimeWorkflowTemplates(),
-        api.runtimeStatus().catch(() => null),
+        api.localRuntimeLiveStatus().catch(() => null),
       ])
       setRuntime(rt)
       if (wf == null) {
@@ -75,10 +75,22 @@ export function WorkflowsPage() {
     workflows?.filter((wf) => !wf.claims.benchmarked || String(wf.benchmark_status).toLowerCase().includes('need'))
       .length ?? 0
 
-  const comfyStatus = String(runtime?.comfyui.status ?? 'unknown')
-  const objectInfoNote = runtime?.object_info.available
-    ? `object_info · ${runtime.object_info.class_count ?? '?'} classes`
-    : 'object_info unavailable'
+  const comfyStatus = runtime
+    ? runtime.live_probe_performed
+      ? runtime.reachable
+        ? 'reachable'
+        : 'unreachable'
+      : runtime.owned_process
+        ? 'owned process recorded · not probed'
+        : runtime.configured
+          ? 'configured · not probed'
+          : 'not configured'
+    : 'unknown'
+  const objectInfoNote = runtime?.live_probe_performed
+    ? runtime.object_info_ready
+      ? 'object_info ready'
+      : 'object_info unavailable'
+    : 'object_info not probed'
 
   return (
     <div className="page">
@@ -216,19 +228,15 @@ export function WorkflowsPage() {
               ) : null}
             </div>
 
-            {runtime && Object.keys(runtime.disabled_actions).length ? (
-              <div className="disabled-action-grid">
-                {Object.entries(runtime.disabled_actions).map(([action, reason]) => (
-                  <div className="disabled-action" key={action}>
-                    <div>
-                      <strong className="mono">{action}</strong>
-                      <p>{reason}</p>
-                    </div>
-                    <span className="status-pill" data-status="disabled">
-                      Disabled
-                    </span>
-                  </div>
-                ))}
+            {runtime ? (
+              <div className="disabled-action">
+                <div>
+                  <strong>Passive runtime status</strong>
+                  <p>{runtime.detail}</p>
+                </div>
+                <span className="status-pill" data-status={runtime.hardware_operator_enabled ? 'review' : 'disabled'}>
+                  {runtime.hardware_operator_enabled ? 'Operator gated' : 'Disabled'}
+                </span>
               </div>
             ) : null}
           </div>
@@ -338,33 +346,33 @@ export function WorkflowsPage() {
           <header className="panel-head">
             <div>
               <h2>Runtime posture</h2>
-              <p>Read-only snapshot. Planning screens never start workers.</p>
+              <p>Passive snapshot. This planning screen does not probe or mutate ComfyUI.</p>
             </div>
           </header>
           <ul className="kv-list">
             <li>
-              <span>Environment</span>
-              <strong>{runtime.environment}</strong>
+              <span>Configured</span>
+              <strong>{runtime.configured ? 'Yes' : 'No'}</strong>
             </li>
             <li>
-              <span>Phase</span>
-              <strong>{runtime.current_phase}</strong>
+              <span>Hardware operator</span>
+              <strong>{runtime.hardware_operator_enabled ? 'Enabled' : 'Disabled'}</strong>
             </li>
             <li>
-              <span>Queue worker</span>
-              <strong>{runtime.queue.worker_enabled ? 'Enabled' : 'Disabled'}</strong>
+              <span>Auto-start</span>
+              <strong>{runtime.autostart_enabled ? 'Enabled' : 'Disabled'}</strong>
             </li>
             <li>
-              <span>Submission</span>
-              <strong>{runtime.queue.submission_enabled ? 'Enabled' : 'Disabled'}</strong>
+              <span>Owned process</span>
+              <strong>{runtime.owned_process ? `PID ${runtime.pid ?? 'unknown'}` : 'None'}</strong>
             </li>
             <li>
               <span>ComfyUI</span>
               <strong>{comfyStatus}</strong>
             </li>
             <li>
-              <span>FFmpeg</span>
-              <strong>{String(runtime.ffmpeg.status ?? 'unknown')}</strong>
+              <span>Live probe</span>
+              <strong>{runtime.live_probe_performed ? 'Performed' : 'Not performed'}</strong>
             </li>
           </ul>
         </section>

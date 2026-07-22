@@ -16,11 +16,11 @@ What works now:
 - Workflow manifest validation and immutable snapshot writing.
 - DB-free local runtime catalog for the selected LTX-2.3 Distilled 1.1 FP8 artifact.
 - Local archetype catalog covering the canonical `CF-IMG-01`..`CF-IMG-05`, `CF-VID-01`..`CF-VID-05`, `CF-UTIL-01`, and `CF-POST-01` set as disabled/gated planning records plus exactly 64 disabled/gated presets.
-- File-backed local job, semantic-generation, post-production, recipe-command, and operator-review manifests that prepare offline evidence without submitting prompts or executing FFmpeg/ffprobe.
+- File-backed local job, semantic-generation, post-production, recipe-command, and operator-review manifests, plus explicit operator-only queue and post-production actions behind independent default-off gates.
 - Path safety helpers.
-- Offline-safe ComfyUI client wrapper.
+- Isolated ComfyUI runtime owner, controlled client/submission adapter, WebSocket progress tracking, history/output collection, provenance hashing, GPU leases, stale-job recovery, and bounded retry handling.
 - `nvidia-smi` parser for benchmark telemetry.
-- FFmpeg/ffprobe validation primitives and structured allowlisted recipe builders; current local APIs persist/read manifests only and do not execute media tools.
+- FFmpeg/ffprobe validation primitives, structured allowlisted recipe builders, and a default-off executor that revalidates persisted argv, input hashes, managed paths, and output probes.
 - Non-executing AI/autonomy schemas and validators.
 - Pytest coverage for the Sprint 1A primitives.
 - Persisted `Project -> Story -> Chapter -> Scene -> Shot` planning hierarchy.
@@ -32,10 +32,10 @@ What does not work yet:
 - No general user-facing or preset-enabled production video generation.
 - No autonomous production execution.
 - No live benchmark ladder evidence, recovery/OOM exercise, or human QA sign-off.
-- No app-level ComfyUI Manager/download/update enforcement yet.
-- A GPU queue-worker skeleton exists (`backend/app/services/queue/worker.py`), but it is not production-enabled for public/preset generation.
+- No ComfyUI Manager/download/update automation; the runtime owner deliberately starts only the configured pinned local runtime and never installs or updates it.
+- The controlled GPU worker is implemented but remains unavailable until queue, hardware-operator, workflow-admission, model, and evidence gates all pass.
 - No image/video generation is triggered by Storyboard Phase A approval.
-- Project and campaign APIs are still planning/scaffold surfaces; `/local-jobs`, `/local-generation/*`, `/local-post-production/*`, and `/local-operator/packets` are file-backed/offline-only unless a separate future operator-approved live runner is added.
+- Project and campaign APIs remain planning/scaffold surfaces. `/local-*` routes remain passive or manifest-only; explicit mutations are separated under `/operator-generation`, `/operator-runtime`, and `/operator-post-production` and fail closed while their gates are disabled.
 
 ## Default video policy (2026-07)
 
@@ -43,7 +43,7 @@ What does not work yet:
 - Source identity: official LTX-2.3 22B Distilled **1.1**; the BF16 source checkpoint is not itself an FP8 artifact.
 - Runtime precision: proven FP8 only via a recorded method (`loader_level`, `converted_derivative`, or `official_artifact`); never silently substitute a non-1.1 FP8 file.
 - M0 records a local full-checkpoint FP8 artifact as `converted_derivative`; CF-VID-01 has passed a minimal local T2V smoke, but admission remains `benchmark_required` until conversion provenance, full benchmark evidence, recovery behavior, and human QA are recorded.
-- `/local-runtime/catalog`, `/local-runtime/local-mvp-readiness`, and fail-closed `/local-runtime/public-readiness` expose the DB-free local model/output/readiness contract; `/local-presets`, `/local-archetypes`, `/local-jobs`, `/local-generation/*`, `/local-operator/approval-templates`, `/local-operator/runbooks`, and `/local-operator/packets` expose the local file-backed ComfyUI lane without submitting generation.
+- `/local-runtime/catalog`, `/local-runtime/local-mvp-readiness`, and fail-closed `/local-runtime/public-readiness` expose the DB-free local model/output/readiness contract. Passive and manifest surfaces stay under `/local-*`; durable queueing and live-tool controls use separate `/operator-*` routes with explicit acknowledgement and default-off backend gates.
 - Outputs are saved under the local ComfyUI output root (`C:\AI\ComfyUI_windows_portable\ComfyUI\output` by default), with one sanitized folder per CineForge project and safe `filename_prefix=<project-folder>/<run-stem>`.
 - Wan and older LTXV lanes are historical or optional secondary evidence, disabled by default.
 - Storyboard approval does not automatically start generation.
@@ -60,21 +60,21 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8010
 ```
 
-### ComfyUI auto-start contract (required, not yet implemented)
+### ComfyUI runtime ownership and optional auto-start
 
-Starting CineForge must also start the explicitly configured external ComfyUI runtime when it is not already reachable. ComfyUI remains an isolated process; CineForge must not import it in-process or treat a listening port alone as generation readiness.
+ComfyUI remains an isolated process; CineForge never imports it in-process or treats a listening port alone as generation readiness. Automatic startup is implemented but disabled by default. It runs only when both `CINEFORGE_COMFYUI_AUTOSTART_ENABLED=true` and `CINEFORGE_HARDWARE_OPERATOR_ENABLED=true`; otherwise startup is passive and performs no ComfyUI network probe.
 
-The startup orchestrator must:
+The runtime owner:
 
-1. Read an administrator-configured ComfyUI working directory and launcher path. On the primary Windows workstation, the current runtime is `C:\AI\ComfyUI_windows_portable` and its launcher is `run_nvidia_gpu.bat`.
-2. Probe `CINEFORGE_COMFYUI_BASE_URL` before launching. If ComfyUI is already healthy, reuse it and do not start a duplicate process.
-3. Start the configured launcher as a hidden background child process with the configured runtime directory as its working directory. AI-authored text must never become a shell command or executable path.
-4. Wait for both the ComfyUI root endpoint and `/object_info` to respond within a bounded timeout. Only then may CineForge report ComfyUI as ready.
+1. Reads explicitly configured ComfyUI root, embedded Python, `main.py`, output root, base URL, and bounded timeouts.
+2. On an approved start, probes the configured localhost URL before launching; a healthy compatible runtime is reused instead of duplicated.
+3. Starts only the fixed Python/`main.py` argv assembled from configuration. AI-authored text never becomes a shell command or executable path.
+4. Waits for both the ComfyUI root endpoint and `/object_info` within a bounded timeout before reporting readiness.
 5. Fail honestly: if startup or `/object_info` validation fails, keep planning available, block image/video generation, and show the exact runtime-readiness blocker. Never display a generated, reviewed, approved, or playable state for media that does not exist.
 6. Record whether CineForge owns the child process. On shutdown, CineForge may stop only the process it started; it must not terminate an independently running ComfyUI instance.
-7. Never install, update, download models, mutate custom nodes, or weaken host security as part of auto-start.
+7. Never installs, updates, or downloads models, mutates custom nodes, or weakens host security as part of startup.
 
-Auto-start does not by itself enable generation. Image generation additionally requires an enabled backend worker/submission path, a validated workflow manifest compatible with live `/object_info`, registered model evidence, output collection, and provenance persistence. Video generation remains a separately gated phase.
+Auto-start does not enable generation. Controlled generation additionally requires the independently enabled queue worker and hardware operator, an admitted workflow/model/profile compatible with live `/object_info`, an exclusive GPU lease, managed output collection, and provenance persistence. Public/autonomous generation and unadmitted image/video archetypes remain disabled.
 
 Run tests:
 
@@ -94,7 +94,7 @@ Run the curated offline-safe validation suite. It runs static boundary checks, s
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py
 ```
 
-Current checkpoint result: `243 passed`, frontend lint/build passed, static boundary validation passed, `git diff --check` passed, and the checkpoint watchdog banner printed; the suite remains no-live/offline-safe.
+Current checkpoint result: `308 passed`, frontend lint/build passed, static boundary validation passed, `git diff --check` passed, and the checkpoint watchdog banner printed; the suite remains no-live/offline-safe.
 
 Checkpoint watchdog helpers. A watchdog/status check is not a stopping point; after reading it, immediately continue the offline-safe loop unless blocked by the live boundary. `--fail-on-dirty` fails on dirty tracked files or source/docs/test/config-like untracked files while ignored local watchdog JSON artifacts remain excluded.
 

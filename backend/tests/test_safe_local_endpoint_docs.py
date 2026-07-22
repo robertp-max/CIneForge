@@ -10,6 +10,7 @@ from backend.app.main import app
 
 REQUIRED_DOCUMENTED_ENDPOINTS = {
     "/local-runtime/catalog",
+    "/local-runtime/live-status",
     "/local-runtime/output-policy",
     "/local-runtime/evidence",
     "/local-runtime/evidence/cf-vid-01-smoke",

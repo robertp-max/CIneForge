@@ -104,6 +104,25 @@ export type LocalRuntimeCatalog = {
   }
 }
 
+export type LocalRuntimeLiveStatus = {
+  configured: boolean
+  reachable: boolean
+  object_info_ready: boolean
+  base_url: string
+  owned_process: boolean
+  pid: number | null
+  hardware_operator_enabled: boolean
+  autostart_enabled: boolean
+  detail: string
+  live_probe_performed: boolean
+}
+
+export type LocalRuntimeActionResponse = {
+  action: 'start' | 'restart' | 'stop'
+  requested_by: string
+  result: Record<string, unknown>
+}
+
 export type LocalPreset = {
   preset_id: string
   name: string
@@ -202,6 +221,7 @@ export type PostProductionRecipeCommandManifest = {
   input_probe_count: number
   output_path: string | null
   execution_submitted: boolean
+  ffmpeg_job_id: string | null
   output_sha256: string | null
   final_probe_json: Record<string, unknown> | null
   error: string | null
@@ -702,7 +722,15 @@ export type SemanticCompiledWorkflowMetadata = {
 
 export type SemanticGenerationRequestManifest = {
   request_id: string
-  state: 'blocked_by_gates' | 'prepared_offline'
+  state:
+    | 'blocked_by_gates'
+    | 'prepared_offline'
+    | 'queued'
+    | 'submitted'
+    | 'running'
+    | 'collecting_outputs'
+    | 'complete'
+    | 'failed'
   created_at: string
   manifest_path: string
   request: SemanticGenerationRequestPayload
@@ -2103,6 +2131,27 @@ export const api = {
   ffmpegHealth: () => request<HealthResponse>('/health/ffmpeg'),
   runtimeStatus: () => request<RuntimeStatus>('/runtime/status'),
   localRuntimeCatalog: () => request<LocalRuntimeCatalog>('/local-runtime/catalog'),
+  localRuntimeLiveStatus: () => request<LocalRuntimeLiveStatus>('/local-runtime/live-status'),
+  probeLocalRuntime: () =>
+    request<LocalRuntimeLiveStatus>('/operator-runtime/probe', {
+      method: 'POST',
+      body: JSON.stringify({ acknowledge_live_probe: true }),
+    }),
+  startLocalRuntime: (requestedBy: string) =>
+    request<LocalRuntimeActionResponse>('/operator-runtime/start', {
+      method: 'POST',
+      body: JSON.stringify({ requested_by: requestedBy, acknowledge_runtime_mutation: true }),
+    }),
+  restartLocalRuntime: (requestedBy: string) =>
+    request<LocalRuntimeActionResponse>('/operator-runtime/restart', {
+      method: 'POST',
+      body: JSON.stringify({ requested_by: requestedBy, acknowledge_runtime_mutation: true }),
+    }),
+  stopLocalRuntime: (requestedBy: string) =>
+    request<LocalRuntimeActionResponse>('/operator-runtime/stop', {
+      method: 'POST',
+      body: JSON.stringify({ requested_by: requestedBy, acknowledge_runtime_mutation: true }),
+    }),
   localOutputPolicy: () => request<LocalRuntimeCatalog['output_policy']>('/local-runtime/output-policy'),
   listLocalRuntimeEvidence: () => request<LocalRuntimeEvidence[]>('/local-runtime/evidence'),
   localM4Preflight: () => request<LocalM4PreflightReport>('/local-runtime/m4-preflight'),
@@ -2141,6 +2190,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  queueSemanticGenerationRequest: (requestId: string, requestedBy: string) =>
+    request<SemanticGenerationRequestManifest>(`/operator-generation/semantic-requests/${requestId}/queue`, {
+      method: 'POST',
+      body: JSON.stringify({ requested_by: requestedBy, acknowledge_local_gpu_execution: true }),
+    }),
   createStoryboardHandoff: (payload: StoryboardHandoffRequestPayload) =>
     request<StoryboardHandoffReport>('/local-generation/storyboard-handoffs', {
       method: 'POST',
@@ -2150,6 +2204,16 @@ export const api = {
     request<PostProductionPlanManifest[]>(`/local-post-production/plans?limit=${limit}`),
   listPostProductionRecipeCommands: (limit = 25) =>
     request<PostProductionRecipeCommandManifest[]>(`/local-post-production/recipe-commands?limit=${limit}`),
+  executePostProductionPlan: (planId: string, requestedBy: string) =>
+    request<PostProductionPlanManifest>(`/operator-post-production/plans/${planId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify({ requested_by: requestedBy, acknowledge_local_ffmpeg_execution: true }),
+    }),
+  executePostProductionRecipe: (planId: string, requestedBy: string) =>
+    request<PostProductionRecipeCommandManifest>(`/operator-post-production/recipe-commands/${planId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify({ requested_by: requestedBy, acknowledge_local_ffmpeg_execution: true }),
+    }),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (payload: { name: string; description?: string | null }) =>

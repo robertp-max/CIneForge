@@ -183,6 +183,49 @@ class QueueService:
         db.refresh(job)
         return job
 
+    def heartbeat_active_job(
+        self,
+        db: Session,
+        job_id: UUID,
+        worker_id: str,
+        reason: str = "active worker heartbeat",
+    ) -> ComfyJob | None:
+        """Heartbeat an owned execution without changing stale-reservation semantics."""
+
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
+        active_states = {
+            QueueStatus.validating,
+            QueueStatus.submitted,
+            QueueStatus.running,
+            QueueStatus.collecting_outputs,
+        }
+        if job.status not in active_states or job.worker_id != worker_id:
+            return None
+
+        now = datetime.now(UTC)
+        previous_heartbeat_at = job.heartbeat_at
+        job.heartbeat_at = now
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=job.id,
+                action="active_worker_heartbeat",
+                details={
+                    "status": self._status_value(job.status),
+                    "reason": reason,
+                    "actor": "worker",
+                    "worker_id": worker_id,
+                    "previous_heartbeat_at": self._datetime_value(previous_heartbeat_at),
+                    "heartbeat_at": self._datetime_value(now),
+                },
+            )
+        )
+        db.commit()
+        db.refresh(job)
+        return job
+
     def recover_stale_reserved_jobs(
         self,
         db: Session,
@@ -283,6 +326,202 @@ class QueueService:
             )
             db.refresh(job)
         return recovered_jobs
+
+    def recover_stale_active_jobs(
+        self,
+        db: Session,
+        stale_before: datetime,
+        *,
+        limit: int = DEFAULT_RECOVERY_LIMIT,
+        reason: str = "stale active job recovery",
+    ) -> list[ComfyJob]:
+        """Terminalize orphaned active executions so they can retry safely.
+
+        A job that was submitted to ComfyUI cannot be reset in place after its
+        owning worker disappears. The old record is terminalized, its lease is
+        released, and the caller may create a fresh immutable retry.
+        """
+
+        if limit < 1:
+            return []
+        active_states = {
+            QueueStatus.validating,
+            QueueStatus.submitted,
+            QueueStatus.running,
+            QueueStatus.collecting_outputs,
+        }
+        candidate_query = (
+            select(ComfyJob)
+            .where(
+                ComfyJob.status.in_(active_states),
+                or_(ComfyJob.heartbeat_at < stale_before, ComfyJob.heartbeat_at.is_(None)),
+            )
+            .order_by(ComfyJob.id)
+            .limit(limit)
+        )
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            candidate_query = candidate_query.with_for_update(skip_locked=True)
+        candidates = list(db.scalars(candidate_query).all())
+        recovered: list[ComfyJob] = []
+        for job in candidates:
+            previous_worker_id = job.worker_id
+            target = (
+                QueueStatus.runtime_failed
+                if job.status == QueueStatus.collecting_outputs
+                else QueueStatus.interrupted
+            )
+            terminal = self.mark_terminal_job(
+                db,
+                job.id,
+                target,
+                reason,
+                actor="system",
+                worker_id=previous_worker_id,
+                error_message=reason,
+            )
+            metadata = dict(terminal.recovery_metadata or {})
+            metadata.update(
+                {
+                    "stale_active_recovered": True,
+                    "stale_active_previous_worker_id": previous_worker_id,
+                    "stale_active_recovered_at": self._datetime_value(datetime.now(UTC)),
+                }
+            )
+            terminal.recovery_metadata = metadata
+            db.add(
+                AuditLog(
+                    entity_type="comfy_job",
+                    entity_id=terminal.id,
+                    action="stale_active_job_terminalized",
+                    details={
+                        "reason": reason,
+                        "previous_worker_id": previous_worker_id,
+                        "new_state": terminal.status.value,
+                    },
+                )
+            )
+            db.commit()
+            db.refresh(terminal)
+            recovered.append(terminal)
+        return recovered
+
+    def schedule_bounded_retry(
+        self,
+        db: Session,
+        job_id: UUID,
+        *,
+        max_attempts: int,
+        reason: str,
+        allow_validation_failure: bool = False,
+    ) -> ComfyJob | None:
+        """Clone a terminal transient failure into a fresh pending attempt.
+
+        Terminal records remain immutable.  The retry receives a new workflow
+        run and job id while carrying the cumulative attempt count.  OOM,
+        post-processing, cancellation, and ordinary validation failures are
+        intentionally not retried.
+        """
+
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        job = db.get(ComfyJob, job_id)
+        if job is None:
+            raise QueueJobNotFound(f"ComfyJob not found: {job_id}")
+        retryable = {QueueStatus.runtime_failed, QueueStatus.timeout, QueueStatus.interrupted}
+        if allow_validation_failure:
+            retryable.add(QueueStatus.validation_failed)
+        if job.status not in retryable:
+            return None
+
+        metadata = dict(job.recovery_metadata or {})
+        existing_retry_id = metadata.get("retry_job_id")
+        if existing_retry_id:
+            try:
+                return db.get(ComfyJob, UUID(str(existing_retry_id)))
+            except ValueError:
+                return None
+
+        attempt_count = int(job.attempt_count or 0)
+        if attempt_count >= max_attempts:
+            db.add(
+                AuditLog(
+                    entity_type="comfy_job",
+                    entity_id=job.id,
+                    action="worker_retry_exhausted",
+                    details={
+                        "reason": reason,
+                        "attempt_count": attempt_count,
+                        "max_attempts": max_attempts,
+                        "terminal_state": job.status.value,
+                    },
+                )
+            )
+            db.commit()
+            return None
+
+        previous_run = db.get(WorkflowRun, job.workflow_run_id)
+        if previous_run is None:
+            raise QueueJobNotFound(f"WorkflowRun not found: {job.workflow_run_id}")
+        retry_run = WorkflowRun(
+            clip_iteration_id=previous_run.clip_iteration_id,
+            workflow_template_id=previous_run.workflow_template_id,
+            patched_workflow_json=previous_run.patched_workflow_json,
+            patch_payload_json=previous_run.patch_payload_json,
+            status=QueueStatus.pending.value,
+        )
+        db.add(retry_run)
+        db.flush()
+
+        retry_root_id = metadata.get("retry_root_job_id") or str(job.id)
+        retry_metadata = {
+            key: value
+            for key, value in metadata.items()
+            if key
+            not in {
+                "gpu_lease_id",
+                "gpu_lease_bound_at",
+                "gpu_lease_released_at",
+                "gpu_lease_release_reason",
+                "retry_job_id",
+            }
+        }
+        retry_metadata.update(
+            {
+                "retry_root_job_id": retry_root_id,
+                "retry_of_job_id": str(job.id),
+                "retry_reason": reason,
+                "max_attempts": max_attempts,
+            }
+        )
+        retry_job = ComfyJob(
+            workflow_run_id=retry_run.id,
+            status=QueueStatus.pending,
+            attempt_count=attempt_count,
+            recovery_metadata=retry_metadata,
+        )
+        db.add(retry_job)
+        db.flush()
+        metadata["retry_job_id"] = str(retry_job.id)
+        metadata["retry_scheduled_reason"] = reason
+        metadata["max_attempts"] = max_attempts
+        job.recovery_metadata = metadata
+        db.add(
+            AuditLog(
+                entity_type="comfy_job",
+                entity_id=retry_job.id,
+                action="worker_retry_scheduled",
+                details={
+                    "retry_of_job_id": str(job.id),
+                    "retry_root_job_id": retry_root_id,
+                    "reason": reason,
+                    "attempt_count": attempt_count,
+                    "max_attempts": max_attempts,
+                },
+            )
+        )
+        db.commit()
+        db.refresh(retry_job)
+        return retry_job
 
     def transition_job(
         self,

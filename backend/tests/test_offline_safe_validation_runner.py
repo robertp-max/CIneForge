@@ -18,6 +18,8 @@ def test_offline_safe_validation_runner_includes_advisory_boundary_path_output_r
     assert "backend/tests/test_workflow_manifest_validation.py" in BACKEND_TESTS
     assert "backend/tests/test_provider_contract.py" in BACKEND_TESTS
     assert "backend/tests/test_queue_state_machine.py" in BACKEND_TESTS
+    assert "backend/tests/test_queue_service.py" in BACKEND_TESTS
+    assert "backend/tests/test_live_execution_controls.py" in BACKEND_TESTS
     assert "backend/tests/test_storyboard_routes.py" in BACKEND_TESTS
     assert "backend/tests/test_storyboard_approval.py" in BACKEND_TESTS
     assert "backend/tests/test_storyboard_snapshot.py" in BACKEND_TESTS

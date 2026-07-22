@@ -57,6 +57,8 @@ BACKEND_TESTS = [
     "backend/tests/test_phase1_app_routing.py",
     "backend/tests/test_provider_contract.py",
     "backend/tests/test_queue_state_machine.py",
+    "backend/tests/test_queue_service.py",
+    "backend/tests/test_live_execution_controls.py",
     "backend/tests/test_production_gates.py",
     "backend/tests/test_workflow_admission.py",
     "backend/tests/test_storyboard_routes.py",

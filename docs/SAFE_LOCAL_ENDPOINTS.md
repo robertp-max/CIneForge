@@ -7,6 +7,7 @@ This matrix documents local/offline CineForge surfaces that are allowed before e
 | Endpoint | Method(s) | Purpose | Executes live tools? | Records approval? | Starts generation/media work? |
 |---|---:|---|---:|---:|---:|
 | `/local-runtime/catalog` | GET | DB-free model/output catalog | No | No | No |
+| `/local-runtime/live-status` | GET | Passive configured-runtime and owned-process state; no network probe | No | No | No |
 | `/local-runtime/output-policy` | GET | Output root/prefix policy | No | No | No |
 | `/local-runtime/evidence` | GET | Existing evidence records | No | No | No |
 | `/local-runtime/evidence/cf-vid-01-smoke` | GET | Existing CF-VID-01 smoke evidence | No | No | No |

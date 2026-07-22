@@ -200,6 +200,105 @@ class PostProductionPlanStore:
         )
         return updated
 
+    def record_recipe_execution_started(
+        self,
+        plan_id: UUID,
+        *,
+        ffmpeg_job_id: UUID,
+        requested_by: str,
+    ) -> PostProductionRecipeCommandManifest:
+        manifest = self.get_recipe_command(plan_id)
+        if manifest.state != "planned_offline" or manifest.execution_submitted:
+            raise ValidationError("Recipe command plan is not eligible for first execution")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "running",
+                "updated_at": now,
+                "execution_submitted": True,
+                "ffmpeg_job_id": ffmpeg_job_id,
+                "error": None,
+            }
+        )
+        self._write_recipe_command_manifest(updated)
+        self._append_recipe_command_event(
+            {
+                "event": "post_production_recipe_command_execution_started",
+                "plan_id": str(plan_id),
+                "requested_by": requested_by,
+                "ffmpeg_job_id": str(ffmpeg_job_id),
+                "execution_submitted": True,
+                "created_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_recipe_execution_success(
+        self,
+        plan_id: UUID,
+        *,
+        output_sha256: str,
+        final_probe_json: dict[str, Any] | None,
+    ) -> PostProductionRecipeCommandManifest:
+        manifest = self.get_recipe_command(plan_id)
+        if manifest.state != "running" or not manifest.execution_submitted:
+            raise ValidationError("Recipe command execution is not running")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "complete",
+                "updated_at": now,
+                "completed_at": now,
+                "execution_submitted": True,
+                "output_sha256": validate_sha256_hex(output_sha256),
+                "final_probe_json": final_probe_json,
+                "error": None,
+            }
+        )
+        self._write_recipe_command_manifest(updated)
+        self._append_recipe_command_event(
+            {
+                "event": "post_production_recipe_command_execution_completed",
+                "plan_id": str(plan_id),
+                "output_sha256": updated.output_sha256,
+                "created_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_recipe_execution_error(
+        self,
+        plan_id: UUID,
+        *,
+        error: str,
+    ) -> PostProductionRecipeCommandManifest:
+        manifest = self.get_recipe_command(plan_id)
+        message = error.strip()
+        if not message:
+            raise ValidationError("Recipe command execution error cannot be blank")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "failed",
+                "updated_at": now,
+                "completed_at": now,
+                "execution_submitted": True,
+                "output_sha256": None,
+                "final_probe_json": None,
+                "error": message[:10_000],
+            }
+        )
+        self._write_recipe_command_manifest(updated)
+        self._append_recipe_command_event(
+            {
+                "event": "post_production_recipe_command_execution_failed",
+                "plan_id": str(plan_id),
+                "error": updated.error,
+                "created_at": now.isoformat(),
+            }
+        )
+        return updated
+
     def record_recipe_command_error(
         self,
         plan_id: UUID,
@@ -271,6 +370,102 @@ class PostProductionPlanStore:
                 "state": updated.state,
                 "output_sha256": updated.output_sha256,
                 "recorded_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_execution_started(
+        self,
+        plan_id: UUID,
+        *,
+        ffmpeg_job_id: UUID,
+        requested_by: str,
+    ) -> PostProductionPlanManifest:
+        manifest = self.get(plan_id)
+        if manifest.state != "planned_offline" or manifest.execution_submitted:
+            raise ValidationError("Post-production plan is not eligible for first execution")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "running",
+                "updated_at": now,
+                "execution_submitted": True,
+                "ffmpeg_job_id": ffmpeg_job_id,
+                "error_message": None,
+            }
+        )
+        self._write_manifest(updated)
+        self._append_event(
+            {
+                "event": "post_production_execution_started",
+                "plan_id": str(plan_id),
+                "ffmpeg_job_id": str(ffmpeg_job_id),
+                "requested_by": requested_by,
+                "execution_submitted": True,
+                "created_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_execution_success(
+        self,
+        plan_id: UUID,
+        *,
+        output_sha256: str,
+        final_probe_json: dict[str, Any],
+    ) -> PostProductionPlanManifest:
+        manifest = self.get(plan_id)
+        if manifest.state != "running" or not manifest.execution_submitted:
+            raise ValidationError("Post-production execution is not running")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "complete",
+                "updated_at": now,
+                "completed_at": now,
+                "execution_submitted": True,
+                "output_sha256": validate_sha256_hex(output_sha256),
+                "final_probe_json": final_probe_json,
+                "error_message": None,
+            }
+        )
+        self._write_manifest(updated)
+        self._append_event(
+            {
+                "event": "post_production_execution_completed",
+                "plan_id": str(plan_id),
+                "ffmpeg_job_id": str(updated.ffmpeg_job_id),
+                "output_sha256": updated.output_sha256,
+                "created_at": now.isoformat(),
+            }
+        )
+        return updated
+
+    def record_execution_error(self, plan_id: UUID, *, error_message: str) -> PostProductionPlanManifest:
+        manifest = self.get(plan_id)
+        message = error_message.strip()
+        if not message:
+            raise ValidationError("Post-production execution error cannot be blank")
+        now = datetime.now(UTC)
+        updated = manifest.model_copy(
+            update={
+                "state": "failed",
+                "updated_at": now,
+                "completed_at": now,
+                "execution_submitted": True,
+                "output_sha256": None,
+                "final_probe_json": None,
+                "error_message": message[:10_000],
+            }
+        )
+        self._write_manifest(updated)
+        self._append_event(
+            {
+                "event": "post_production_execution_failed",
+                "plan_id": str(plan_id),
+                "ffmpeg_job_id": str(updated.ffmpeg_job_id),
+                "error_message": updated.error_message,
+                "created_at": now.isoformat(),
             }
         )
         return updated

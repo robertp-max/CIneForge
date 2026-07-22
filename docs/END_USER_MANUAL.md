@@ -13,7 +13,7 @@ CineForge is a local AI video-production control app. The current app is focused
 - provider/model-routing records,
 - local runtime readiness visibility,
 - safe local job and handoff manifests,
-- offline post-production plans,
+- gated local queue, runtime, and post-production operator controls,
 - operator packets/runbooks/templates,
 - checkpoint/watchdog visibility.
 
@@ -59,7 +59,7 @@ http://127.0.0.1:5173/
 
 The current UI does not automatically:
 
-- start ComfyUI,
+- start ComfyUI unless both auto-start and hardware-operator configuration gates were explicitly enabled,
 - contact ComfyUI,
 - probe GPU hardware,
 - run runtime-health probes,
@@ -104,7 +104,7 @@ Use Campaigns to create campaign records linked to projects. Campaigns are plann
 
 ### Jobs
 
-Use Jobs to inspect existing backend jobs and prepare offline local job manifests. Current local-job preparation is manifest-only; it does not submit work to ComfyUI.
+Use Jobs to inspect backend jobs and semantic manifests. An acknowledged Queue action creates a durable job through the operator endpoint; it does not directly submit work to ComfyUI. Submission can occur only when the separate queue-worker and hardware-operator gates are enabled and the workflow/model binding is admitted.
 
 A local job may record:
 
@@ -132,7 +132,7 @@ Runtime is the main local-readiness page. It shows:
 - FFmpeg recipe catalog metadata,
 - operator templates/runbooks/packets.
 
-Runtime page panels are read-only or manifest-only. They are designed to show what is safe, what is blocked, and what evidence exists.
+Runtime loads readiness, configuration, and owned-process state passively. Probe, start, restart, and stop buttons require explicit acknowledgement and call default-off operator endpoints; they are not executed on page load.
 
 ### System Health
 
@@ -272,7 +272,7 @@ These manifests are evidence/planning artifacts. They do not execute tools by th
 
 ## 10. Post-production planning
 
-Post-production pages and APIs can prepare deterministic recipe plans and command-array metadata. They do not run FFmpeg/ffprobe unless a future approved live runner explicitly executes an allowlisted recipe.
+Post-production pages and APIs can prepare deterministic recipe plans and command-array metadata. An acknowledged Execute action can run only a persisted allowlisted recipe when the FFmpeg-operator gate is enabled. The executor revalidates argv, managed paths, input hashes, output nonexistence, and the final probe/hash evidence.
 
 The current system forbids raw user-authored FFmpeg command strings.
 
@@ -360,7 +360,7 @@ Run the offline-safe validation suite from the repo root:
 .\.venv\Scripts\python scripts\run_offline_safe_validation.py --fail-on-dirty
 ```
 
-Current checkpoint truth: `243 passed`, frontend lint/build passed, static safe-boundary validation passed, and checkpoint watchdog passed.
+Current checkpoint truth: `308 passed`, frontend lint/build passed, static safe-boundary validation passed, and checkpoint watchdog passed.
 
 This validation suite does not run live runtime/media actions.
 

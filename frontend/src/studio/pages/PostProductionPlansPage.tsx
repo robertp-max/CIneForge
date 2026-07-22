@@ -146,13 +146,23 @@ function EvidenceRow({ label, value, mono = false }: { label: string; value: str
   )
 }
 
-function ManifestCard({ manifest }: { manifest: PostProductionPlanManifest }) {
+function ManifestCard({
+  manifest,
+  canExecute,
+  executing,
+  onExecute,
+}: {
+  manifest: PostProductionPlanManifest
+  canExecute: boolean
+  executing: boolean
+  onExecute: () => void
+}) {
   return (
     <article className="panel">
       <header className="panel-head">
         <div>
           <h2 className="mono">{manifest.plan_id}</h2>
-          <p>Read-only local post-production manifest evidence.</p>
+          <p>Persisted local post-production manifest and execution evidence.</p>
         </div>
         <StatusPill status={manifest.state} />
       </header>
@@ -187,22 +197,40 @@ function ManifestCard({ manifest }: { manifest: PostProductionPlanManifest }) {
       ) : null}
 
       <div className="debug-panel" aria-label="Read-only command preview">
-        <span className="eyebrow">COMMAND PREVIEW · INERT ARGV TEXT</span>
+        <span className="eyebrow">VALIDATED COMMAND PREVIEW · DISPLAY ONLY</span>
         <pre>
           <code>{commandPreview(manifest.command)}</code>
         </pre>
       </div>
+      <button
+        className="primary-button"
+        type="button"
+        disabled={!canExecute || executing || manifest.state !== 'planned_offline'}
+        onClick={onExecute}
+      >
+        {executing ? 'Executing…' : 'Execute allowlisted plan'}
+      </button>
     </article>
   )
 }
 
-function RecipeCommandCard({ manifest }: { manifest: PostProductionRecipeCommandManifest }) {
+function RecipeCommandCard({
+  manifest,
+  canExecute,
+  executing,
+  onExecute,
+}: {
+  manifest: PostProductionRecipeCommandManifest
+  canExecute: boolean
+  executing: boolean
+  onExecute: () => void
+}) {
   return (
     <article className="panel">
       <header className="panel-head">
         <div>
           <h2 className="mono">{manifest.plan_id}</h2>
-          <p>Read-only generic FFmpeg recipe command manifest evidence.</p>
+          <p>Persisted generic FFmpeg recipe command and execution evidence.</p>
         </div>
         <StatusPill status={manifest.state} />
       </header>
@@ -214,6 +242,7 @@ function RecipeCommandCard({ manifest }: { manifest: PostProductionRecipeCommand
         <EvidenceRow label="Completed" value={formatDate(manifest.completed_at)} />
         <EvidenceRow label="Command template" value={manifest.command_template_id || '—'} mono />
         <EvidenceRow label="Execution submitted" value={formatBool(manifest.execution_submitted)} />
+        <EvidenceRow label="FFmpeg job id" value={manifest.ffmpeg_job_id || '—'} mono />
         <EvidenceRow label="Manifest path" value={manifest.manifest_path || '—'} mono />
         <EvidenceRow label="Output path" value={manifest.output_path || '—'} mono />
         <EvidenceRow label="Input paths" value={manifest.input_paths.length} />
@@ -244,11 +273,19 @@ function RecipeCommandCard({ manifest }: { manifest: PostProductionRecipeCommand
       ) : null}
 
       <div className="debug-panel" aria-label="Read-only recipe command argv display">
-        <span className="eyebrow">RECIPE COMMAND ARGV · INERT TEXT ONLY</span>
+        <span className="eyebrow">RECIPE COMMAND ARGV · DISPLAY ONLY</span>
         <pre>
           <code>{commandPreview(manifest.command)}</code>
         </pre>
       </div>
+      <button
+        className="primary-button"
+        type="button"
+        disabled={!canExecute || executing || manifest.state !== 'planned_offline'}
+        onClick={onExecute}
+      >
+        {executing ? 'Executing…' : 'Execute allowlisted recipe'}
+      </button>
     </article>
   )
 }
@@ -258,6 +295,19 @@ export function PostProductionPlansPage() {
   const [recipeCommands, setRecipeCommands] = useState<PostProductionRecipeCommandManifest[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [requestedBy, setRequestedBy] = useState('local-operator')
+  const [executionAcknowledged, setExecutionAcknowledged] = useState(false)
+  const [executingId, setExecutingId] = useState<string | null>(null)
+
+  async function loadManifests() {
+    const [planManifests, recipeCommandManifests] = await Promise.all([
+      api.listPostProductionPlans(25),
+      api.listPostProductionRecipeCommands(25),
+    ])
+    setPlans(planManifests)
+    setRecipeCommands(recipeCommandManifests)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -282,6 +332,39 @@ export function PostProductionPlansPage() {
       mounted = false
     }
   }, [])
+
+  async function executeManifest(kind: 'plan' | 'recipe', planId: string) {
+    setError(null)
+    setMessage(null)
+    if (!executionAcknowledged) {
+      setError('Acknowledge local FFmpeg execution before continuing.')
+      return
+    }
+    if (!requestedBy.trim()) {
+      setError('Requested-by is required for the FFmpeg job audit record.')
+      return
+    }
+    setExecutingId(planId)
+    try {
+      if (kind === 'plan') {
+        await api.executePostProductionPlan(planId, requestedBy.trim())
+      } else {
+        await api.executePostProductionRecipe(planId, requestedBy.trim())
+      }
+      await loadManifests()
+      setMessage(`FFmpeg ${kind} ${planId} completed and its output evidence was persisted.`)
+      setExecutionAcknowledged(false)
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : `Unable to execute FFmpeg ${kind}.`)
+      try {
+        await loadManifests()
+      } catch {
+        // Keep the original execution error visible if the follow-up refresh also fails.
+      }
+    } finally {
+      setExecutingId(null)
+    }
+  }
 
   const summary = useMemo(() => {
     const stateCounts = plans.reduce<Record<string, number>>((counts, plan) => {
@@ -315,21 +398,41 @@ export function PostProductionPlansPage() {
   return (
     <div className="studio-page">
       <PageTitle
-        eyebrow="OFFLINE POST-PRODUCTION"
+        eyebrow="LOCAL POST-PRODUCTION"
         title="Plan and recipe command manifests"
-        description="Read-only evidence from GET /local-post-production/plans and GET /local-post-production/recipe-commands. This page does not create plans, execute FFmpeg, submit jobs, render media, or call ComfyUI/GPU."
+        description="Inspect persisted FFmpeg plans and explicitly execute only allowlisted, hash-verified local commands when the operator gate is enabled."
       />
 
       <section className="safety-banner" aria-label="Post-production safety boundary">
         <div>
-          <strong>Read-only checkpoint</strong>
+          <strong>Default-off execution boundary</strong>
           <p>
-            Existing local manifests are displayed as inert text only. No command input, copy, run, execution endpoint,
-            benchmark, render, download, submission, ComfyUI, or GPU action is exposed here.
+            Raw command input is never accepted. Execution reconstructs or validates persisted argv, verifies input hashes,
+            refuses output overwrite, persists an FFmpeg job, and probes the completed output.
           </p>
         </div>
-        <StatusPill status="GET only" />
+        <StatusPill status="operator gated" />
       </section>
+
+      {error ? <ErrorNotice message={error} /> : null}
+      {message ? <p className="success-notice">{message}</p> : null}
+
+      <Section title="Execution acknowledgement" subtitle="The backend remains fail-closed unless the local FFmpeg operator gate is enabled.">
+        <div className="form-grid two">
+          <label>
+            Requested by
+            <input value={requestedBy} onChange={(event) => setRequestedBy(event.target.value)} />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={executionAcknowledged}
+              onChange={(event) => setExecutionAcknowledged(event.target.checked)}
+            />
+            I acknowledge this may execute a persisted, allowlisted FFmpeg command on local managed media.
+          </label>
+        </div>
+      </Section>
 
       <Section title="Manifest summary" subtitle="Recent offline post-production evidence from backend GET list endpoints.">
         <div className="grid four">
@@ -343,7 +446,7 @@ export function PostProductionPlansPage() {
           <SummaryCard
             label="Execution submitted"
             value={formatBool(summary.executionSubmitted || summary.recipeExecutionSubmitted)}
-            note="True means stored evidence says execution was submitted elsewhere"
+            note="True means the tracked local execution path persisted a job reference"
           />
           <SummaryCard
             label="Plan outputs hashed"
@@ -354,20 +457,24 @@ export function PostProductionPlansPage() {
       </Section>
 
       {loadState === 'loading' ? (
-        <Empty title="Loading manifests" detail="Reading existing manifests from GET-only list endpoints." />
+        <Empty title="Loading manifests" detail="Reading existing manifests from passive list endpoints." />
       ) : null}
-
-      {loadState === 'error' && error ? <ErrorNotice message={error} /> : null}
 
       {loadState === 'ready' && plans.length === 0 && recipeCommands.length === 0 ? (
         <Empty title="No post-production manifests found" detail="The backend returned empty manifest lists." />
       ) : null}
 
       {plans.length ? (
-        <Section title="Plan manifest evidence" subtitle="Each record is displayed as inert text; paths and commands are not links or controls.">
+        <Section title="Plan manifest evidence" subtitle="Evidence is display-only; the separate button can invoke only the gated, allowlisted operator endpoint.">
           <div className="disabled-action-grid">
             {plans.map((manifest) => (
-              <ManifestCard key={manifest.plan_id} manifest={manifest} />
+              <ManifestCard
+                key={manifest.plan_id}
+                manifest={manifest}
+                canExecute={executionAcknowledged && executingId === null}
+                executing={executingId === manifest.plan_id}
+                onExecute={() => void executeManifest('plan', manifest.plan_id)}
+              />
             ))}
           </div>
         </Section>
@@ -376,11 +483,17 @@ export function PostProductionPlansPage() {
       {recipeCommands.length ? (
         <Section
           title="Recipe command manifest evidence"
-          subtitle="Read-only generic FFmpeg recipe command records from GET /local-post-production/recipe-commands; argv is displayed as inert text only."
+          subtitle="Generic FFmpeg recipe records load passively; argv is display-only and execution requires the separate gated operator endpoint."
         >
           <div className="disabled-action-grid">
             {recipeCommands.map((manifest) => (
-              <RecipeCommandCard key={manifest.plan_id} manifest={manifest} />
+              <RecipeCommandCard
+                key={manifest.plan_id}
+                manifest={manifest}
+                canExecute={executionAcknowledged && executingId === null}
+                executing={executingId === manifest.plan_id}
+                onExecute={() => void executeManifest('recipe', manifest.plan_id)}
+              />
             ))}
           </div>
         </Section>

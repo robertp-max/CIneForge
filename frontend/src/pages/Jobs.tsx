@@ -31,6 +31,9 @@ export function Jobs() {
   const [semanticPrompt, setSemanticPrompt] = useState('Safe offline semantic generation request.')
   const [semanticNegativePrompt, setSemanticNegativePrompt] = useState('bad quality')
   const [semanticNoExecutionAcknowledged, setSemanticNoExecutionAcknowledged] = useState(false)
+  const [semanticQueueAcknowledged, setSemanticQueueAcknowledged] = useState(false)
+  const [semanticQueueRequestedBy, setSemanticQueueRequestedBy] = useState('local-operator')
+  const [queueingRequestId, setQueueingRequestId] = useState<string | null>(null)
   const [localManifestNoExecutionAcknowledged, setLocalManifestNoExecutionAcknowledged] = useState(false)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
@@ -134,12 +137,36 @@ export function Jobs() {
     }
   }
 
+  async function queueSemanticManifest(requestId: string) {
+    setError(null)
+    setMessage(null)
+    if (!semanticQueueAcknowledged) {
+      setError('Acknowledge local GPU execution before queueing a prepared request.')
+      return
+    }
+    if (!semanticQueueRequestedBy.trim()) {
+      setError('Requested-by is required for the queue audit record.')
+      return
+    }
+    setQueueingRequestId(requestId)
+    try {
+      const manifest = await api.queueSemanticGenerationRequest(requestId, semanticQueueRequestedBy.trim())
+      setMessage(`Queued semantic request ${manifest.request_id} as job ${manifest.queue_job_id}.`)
+      setSemanticQueueAcknowledged(false)
+      await loadJobs()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to queue semantic generation request.')
+    } finally {
+      setQueueingRequestId(null)
+    }
+  }
+
   return (
     <div className="page">
       <PageHeader
         eyebrow="Jobs"
-        title="Generation job read path"
-        description="Inspect persisted job state without creating or submitting any generation work."
+        title="Local generation jobs"
+        description="Prepare semantic requests, explicitly queue admitted local work, and inspect persisted worker state."
       />
 
       {error ? <ErrorNotice message={error} /> : null}
@@ -243,13 +270,30 @@ export function Jobs() {
 
       <section className="panel">
         <div className="panel-title">
-          <h2>Offline semantic request manifests</h2>
+          <h2>Semantic request manifests</h2>
           <span>{loading ? 'Loading...' : `${semanticManifests.length} visible`}</span>
         </div>
         <p>
-          Read-only manifest records from /local-generation/semantic-requests. These records show intent and gate
-          evidence only; submitted prompt, queue job, and render fields must remain empty.
+          Prepared requests remain inert until a local operator explicitly acknowledges GPU execution. Queueing also
+          re-evaluates all production gates, records immutable workflow evidence, and fails closed when readiness is incomplete.
         </p>
+        <div className="form-grid two">
+          <label>
+            Queue requested by
+            <input
+              value={semanticQueueRequestedBy}
+              onChange={(event) => setSemanticQueueRequestedBy(event.target.value)}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={semanticQueueAcknowledged}
+              onChange={(event) => setSemanticQueueAcknowledged(event.target.checked)}
+            />
+            I acknowledge that Queue starts tracked local GPU execution when every runtime and workflow gate is enabled.
+          </label>
+        </div>
         {semanticManifests.length === 0 ? (
           <EmptyState
             title="No offline semantic manifests yet."
@@ -266,6 +310,7 @@ export function Jobs() {
                   <th>Preset</th>
                   <th>Gate</th>
                   <th>Execution</th>
+                  <th>Action</th>
                   <th>ID</th>
                 </tr>
               </thead>
@@ -284,9 +329,30 @@ export function Jobs() {
                         : `${manifest.gate_report.blocking_reasons.length} blockers`}
                     </td>
                     <td>
-                      {manifest.generation_submitted || manifest.comfy_prompt_id || manifest.queue_job_id
-                        ? 'Unexpected submission marker'
-                        : 'Not submitted'}
+                      {manifest.comfy_prompt_id
+                        ? `Prompt ${manifest.comfy_prompt_id}`
+                        : manifest.queue_job_id
+                          ? `Queue ${manifest.queue_job_id}`
+                          : 'Not submitted'}
+                    </td>
+                    <td>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={
+                          manifest.state !== 'prepared_offline' ||
+                          !semanticQueueAcknowledged ||
+                          queueingRequestId !== null
+                        }
+                        onClick={() => void queueSemanticManifest(manifest.request_id)}
+                        title={
+                          manifest.state === 'prepared_offline'
+                            ? 'Queue this request after explicit acknowledgement'
+                            : 'Only prepared offline requests can be queued'
+                        }
+                      >
+                        {queueingRequestId === manifest.request_id ? 'Queueing…' : 'Queue local job'}
+                      </button>
                     </td>
                     <td className="mono">{manifest.request_id}</td>
                   </tr>

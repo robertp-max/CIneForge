@@ -2,6 +2,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -224,9 +225,51 @@ class ComfyWorkerRuntimeClient:
         permit: WorkerRuntimeControlPermit | None = None,
     ) -> Any:
         self._require_control_permit(permit)
-        if self._progress_connector is None:
-            raise ComfyRuntimeRouteBlocked("Worker progress websocket connector is not configured")
-        return await self._progress_connector(_safe_view_filename(client_id))
+        safe_client_id = _safe_view_filename(client_id)
+        if self._progress_connector is not None:
+            return await self._progress_connector(safe_client_id)
+        try:
+            from websockets.asyncio.client import connect
+        except ImportError as exc:  # pragma: no cover - dependency contract guard
+            raise ComfyRuntimeRouteBlocked("Worker progress websocket dependency is unavailable") from exc
+        parsed = urlparse(self.base_url)
+        websocket_url = urlunparse(
+            (
+                "wss" if parsed.scheme == "https" else "ws",
+                parsed.netloc,
+                "/ws",
+                "",
+                urlencode({"clientId": safe_client_id}),
+                "",
+            )
+        )
+        return await connect(websocket_url, open_timeout=10, close_timeout=5, max_size=8 * 1024 * 1024)
+
+    async def upload_image(
+        self,
+        filename: str,
+        content: bytes,
+        *,
+        subfolder: str = "",
+        overwrite: bool = False,
+        permit: WorkerRuntimeControlPermit | None = None,
+    ) -> dict[str, Any]:
+        self._require_control_permit(permit)
+        safe_filename = _safe_view_filename(filename)
+        safe_subfolder = sanitize_project_folder(subfolder) if subfolder else ""
+        if not isinstance(content, bytes) or not content:
+            raise ValueError("ComfyUI image upload content must be non-empty bytes")
+        response = await self._client.post(
+            "/upload/image",
+            files={"image": (safe_filename, content, "application/octet-stream")},
+            data={
+                "subfolder": safe_subfolder,
+                "type": "input",
+                "overwrite": "true" if overwrite else "false",
+            },
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def interrupt(self, *, permit: WorkerRuntimeControlPermit | None = None) -> dict[str, Any]:
         self._require_control_permit(permit)

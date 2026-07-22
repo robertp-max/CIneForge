@@ -14,7 +14,7 @@ Primary layers:
 - Frontend: React + TypeScript + Vite.
 - Storage: local SQLite by default plus JSON catalogs/manifests under `storage/`.
 - Validation: static safe-boundary validator, curated backend tests, frontend lint/build, checkpoint watchdog.
-- Runtime lane: ComfyUI/FFmpeg/GPU integration surfaces are gated and mostly read-only or manifest-only in the current UI/API.
+- Runtime lane: passive and manifest surfaces stay under `/local-*`; acknowledged mutations use separate `/operator-*` routes with independent default-off gates.
 
 ## 2. Repository layout
 
@@ -149,9 +149,9 @@ Key groups:
 - `providers.py`: provider discovery, capabilities, and connection-test routes.
 - `local_runtime.py`: local runtime catalog/readiness/evidence/safety/watchdog surfaces.
 - `local_jobs.py`: file-backed offline local job manifests.
-- `local_generation.py`: offline semantic request and storyboard handoff manifests.
+- `local_generation.py`: offline semantic request/storyboard handoff manifests plus a separately mounted operator queue router.
 - `local_operator.py`: operator packets, runbooks, approval templates.
-- `local_post_production.py`: offline post-production plans and stored recipe command manifests.
+- `local_post_production.py`: offline post-production manifests plus a separately mounted operator execution router.
 - `local_archetypes.py`, `local_presets.py`: DB-free local catalog/readiness records.
 
 ## 7. Safe local endpoint policy
@@ -224,7 +224,7 @@ npm run build
 
 Current checkpoint truth:
 
-- curated backend tests: `243 passed`,
+- curated backend tests: `308 passed`,
 - static safe/local boundary: passed,
 - frontend lint/build: passed,
 - `git diff --check`: passed,
@@ -412,7 +412,7 @@ backend/app/services/local_safe_boundary.py
 backend/app/services/local_checkpoint_watchdog.py
 ```
 
-Current runtime APIs are read-only and evidence-based. Do not add live probes to page-load paths or default validation.
+`GET /local-runtime/live-status` is passive and evidence-based. Runtime probe/start/restart/stop actions use `/operator-runtime/*`; do not add live probes to page-load paths or default validation.
 
 ## 17. Local jobs and generation manifests
 
@@ -425,9 +425,9 @@ backend/app/api/routes/local_jobs.py
 backend/app/api/routes/local_generation.py
 ```
 
-Current local jobs and semantic requests are file-backed offline manifests. They do not submit prompts or queue work.
+Local jobs and semantic requests are file-backed manifests. Queueing is deliberately separate at `POST /operator-generation/semantic-requests/{request_id}/queue`; it compiles only an admitted binding into a durable job and does not bypass the independently default-off queue-worker or hardware-operator gates.
 
-If adding a real live generation runner later, keep it separate from manifest creation and require explicit routing/gating/evidence capture.
+The controlled worker owns claim, mandatory `/object_info` validation, exclusive GPU lease, submission, WebSocket progress, history/output collection, provenance hashing, terminal-state persistence, stale-job recovery, bounded retry, and cancellation cleanup. Keep manifest creation separate from this execution path.
 
 ## 18. Workflow template development
 
@@ -465,6 +465,7 @@ backend/app/services/ffmpeg/service.py
 backend/app/services/post_production.py
 backend/app/services/post_production_manifest.py
 backend/app/services/local_post_production.py
+backend/app/services/ffmpeg/executor.py
 ```
 
 Rules:
@@ -472,7 +473,9 @@ Rules:
 - no raw user-authored command strings,
 - use allowlisted structured recipes,
 - require safe paths and hashes,
-- keep manifests separate from execution,
+- keep manifest creation separate from the `/operator-post-production/*` executor,
+- reconstruct or validate persisted argv and input hashes before every run,
+- persist an FFmpeg job before starting the process and validate/hash the completed output,
 - never run FFmpeg/ffprobe from offline validation.
 
 ## 20. Frontend development
@@ -497,7 +500,7 @@ Frontend rules:
 - API calls should go through `frontend/src/api/client.ts`.
 - Do not add direct raw live-probe fetches in UI components.
 - Do not add public generation buttons unless backend gates and product policy are changed.
-- Keep Runtime page explicit about read-only/manifest-only status.
+- Keep Runtime page explicit about passive page-load behavior and separately acknowledged operator actions.
 - Keep planning UI copy honest: planning approval does not render.
 
 Run:
@@ -521,7 +524,7 @@ For any new endpoint:
 7. If it is a `/local-*` endpoint, update `docs/SAFE_LOCAL_ENDPOINTS.md` and safe endpoint tests.
 8. Run offline-safe validation.
 
-If the endpoint can execute live tools or start work, do not add it to the safe local endpoint matrix.
+If the endpoint can execute live tools or start work, place it under an explicit `/operator-*` namespace and do not add it to the safe local endpoint matrix.
 
 ## 22. Adding new tests to the curated runner
 

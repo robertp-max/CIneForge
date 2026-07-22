@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -18,6 +18,11 @@ class PostProductionAssemblyPlanCreate(BaseModel):
     geometry: GeometryProfile
     fps: int = Field(ge=1, le=120)
     output_path: Path
+
+
+class PostProductionExecutionRequest(BaseModel):
+    requested_by: str = Field(min_length=1, max_length=200)
+    acknowledge_local_ffmpeg_execution: Literal[True]
 
 
 
@@ -85,6 +90,7 @@ class PostProductionRecipeCommandManifest(BaseModel):
     input_probe_count: int = Field(default=0, ge=0)
     output_path: Path | None = None
     execution_submitted: bool = False
+    ffmpeg_job_id: UUID | None = None
     output_sha256: str | None = None
     final_probe_json: dict[str, Any] | None = None
     error: str | None = None

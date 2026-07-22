@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 from typing import Generator
+from uuid import uuid4
 
 import pytest
 from fastapi.routing import APIRoute
@@ -285,6 +286,39 @@ def test_semantic_generation_store_prepares_allowed_requests_offline_only(tmp_pa
     assert manifest.queue_job_id is None
 
 
+def test_semantic_generation_store_rebinds_failed_job_to_retry(tmp_path: Path):
+    settings = _temp_settings(tmp_path)
+    compiler = OfflineCompiler(settings.workflow_snapshot_root / "semantic-retry.json")
+    store = SemanticGenerationRequestManifestStore(
+        settings=settings,
+        gate_service=AllowingGateService(),
+        compiler=compiler,
+    )
+    manifest = store.create(_request(production=False))
+    previous_job_id = uuid4()
+    retry_job_id = uuid4()
+    store.update_execution_state(
+        manifest.request_id,
+        state="runtime_failed",
+        queue_job_id=previous_job_id,
+        detail="runtime disconnected",
+    )
+
+    rebound = store.bind_retry(
+        manifest.request_id,
+        previous_job_id=previous_job_id,
+        retry_job_id=retry_job_id,
+        detail="bounded retry",
+    )
+
+    assert rebound.state == "queued"
+    assert rebound.queue_job_id == retry_job_id
+    assert rebound.comfy_prompt_id is None
+    assert store.get(manifest.request_id) == rebound
+    events = (store.audit_path).read_text(encoding="utf-8")
+    assert "semantic_generation_retry_bound" in events
+
+
 def test_semantic_generation_route_creates_lists_and_gets_blocked_manifest(monkeypatch, tmp_path: Path):
     settings = _temp_settings(tmp_path)
     store = SemanticGenerationRequestManifestStore(settings=settings, compiler=FailingCompiler())
@@ -466,6 +500,7 @@ def test_local_generation_routes_do_not_expose_execute_submit_run_or_prompt_chil
         "/local-generation/semantic-requests",
         "/local-generation/semantic-requests/{request_id}",
     }
+    assert "/operator-generation/semantic-requests/{request_id}/queue" in paths
     forbidden_local_generation_children = ("/execute", "/submit", "/run", "/prompt")
     assert not any(
         child in path
@@ -480,6 +515,11 @@ def test_local_generation_routes_do_not_expose_execute_submit_run_or_prompt_chil
     assert {method for method, path in method_paths if path == "/local-generation/storyboard-handoffs"} == {"POST"}
     assert {method for method, path in method_paths if path == "/local-generation/semantic-requests"} == {"GET", "POST"}
     assert {method for method, path in method_paths if path == "/local-generation/semantic-requests/{request_id}"} == {"GET"}
+    assert {
+        method
+        for method, path in method_paths
+        if path == "/operator-generation/semantic-requests/{request_id}/queue"
+    } == {"POST"}
 
 
 def test_current_catalog_keeps_cf_preset_001_blocked_by_benchmark_required():

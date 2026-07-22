@@ -73,6 +73,7 @@ Any future live run must stop and record error provenance if one of these occurs
 Current CineForge local surfaces are offline/read-only or manifest-only. They do not approve or run live work:
 
 - `GET /local-runtime/catalog`
+- `GET /local-runtime/live-status`
 - `GET /local-runtime/output-policy`
 - `GET /local-runtime/evidence`
 - `GET /local-runtime/evidence/cf-vid-01-smoke`

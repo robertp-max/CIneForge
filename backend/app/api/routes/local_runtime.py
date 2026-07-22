@@ -12,6 +12,12 @@ from backend.app.schemas.local_checkpoint_watchdog import LocalCheckpointWatchdo
 from backend.app.schemas.local_mvp_readiness import LocalMVPReadinessReport
 from backend.app.schemas.local_public_readiness import LocalPublicReadinessReport
 from backend.app.schemas.local_runtime import LocalRuntimeCatalog, OutputPolicy
+from backend.app.schemas.local_runtime_control import (
+    LocalRuntimeActionRequest,
+    LocalRuntimeActionResponse,
+    LocalRuntimeProbeRequest,
+    LocalRuntimeStatus,
+)
 from backend.app.schemas.local_safe_boundary import LocalSafeBoundaryReport
 from backend.app.schemas.local_runtime_evidence import LocalRuntimeEvidence
 from backend.app.schemas.local_runtime_m4 import M4HardwarePreflightReport
@@ -24,14 +30,72 @@ from backend.app.services.local_safe_boundary import LocalSafeBoundaryService
 from backend.app.services.local_runtime_evidence import LocalRuntimeEvidenceService
 from backend.app.services.local_runtime_m4 import M4HardwarePreflightService
 from backend.app.services.benchmarks.ladder import BenchmarkLadderService
+from backend.app.services.comfy.runtime_manager import (
+    ComfyRuntimeMutationBlocked,
+    PinnedComfyRuntimeManager,
+)
 
 
 router = APIRouter(prefix="/local-runtime", tags=["local-runtime"])
+operator_router = APIRouter(prefix="/operator-runtime", tags=["operator-runtime"])
+
+
+def _runtime_manager() -> PinnedComfyRuntimeManager:
+    return PinnedComfyRuntimeManager(get_settings())
+
+
+def _runtime_status(*, probe: bool) -> LocalRuntimeStatus:
+    payload = _runtime_manager().status(probe=probe).as_dict()
+    return LocalRuntimeStatus(**payload, live_probe_performed=probe)
 
 
 @router.get("/catalog", response_model=LocalRuntimeCatalog)
 def get_local_runtime_catalog() -> LocalRuntimeCatalog:
     return local_runtime_catalog(get_settings())
+
+
+@router.get("/live-status", response_model=LocalRuntimeStatus)
+def get_local_runtime_live_status() -> LocalRuntimeStatus:
+    """Return configuration/process ownership without making a network probe."""
+
+    return _runtime_status(probe=False)
+
+
+@operator_router.post("/probe", response_model=LocalRuntimeStatus)
+def probe_local_runtime(_request: LocalRuntimeProbeRequest) -> LocalRuntimeStatus:
+    return _runtime_status(probe=True)
+
+
+def _runtime_action_error(exc: Exception) -> HTTPException:
+    code = status.HTTP_409_CONFLICT if isinstance(exc, ComfyRuntimeMutationBlocked) else status.HTTP_422_UNPROCESSABLE_CONTENT
+    return HTTPException(status_code=code, detail=str(exc))
+
+
+@operator_router.post("/start", response_model=LocalRuntimeActionResponse)
+def start_local_runtime(request: LocalRuntimeActionRequest) -> LocalRuntimeActionResponse:
+    try:
+        result = _runtime_manager().start(automatic=False)
+    except Exception as exc:
+        raise _runtime_action_error(exc) from exc
+    return LocalRuntimeActionResponse(action="start", requested_by=request.requested_by, result=result)
+
+
+@operator_router.post("/restart", response_model=LocalRuntimeActionResponse)
+def restart_local_runtime(request: LocalRuntimeActionRequest) -> LocalRuntimeActionResponse:
+    try:
+        result = _runtime_manager().restart_pinned_runtime()
+    except Exception as exc:
+        raise _runtime_action_error(exc) from exc
+    return LocalRuntimeActionResponse(action="restart", requested_by=request.requested_by, result=result)
+
+
+@operator_router.post("/stop", response_model=LocalRuntimeActionResponse)
+def stop_local_runtime(request: LocalRuntimeActionRequest) -> LocalRuntimeActionResponse:
+    try:
+        result = _runtime_manager().terminate_process_tree("explicit local operator stop")
+    except Exception as exc:
+        raise _runtime_action_error(exc) from exc
+    return LocalRuntimeActionResponse(action="stop", requested_by=request.requested_by, result=result)
 
 
 @router.get("/output-policy", response_model=OutputPolicy)

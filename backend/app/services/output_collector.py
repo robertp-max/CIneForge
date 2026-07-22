@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -31,7 +32,14 @@ class OutputCollector:
         self.ffmpeg = ffmpeg or FFmpegService(storage_root=self.settings.comfyui_output_root)
         self.queue_service = queue_service or QueueService()
 
-    def discover(self, project_key: str, run_stem: str, *, probe: bool = True) -> list[OutputDiscoveryRecord]:
+    def discover(
+        self,
+        project_key: str,
+        run_stem: str,
+        *,
+        probe: bool = True,
+        not_before: datetime | None = None,
+    ) -> list[OutputDiscoveryRecord]:
         project_folder = sanitize_project_folder(project_key)
         safe_stem = sanitize_output_prefix(run_stem)
         project_dir = (self.settings.comfyui_output_root / project_folder).resolve()
@@ -48,6 +56,10 @@ class OutputCollector:
                 continue
             if path.suffix.lower() not in self.VIDEO_EXTENSIONS | self.IMAGE_EXTENSIONS:
                 continue
+            if not_before is not None:
+                threshold = not_before.replace(tzinfo=UTC) if not_before.tzinfo is None else not_before
+                if path.stat().st_mtime < threshold.timestamp():
+                    continue
             probe_json = None
             if probe and path.suffix.lower() in self.VIDEO_EXTENSIONS:
                 try:
@@ -92,7 +104,7 @@ class OutputCollector:
         if workflow_run is None:
             raise ValidationError(f"WorkflowRun not found: {job.workflow_run_id}")
 
-        records = self.discover(project_key, run_stem, probe=probe)
+        records = self.discover(project_key, run_stem, probe=probe, not_before=job.submitted_at)
         if not records:
             self.queue_service.mark_terminal_job(
                 db,
