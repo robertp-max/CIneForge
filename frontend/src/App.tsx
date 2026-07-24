@@ -115,7 +115,11 @@ function App() {
   })
   const [backendStatus, setBackendStatus] = useState('checking')
   const [projectName, setProjectName] = useState('Select a project')
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() =>
+    routeState.kind === 'studio' && isRealProjectId(routeState.projectId)
+      ? routeState.projectId
+      : null,
+  )
   const [projectCount, setProjectCount] = useState(0)
 
   const navigateTo = useCallback((route: AppRoute, options?: { replace?: boolean }) => {

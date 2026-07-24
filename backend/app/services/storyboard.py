@@ -1050,6 +1050,10 @@ def aggregate(db: Session, story_id: UUID) -> dict:
             "continuity_source_shot_id": str(shot.continuity_source_shot_id)
             if shot.continuity_source_shot_id
             else None,
+            "starting_image_required": bool(shot.starting_image_required),
+            "starting_image_asset_id": str(shot.starting_image_asset_id)
+            if shot.starting_image_asset_id
+            else None,
             "narration": narrations.get(shot.id).narration_text if shot.id in narrations else None,
         }
         scene_payload[shot.scene_id]["shots"].append(item)

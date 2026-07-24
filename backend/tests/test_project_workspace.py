@@ -44,8 +44,8 @@ def _payload(**overrides) -> dict:
         "speaking_rate": 1.15,
         "prefer_hosted_providers": True,
         "prefer_local_providers": True,
-        "allow_model_download": False,
-        "allow_rendering": False,
+        "allow_model_download": True,
+        "allow_rendering": True,
         "require_production_plan_approval": True,
         "orchestration_mode": "Hybrid",
         "privacy_preference": "Hosted providers allowed",
@@ -118,8 +118,8 @@ def test_workspace_api_creates_and_reloads_all_wizard_values(client: TestClient,
     assert settings["speaking_rate"] == 1.15
     assert settings["prefer_hosted_providers"] is True
     assert settings["prefer_local_providers"] is True
-    assert settings["allow_model_download"] is False
-    assert settings["allow_rendering"] is False
+    assert settings["allow_model_download"] is True
+    assert settings["allow_rendering"] is True
     assert settings["require_production_plan_approval"] is True
     assert settings["prompting_policy_json"] | {
         "orchestration_mode": "Hybrid",
@@ -203,8 +203,8 @@ def test_workspace_safe_defaults_are_persisted(client: TestClient):
     assert settings["speaking_rate"] == 1
     assert settings["prefer_hosted_providers"] is False
     assert settings["prefer_local_providers"] is True
-    assert settings["allow_model_download"] is False
-    assert settings["allow_rendering"] is False
+    assert settings["allow_model_download"] is True
+    assert settings["allow_rendering"] is True
     assert settings["require_production_plan_approval"] is True
 
 
@@ -222,3 +222,22 @@ def test_workspace_can_derive_title_from_the_single_prompt(client: TestClient):
     assert response.status_code == 201
     assert response.json()["project"]["name"] == "The Northern Crossing"
     assert response.json()["story"]["title"] == "The Northern Crossing"
+
+
+def test_workspace_derives_an_explicit_named_project_title(client: TestClient):
+    response = client.post(
+        "/projects/workspace",
+        json=_payload(
+            auto_title=True,
+            name="CineForge Production",
+            story_title="CineForge Production",
+            base_story=(
+                "Please start a new project named gogo power rangers: "
+                "use the supplied references as visual anchors."
+            ),
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["project"]["name"] == "Gogo power rangers"
+    assert response.json()["story"]["title"] == "Gogo power rangers"

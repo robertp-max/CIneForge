@@ -44,7 +44,29 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8010
 ```
 
-### ComfyUI auto-start contract (required, not yet implemented)
+### One-command supervised startup
+
+Start the complete local stack from the repository root:
+
+```powershell
+.\start-cineforge.cmd
+```
+
+The trusted launcher starts ComfyUI, the FastAPI backend, and the Vite frontend in that
+order. It reuses services that already pass their full readiness probes, writes logs and
+owned process metadata under `storage/runtime/supervisor/`, and stops only processes it
+started when you press Ctrl+C. Run `.\start-cineforge.cmd --check` for a read-only
+configuration and readiness check.
+
+Administrator overrides are supported through `CINEFORGE_COMFYUI_WORKING_DIR`,
+`CINEFORGE_COMFYUI_LAUNCHER`, `CINEFORGE_PYTHON_EXECUTABLE`, and
+`CINEFORGE_NPM_EXECUTABLE`. These values are local configuration only; no API request,
+story text, AI proposal, or prompt can supply an executable path or shell command.
+Readiness URLs are restricted to loopback HTTP origins, shell metacharacters are rejected
+from command paths, ports and timeouts are range-checked, and a singleton lock prevents
+competing supervisors. Logs rotate at 10 MiB per stream.
+
+### ComfyUI auto-start contract
 
 Starting CineForge must also start the explicitly configured external ComfyUI runtime when it is not already reachable. ComfyUI remains an isolated process; CineForge must not import it in-process or treat a listening port alone as generation readiness.
 

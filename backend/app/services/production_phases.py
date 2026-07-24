@@ -41,6 +41,8 @@ from backend.app.db.base import (
     VoiceProfile,
 )
 from backend.app.schemas.production import (
+    PhaseApproveRequest,
+    PhaseApproveResponse,
     PhaseHistoryExport,
     PhaseHistoryExportIntegrity,
     PhaseOneGenerationInput,
@@ -1655,6 +1657,122 @@ def create_phase_version(
     detail = get_phase_version(db, story_id, phase_number, version.id)
     pipeline = get_pipeline(db, story_id, ensure=False)
     return PhaseVersionCreateResponse(version=detail, pipeline=pipeline)
+
+
+def approve_phase(
+    db: Session,
+    story_id: UUID,
+    phase_number: int,
+    payload: PhaseApproveRequest,
+    *,
+    commit: bool = True,
+) -> PhaseApproveResponse:
+    """Mark a production phase approved and unlock the next phase.
+
+    Approval records the ledger state only. Media generation is handled by the
+    dedicated local runtime routes for the relevant phase.
+    """
+    if phase_number < 1 or phase_number > 7:
+        raise ProductionPhaseError("Phase number must be between 1 and 7.")
+    story = _require_story(db, story_id)
+    phases = ensure_contract(db, story, commit=False)
+    ensure_phase_baselines(db, story, phases=phases, commit=False)
+    phase = _require_phase(db, story, phase_number)
+
+    if phase.lifecycle_state == "approved" and phase.approved_at is not None:
+        pipeline = get_pipeline(db, story_id, ensure=False)
+        return PhaseApproveResponse(
+            pipeline=pipeline,
+            phase=next(p for p in pipeline.phases if p.phase_number == phase_number),
+            message=f"Phase {phase_number} is already approved.",
+        )
+
+    if phase_number > 1:
+        previous = next(p for p in phases if p.phase_number == phase_number - 1)
+        if previous.lifecycle_state != "approved":
+            raise ProductionPhaseError(
+                f"Phase {phase_number - 1} must be approved before phase {phase_number} can be approved."
+            )
+
+    # Approving a phase that is still locked because its predecessor was just
+    # approved is allowed only when that predecessor is now approved.
+    if phase.is_locked and phase_number > 1:
+        previous = next(p for p in phases if p.phase_number == phase_number - 1)
+        if previous.lifecycle_state == "approved":
+            phase.is_locked = False
+            phase.locked_reason = None
+        else:
+            raise ProductionPhaseError(
+                phase.locked_reason
+                or f"Phase {phase_number} is locked until phase {phase_number - 1} is approved."
+            )
+    elif phase.is_locked and phase_number == 1:
+        raise ProductionPhaseError(phase.locked_reason or "Phase 1 is locked.")
+
+    now = datetime.now(timezone.utc)
+    phase.lifecycle_state = "approved"
+    phase.approved_at = now
+    phase.is_locked = False
+    phase.locked_reason = None
+    phase.is_stale = False
+    phase.stale_reason = None
+
+    snapshot = build_phase_snapshot(db, story, phase_number)
+    _append_version(
+        db,
+        phase=phase,
+        label=f"Approved phase {phase_number}",
+        notes=(payload.notes or "").strip()
+        or f"Approved by {payload.approved_by} at {now.isoformat()}",
+        source="manual",
+        input_snapshot={
+            "reason": "phase_approval",
+            "phase_number": phase_number,
+            "approved_by": payload.approved_by,
+        },
+        output_json=snapshot,
+        lifecycle_state="approved",
+        completed=True,
+        created_by=payload.approved_by,
+        commit=False,
+    )
+
+    next_phase = next((p for p in phases if p.phase_number == phase_number + 1), None)
+    if next_phase is not None:
+        next_phase.is_locked = False
+        next_phase.locked_reason = None
+        if next_phase.lifecycle_state == "not_started":
+            next_phase.lifecycle_state = "drafting"
+
+    db.add(
+        AuditLog(
+            entity_type="production_phase",
+            entity_id=phase.id,
+            action="production_phase_approved",
+            details={
+                "story_id": str(story.id),
+                "phase_number": phase_number,
+                "approved_by": payload.approved_by,
+                "media_generated": False,
+            },
+        )
+    )
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+
+    pipeline = get_pipeline(db, story_id, ensure=False)
+    return PhaseApproveResponse(
+        pipeline=pipeline,
+        phase=next(p for p in pipeline.phases if p.phase_number == phase_number),
+        message=f"Phase {phase_number} approved. "
+        + (
+            f"Phase {phase_number + 1} is unlocked for planning."
+            if next_phase is not None
+            else "All seven phases are approved."
+        ),
+    )
 
 
 def export_phase_history(db: Session, story_id: UUID) -> PhaseHistoryExport:

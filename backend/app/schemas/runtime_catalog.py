@@ -154,3 +154,54 @@ class RuntimeCatalogResponse(BaseModel):
     workflow_templates: list[WorkflowTemplateCatalogItem] = Field(default_factory=list)
     quantizations: list[QuantizationCatalogItem] = Field(default_factory=list)
     loras: list[LoraCatalogItem] = Field(default_factory=list)
+
+
+class WorkflowArchetypeCatalogItem(BaseModel):
+    archetype_id: str
+    name: str
+    modality: str
+    default_model_key: str | None = None
+    readiness: str
+    enabled: bool = False
+
+
+class WorkflowCandidateCatalogItem(BaseModel):
+    candidate_id: str
+    archetype_id: str
+    name: str
+    modality: str
+    source_url: str
+    source_tier: str
+    required_model_key: str
+    relative_path: str | None = None
+    admission_state: str
+    notes: str
+
+
+class WorkflowCandidateAssessmentItem(BaseModel):
+    candidate_id: str
+    state: str
+    local_path: str | None = None
+    sha256: str | None = None
+    base_model_references: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class WorkflowPresetCatalogItem(BaseModel):
+    preset_id: str
+    name: str
+    modality: str
+    model_key: str
+    default_archetype_id: str
+    quality_profile: str
+    readiness: str
+    enabled: bool = False
+
+
+class WorkflowCandidateRegistryResponse(BaseModel):
+    catalog_version: str
+    execution_policy: str
+    archetypes: list[WorkflowArchetypeCatalogItem] = Field(default_factory=list)
+    candidates: list[WorkflowCandidateCatalogItem] = Field(default_factory=list)
+    assessments: list[WorkflowCandidateAssessmentItem] = Field(default_factory=list)
+    presets: list[WorkflowPresetCatalogItem] = Field(default_factory=list)

@@ -76,8 +76,8 @@ describe('new project workspace', () => {
       speaking_rate: 1,
       prefer_hosted_providers: true,
       prefer_local_providers: true,
-      allow_model_download: false,
-      allow_rendering: false,
+      allow_model_download: true,
+      allow_rendering: true,
       require_production_plan_approval: true,
       run_phase_one: true,
     }))

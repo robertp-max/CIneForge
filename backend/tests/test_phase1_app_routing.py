@@ -84,6 +84,7 @@ REQUIRED_METHOD_PATHS = {
     ("POST", "/campaigns"),
     ("GET", "/jobs"),
     ("GET", "/runtime-catalog"),
+    ("GET", "/runtime-catalog/workflow-candidates"),
     ("GET", "/providers"),
     ("GET", "/providers/{provider_identifier}/capabilities"),
     ("POST", "/providers/{provider_identifier}/connection-test"),

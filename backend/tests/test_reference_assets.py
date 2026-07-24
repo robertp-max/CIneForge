@@ -32,6 +32,7 @@ from backend.app.db.base import (
 from backend.app.api.routes.assets import router as assets_router
 from backend.app.db.session import get_db
 from backend.app.services import reference_assets as assets
+from backend.app.services import storyboard as storyboard_service
 
 
 # Minimal valid 1x1 PNG
@@ -583,6 +584,11 @@ def test_starting_image_approval_transitions_same_managed_record_with_audit(db):
     assert approved.approval_state == "approved"
     session.refresh(story)
     assert story.approval_state == "draft"
+
+    aggregate = storyboard_service.aggregate(session, story.id)
+    aggregate_shot = aggregate["chapters"][0]["scenes"][0]["shots"][0]
+    assert aggregate_shot["starting_image_required"] is True
+    assert aggregate_shot["starting_image_asset_id"] == str(asset_id)
 
     audits = list(
         session.scalars(

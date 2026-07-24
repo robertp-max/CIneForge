@@ -43,8 +43,8 @@ const DEFAULT_DRAFT: ProjectStoryboardSettingsUpdate = {
   audio_enabled: true,
   prefer_hosted_providers: false,
   prefer_local_providers: true,
-  allow_model_download: false,
-  allow_rendering: false,
+  allow_model_download: true,
+  allow_rendering: true,
   require_voice_consent: true,
   require_production_plan_approval: true,
 }
@@ -122,9 +122,8 @@ export function SettingsPage() {
       const updated = await api.updateSettings(data.story.project_id, {
         ...draft,
         expected_settings_version: settings?.id ? settings.settings_version : undefined,
-        // Phase A remains plan-only even if stale server data says otherwise.
-        allow_model_download: false,
-        allow_rendering: false,
+        allow_model_download: Boolean(draft.allow_model_download),
+        allow_rendering: Boolean(draft.allow_rendering),
       })
       if (!updated) {
         setAvailable(false)
@@ -133,7 +132,11 @@ export function SettingsPage() {
       }
       setSettings(updated)
       setDraft(editableSettings(updated))
-      setMessage('Project storyboard settings saved. Rendering and model downloads remain disabled.')
+      const bits = [
+        updated.allow_model_download ? 'model/LoRA download on' : 'model/LoRA download off',
+        updated.allow_rendering ? 'rendering on' : 'rendering off',
+      ]
+      setMessage(`Project storyboard settings saved (${bits.join(', ')}).`)
     } catch (err) {
       const text = err instanceof Error ? err.message : 'Could not save settings.'
       setError(text)
@@ -295,8 +298,27 @@ export function SettingsPage() {
       </label>
 
       <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
-        <input type="checkbox" checked={false} disabled aria-disabled="true" style={{ width: 20, height: 20, minHeight: 20 }} />
-        <span>Rendering and model downloads — locked off in Phase A planning</span>
+        <input
+          type="checkbox"
+          checked={Boolean(draft.allow_model_download)}
+          onChange={(event) => setDraft({ ...draft, allow_model_download: event.target.checked })}
+          disabled={savingDisabled}
+          style={{ width: 20, height: 20, minHeight: 20 }}
+        />
+        <span>
+          Allow model and LoRA downloads (checkpoints, adapters, weights for better video quality)
+        </span>
+      </label>
+
+      <label style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}>
+        <input
+          type="checkbox"
+          checked={Boolean(draft.allow_rendering)}
+          onChange={(event) => setDraft({ ...draft, allow_rendering: event.target.checked })}
+          disabled={savingDisabled}
+          style={{ width: 20, height: 20, minHeight: 20 }}
+        />
+        <span>Allow rendering / video generation jobs when the runtime worker is enabled</span>
       </label>
 
       <div className="inline-actions">
@@ -307,7 +329,8 @@ export function SettingsPage() {
       </div>
 
       <p className="form-hint">
-        Saving settings does not install models, submit workflows, queue renders, or generate media.
+        Model/LoRA download and rendering flags are project policy. Downloads still require a configured
+        runtime and worker; enabling the flags does not auto-fetch weights by itself.
       </p>
     </form>
   )

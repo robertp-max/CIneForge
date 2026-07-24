@@ -10,7 +10,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.db.base import Base, ProductionPhase, ProductionPhaseVersion, Project, Story
+from backend.app.db.base import (
+    AuditLog,
+    Base,
+    ProductionPhase,
+    ProductionPhaseVersion,
+    Project,
+    Story,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.schemas.production import PhaseVersionCreateRequest
@@ -224,3 +231,57 @@ def test_missing_story_and_no_delete_route(client: TestClient):
     # FastAPI should 405/404 for DELETE on versions collection
     response = client.delete(f"/production/stories/{missing}/phases/1/versions/{missing}")
     assert response.status_code in {404, 405, 422}
+
+
+def test_phase_six_approval_does_not_artificially_gate_local_generation_or_phase_seven(
+    client: TestClient, db_session: Session
+):
+    story = _story(db_session)
+    assert client.get(f"/production/stories/{story.id}").status_code == 200
+
+    out_of_order = client.post(
+        f"/production/stories/{story.id}/phases/2/approve",
+        json={"approved_by": "CineForge QA"},
+    )
+    assert out_of_order.status_code == 422
+    assert "Phase 1 must be approved" in out_of_order.json()["detail"]
+
+    for phase_number in range(1, 6):
+        response = client.post(
+            f"/production/stories/{story.id}/phases/{phase_number}/approve",
+            json={
+                "approved_by": "CineForge QA",
+                "notes": (
+                    f"QA approved Phase {phase_number} planning only; "
+                    "no media execution was certified."
+                ),
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["phase"]["lifecycle_state"] == "approved"
+        assert body["phase"]["approved_at"] is not None
+
+    phase_six = client.post(
+        f"/production/stories/{story.id}/phases/6/approve",
+        json={"approved_by": "CineForge QA", "notes": "Creative image QA."},
+    )
+    assert phase_six.status_code == 200, phase_six.text
+    assert phase_six.json()["phase"]["lifecycle_state"] == "approved"
+
+    pipeline = client.get(f"/production/stories/{story.id}").json()
+    assert all(phase["lifecycle_state"] == "approved" for phase in pipeline["phases"][:6])
+    phase_seven = pipeline["phases"][6]
+    assert phase_seven["lifecycle_state"] == "drafting"
+    assert phase_seven["approved_at"] is None
+    assert phase_seven["is_locked"] is False
+
+    approval_logs = list(
+        db_session.scalars(
+            select(AuditLog)
+            .where(AuditLog.action == "production_phase_approved")
+            .order_by(AuditLog.created_at)
+        )
+    )
+    assert len(approval_logs) == 6
+    assert all(log.details["media_generated"] is False for log in approval_logs)

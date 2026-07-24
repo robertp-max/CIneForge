@@ -241,6 +241,105 @@ def test_mock_provider_deterministic():
     assert len(a.payload["shots"]) == len(b.payload["shots"])
 
 
+def test_mock_provider_uses_explicit_pacing_and_preserves_existing_voices():
+    provider = MockPlanningProvider(fixed_latency_ms=0)
+    ctx = PlanningContext(
+        story_id=uuid4(),
+        title="The Prodigal Son",
+        base_story=(
+            "FIVE-MINUTE PACING FLOOR Use this approximate dramatic allocation: "
+            "- 0:00–0:45 — estate, family tension, inheritance demand "
+            "- 0:45–1:30 — departure and life in the distant country "
+            "- 1:30–2:20 — collapse, famine, pigs, and recognition "
+            "- 2:20–3:45 — journey home, father running, embrace, restoration "
+            "- 3:45–5:00 — feast, older brother’s refusal, father’s appeal, unresolved ending "
+            "Do not rush the older brother into the final few seconds."
+        ),
+        target_duration_sec=300.0,
+        visual_style="Photorealistic first-century Judean historical drama",
+        characters=[
+            {"id": str(uuid4()), "name": "Father", "role": "Estate patriarch"},
+            {"id": str(uuid4()), "name": "Younger Son", "role": "Younger heir"},
+            {"id": str(uuid4()), "name": "Older Son", "role": "Older heir"},
+        ],
+        existing_structure={
+            "voices": [
+                {"id": str(uuid4()), "name": "Father", "source_type": "placeholder"},
+                {"id": str(uuid4()), "name": "Younger Son", "source_type": "placeholder"},
+                {"id": str(uuid4()), "name": "Older Son", "source_type": "placeholder"},
+                {"id": str(uuid4()), "name": "Narrator", "source_type": "placeholder"},
+            ]
+        },
+    )
+
+    def invoke(task: PlanningTaskType, previous: dict | None = None) -> dict:
+        request = ProviderRequestContract(
+            task_type=task,
+            logical_model=LogicalModelProfile.terra,
+            resolved_model="mock:logical/terra",
+            provider_identifier="mock",
+            context=ctx,
+            previous_output=previous,
+            attempt_number=1,
+            idempotency_key=f"pacing-{task.value}",
+        )
+        return provider.invoke(request).payload
+
+    character_payload = invoke(PlanningTaskType.character_bible)
+    chapters = invoke(PlanningTaskType.chapter_outline)
+    assert [row["duration_sec"] for row in chapters["chapters"]] == [45, 45, 50, 85, 75]
+    assert chapters["chapters"][0]["title"] == "Estate"
+    assert "older brother" in chapters["chapters"][-1]["summary"].lower()
+
+    scenes = invoke(PlanningTaskType.scene_breakdown, chapters)
+    merged = {**character_payload, **chapters, **scenes}
+    shots = invoke(PlanningTaskType.shot_list, merged)
+    assert len(scenes["scenes"]) == 5
+    assert len(shots["shots"]) == 40
+    assert {row["scene_order_index"] for row in shots["shots"]} == {0, 1, 2, 3, 4}
+    assert sum(row["duration_sec"] for row in shots["shots"]) == pytest.approx(300.0)
+    scene_character_counts = {
+        scene_index: {link["character_id"] for row in shots["shots"] if row["scene_order_index"] == scene_index for link in row["characters"]}
+        for scene_index in range(5)
+    }
+    assert len(scene_character_counts[0]) == 3
+    assert len(scene_character_counts[1]) == 1
+    assert len(scene_character_counts[2]) == 1
+    assert len(scene_character_counts[3]) == 2
+    assert len(scene_character_counts[4]) == 3
+
+    final_merged = {**merged, **shots}
+    production = invoke(PlanningTaskType.production_proposal, final_merged)
+    assert [row["name"] for row in production["voices"]] == [
+        "Father",
+        "Younger Son",
+        "Older Son",
+        "Narrator",
+    ]
+
+    proposal = build_proposal_payload(
+        project_id=uuid4(),
+        context=ctx,
+        base_storyboard_version_id=None,
+        base_content_hash="c" * 64,
+        target_duration_sec=300.0,
+        merged=final_merged,
+        production_payload=production,
+    )
+    proposal_data = proposal.model_dump(mode="json")
+    name_by_client = {
+        row["client_id"]: row["name"] for row in proposal_data["story"]["characters"]
+    }
+    proposal_coverage: dict[str, int] = {}
+    for chapter in proposal_data["story"]["chapters"]:
+        for scene in chapter["scenes"]:
+            for shot in scene["shots"]:
+                for link in shot["characters"]:
+                    name = name_by_client[link["character_client_id"]]
+                    proposal_coverage[name] = proposal_coverage.get(name, 0) + 1
+    assert proposal_coverage == {"Father": 27, "Younger Son": 40, "Older Son": 16}
+
+
 def test_mock_transport_failures_then_success():
     provider = MockPlanningProvider(fixed_latency_ms=0)
     ctx = PlanningContext(

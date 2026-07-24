@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.db.base import (
     Base,
+    Chapter,
     ComfyJob,
     FFmpegJob,
     Project,
@@ -517,20 +518,21 @@ def test_real_planning_proposal_reviews_applies_idempotently_and_enqueues_nothin
     engine = PlanningEngine(
         db_session, providers={"mock": MockPlanningProvider(fixed_latency_ms=0)}
     )
+    task_types = [
+        PlanningTaskType.character_bible,
+        PlanningTaskType.chapter_outline,
+        PlanningTaskType.scene_breakdown,
+        PlanningTaskType.shot_list,
+        PlanningTaskType.narration_plan,
+        PlanningTaskType.prompt_package,
+        PlanningTaskType.model_recommendation,
+        PlanningTaskType.production_proposal,
+    ]
     run, _ = engine.create_run(
         CreateOrchestrationRunRequest(
             story_id=story.id,
             requested_by="planner",
-            task_types=[
-                PlanningTaskType.character_bible,
-                PlanningTaskType.chapter_outline,
-                PlanningTaskType.scene_breakdown,
-                PlanningTaskType.shot_list,
-                PlanningTaskType.narration_plan,
-                PlanningTaskType.prompt_package,
-                PlanningTaskType.model_recommendation,
-                PlanningTaskType.production_proposal,
-            ],
+            task_types=task_types,
             max_steps=10,
         )
     )
@@ -572,6 +574,47 @@ def test_real_planning_proposal_reviews_applies_idempotently_and_enqueues_nothin
     )
     assert replay.new_storyboard_version_id == applied.new_storyboard_version_id
     assert db_session.scalar(select(func.count()).select_from(StoryboardVersion)) == 1
+    assert db_session.scalar(select(func.count()).select_from(ComfyJob)) == 0
+    assert db_session.scalar(select(func.count()).select_from(WorkflowRun)) == 0
+    assert db_session.scalar(select(func.count()).select_from(FFmpegJob)) == 0
+
+    # A second full-plan pass must preserve the first version's rows without
+    # colliding with the live sibling order slots used by the replacement.
+    second_run, _ = engine.create_run(
+        CreateOrchestrationRunRequest(
+            story_id=story.id,
+            requested_by="planner",
+            task_types=task_types,
+            max_steps=10,
+        )
+    )
+    assert engine.start_run(second_run.id).status == RunStatus.completed.value
+    second_proposal = engine.get_run_detail(second_run.id)["proposals"][0]
+    second_payload = StoryboardProposalPayload.model_validate(second_proposal.payload)
+    proposal_service.review_proposal(
+        db_session,
+        second_proposal.id,
+        ProposalReviewRequest(reviewed_by="planner", notes="Reviewed replacement plan."),
+    )
+    second_applied = proposal_apply.apply_proposal(
+        db_session,
+        second_proposal.id,
+        ProposalApplyRequest(applied_by="planner"),
+    )
+    active_chapters = list(
+        db_session.scalars(
+            select(Chapter).where(
+                Chapter.story_id == story.id,
+                Chapter.archived_at.is_(None),
+            )
+        )
+    )
+    assert second_applied.new_storyboard_version_id != applied.new_storyboard_version_id
+    assert len(active_chapters) == len(second_payload.story.chapters)
+    assert {row.order_index for row in active_chapters} == {
+        row.order_index for row in second_payload.story.chapters
+    }
+    assert db_session.scalar(select(func.count()).select_from(StoryboardVersion)) == 2
     assert db_session.scalar(select(func.count()).select_from(ComfyJob)) == 0
     assert db_session.scalar(select(func.count()).select_from(WorkflowRun)) == 0
     assert db_session.scalar(select(func.count()).select_from(FFmpegJob)) == 0

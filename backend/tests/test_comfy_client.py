@@ -32,38 +32,80 @@ async def test_comfy_client_health_and_object_info_use_mock_transport():
 
 
 @pytest.mark.asyncio
-async def test_comfy_client_mutation_methods_remain_blocked_with_no_prompt_call():
+async def test_comfy_client_requires_explicit_mutation_context():
     requests: list[httpx.Request] = []
     transport = httpx.MockTransport(lambda request: requests.append(request) or httpx.Response(200, json={}))
 
-    async with ComfyUIClient("http://comfy.test", allow_mutation=True, transport=transport) as client:
+    async with ComfyUIClient("http://comfy.test", transport=transport) as client:
         with pytest.raises(ComfyMutationBlocked):
             await client.submit_prompt({"1": {"class_type": "KSampler"}}, "client-1")
         with pytest.raises(ComfyMutationBlocked):
-            await client.upload_image()
-        with pytest.raises(ComfyMutationBlocked):
-            await client.interrupt()
-        with pytest.raises(ComfyMutationBlocked):
-            await client.delete_queue_items(["prompt-1"])
-        with pytest.raises(ComfyMutationBlocked):
-            await client.free_memory()
+            await client.upload_image(b"image", "frame.png")
 
     assert requests == []
 
 
 @pytest.mark.asyncio
-async def test_comfy_client_runtime_output_and_websocket_routes_are_blocked():
+async def test_comfy_client_local_mutation_routes_submit_when_allowed():
     requests: list[httpx.Request] = []
-    transport = httpx.MockTransport(lambda request: requests.append(request) or httpx.Response(200, json={}))
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/prompt":
+            return httpx.Response(200, json={"prompt_id": "prompt-1", "number": 1})
+        if request.url.path == "/upload/image":
+            return httpx.Response(200, json={"name": "frame.png", "subfolder": "", "type": "input"})
+        if request.url.path in {"/interrupt", "/queue", "/free"}:
+            return httpx.Response(200, json={"status": "ok"})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+
+    async with ComfyUIClient("http://comfy.test", allow_mutation=True, transport=transport) as client:
+        prompt = await client.submit_prompt({"1": {"class_type": "KSampler"}}, "client-1")
+        upload = await client.upload_image(b"image", "frame.png", content_type="image/png")
+        interrupt = await client.interrupt()
+        queue = await client.delete_queue_items(["prompt-1"])
+        free = await client.free_memory()
+
+    assert prompt["prompt_id"] == "prompt-1"
+    assert upload["name"] == "frame.png"
+    assert interrupt == {"status": "ok"}
+    assert queue == {"status": "ok"}
+    assert free == {"status": "ok"}
+    assert [request.url.path for request in requests] == [
+        "/prompt",
+        "/upload/image",
+        "/interrupt",
+        "/queue",
+        "/free",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_comfy_client_history_and_view_routes_collect_outputs():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/history/prompt-1":
+            return httpx.Response(200, json={"prompt-1": {"outputs": {}}})
+        if request.url.path == "/history":
+            return httpx.Response(200, json={"history": []})
+        if request.url.path == "/view":
+            return httpx.Response(200, content=b"image-bytes")
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
 
     async with ComfyUIClient("http://comfy.test", transport=transport) as client:
-        with pytest.raises(ComfyRuntimeRouteBlocked):
-            await client.get_history("prompt-1")
-        with pytest.raises(ComfyRuntimeRouteBlocked):
-            await client.get_prompt_history()
-        with pytest.raises(ComfyRuntimeRouteBlocked):
-            await client.view_output("clip.mp4")
+        prompt_history = await client.get_history("prompt-1")
+        full_history = await client.get_prompt_history()
+        output = await client.view_output("frame.png")
         with pytest.raises(ComfyRuntimeRouteBlocked):
             await client.connect_progress_websocket("client-1")
 
-    assert requests == []
+    assert prompt_history == {"prompt-1": {"outputs": {}}}
+    assert full_history == {"history": []}
+    assert output == b"image-bytes"
+    assert [request.url.path for request in requests] == ["/history/prompt-1", "/history", "/view"]

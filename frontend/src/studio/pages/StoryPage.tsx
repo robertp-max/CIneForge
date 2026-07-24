@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   api,
   type Chapter,
@@ -64,6 +64,7 @@ function diffValue(value: unknown): string {
 export function StoryPage() {
   const { data, addHierarchy, updateStoryFields, reload, setMessage, busy } = useStudio()
   const storyId = data?.story.id ?? ''
+  const [title, setTitle] = useState(data?.story.title ?? '')
   const [logline, setLogline] = useState(data?.story.logline ?? '')
   const [synopsis, setSynopsis] = useState(data?.story.synopsis ?? '')
   const [baseStory, setBaseStory] = useState(data?.story.base_story ?? '')
@@ -75,8 +76,7 @@ export function StoryPage() {
   const [productionNotes, setProductionNotes] = useState(data?.story.production_notes ?? '')
   const [targetRuntime, setTargetRuntime] = useState(data?.story.target_duration_sec ?? 300)
   const [expanded, setExpanded] = useState<string[]>([])
-  const [suggestions, setSuggestions] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const planningDetailsRef = useRef<HTMLDetailsElement | null>(null)
 
   const [actorName, setActorName] = useState('')
   const [routingMode, setRoutingMode] = useState<OrchestrationRoutingMode>('automatic')
@@ -108,6 +108,7 @@ export function StoryPage() {
   const [structureError, setStructureError] = useState<string | null>(null)
   const syncedStoryId = data?.story.id ?? ''
   const syncedStoryVersionId = data?.story.active_storyboard_version_id ?? ''
+  const syncedTitle = data?.story.title ?? ''
   const syncedLogline = data?.story.logline ?? ''
   const syncedSynopsis = data?.story.synopsis ?? ''
   const syncedBaseStory = data?.story.base_story ?? ''
@@ -115,6 +116,7 @@ export function StoryPage() {
   useEffect(() => {
     if (!syncedStoryId) return
     const timer = window.setTimeout(() => {
+      setTitle(syncedTitle)
       setLogline(syncedLogline)
       setSynopsis(syncedSynopsis)
       setBaseStory(syncedBaseStory)
@@ -132,6 +134,7 @@ export function StoryPage() {
   }, [
     syncedStoryId,
     syncedStoryVersionId,
+    syncedTitle,
     syncedLogline,
     syncedSynopsis,
     syncedBaseStory,
@@ -611,6 +614,7 @@ export function StoryPage() {
 
   async function saveStoryIntake() {
     await updateStoryFields({
+      title: title.trim(),
       logline: logline || null,
       synopsis: synopsis || null,
       base_story: baseStory,
@@ -624,13 +628,18 @@ export function StoryPage() {
     })
   }
 
-  function generateStructure() {
-    setGenerating(true)
-    window.setTimeout(() => {
-      setGenerating(false)
-      setSuggestions(true)
-      setMessage('Orchestrator proposal ready for comparison')
-    }, 800)
+  function openPlanningOrchestration() {
+    const details = planningDetailsRef.current
+    if (details) {
+      details.open = true
+      window.requestAnimationFrame(() => {
+        details.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+    setPlanningNotice(
+      'Configure a factual provider route and create a backend planning run. No hierarchy was changed.',
+    )
+    setMessage('Planning orchestration opened. No structure was generated or applied.')
   }
 
   return (
@@ -645,10 +654,10 @@ export function StoryPage() {
           <button
             type="button"
             className="btn secondary"
-            disabled={generating || busy}
-            onClick={() => generateStructure()}
+            disabled={planningBusy || busy}
+            onClick={() => openPlanningOrchestration()}
           >
-            <span>{generating ? 'Generating proposal…' : 'Generate structure'}</span>
+            <span>Open planning orchestration</span>
           </button>
           <button
             type="button"
@@ -676,7 +685,12 @@ export function StoryPage() {
             <div className="form-grid two">
               <label>
                 Title
-                <input value={story.title} readOnly aria-readonly="true" />
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  required
+                  maxLength={300}
+                />
               </label>
               <label>
                 Target runtime
@@ -942,42 +956,34 @@ export function StoryPage() {
             </span>
             <div>
               <span className="eyebrow">ORCHESTRATOR SUGGESTIONS</span>
-              <h2>{suggestions ? '3 recommendations' : 'No proposal loaded'}</h2>
+              <h2>
+                {proposals.length
+                  ? `${proposals.length} backend proposal${proposals.length === 1 ? '' : 's'}`
+                  : 'No backend proposal loaded'}
+              </h2>
             </div>
           </header>
-          {suggestions ? (
+          {proposals.length ? (
             <div className="suggestions">
-              {(
-                [
-                  [
-                    'Clarify the narrative turn',
-                    'Strengthen the transition into the central decision or discovery.',
-                  ],
-                  [
-                    'Seed the supporting cast',
-                    'Introduce important characters before their first major story beat.',
-                  ],
-                  [
-                    'Hold the final image',
-                    'Give the closing visual clean breathing room after narration ends.',
-                  ],
-                ] as const
-              ).map(([title, body], i) => (
-                <article key={title}>
+              {proposals.slice(0, 3).map((proposal, i) => (
+                <article key={proposal.id}>
                   <span>{i + 1}</span>
                   <div>
-                    <b>{title}</b>
-                    <p>{body}</p>
-                    <small>Low-risk structural refinement</small>
+                    <b>{proposal.proposal_type.replaceAll('_', ' ')}</b>
+                    <p>
+                      Status: {proposal.status} · Validation:{' '}
+                      {proposal.validation_status ?? 'not evaluated'}
+                    </p>
+                    <small>Immutable backend proposal {shortId(proposal.id)}</small>
                   </div>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      ;(e.currentTarget.closest('article') as HTMLElement).dataset.accepted = 'true'
-                      setMessage('Recommendation accepted')
+                    onClick={() => {
+                      void chooseProposal(proposal.id)
+                      openPlanningOrchestration()
                     }}
                   >
-                    Accept
+                    Inspect
                   </button>
                 </article>
               ))}
@@ -985,16 +991,16 @@ export function StoryPage() {
           ) : (
             <div className="suggestion-empty">
               <p>
-                Run Generate Structure to compare a new orchestrator proposal against the current
-                hierarchy.
+                Create a backend planning run to produce an immutable proposal. Nothing changes
+                until a validated proposal is reviewed and explicitly applied.
               </p>
               <button
                 type="button"
                 className="btn secondary"
-                disabled={generating || busy}
-                onClick={() => generateStructure()}
+                disabled={planningBusy || busy}
+                onClick={() => openPlanningOrchestration()}
               >
-                <span>Generate proposal</span>
+                <span>Open planning orchestration</span>
               </button>
             </div>
           )}
@@ -1010,7 +1016,11 @@ export function StoryPage() {
         </aside>
       </div>
 
-      <details className="legacy-story-ops backend-diagnostics" style={{ marginTop: 16 }}>
+      <details
+        ref={planningDetailsRef}
+        className="legacy-story-ops backend-diagnostics"
+        style={{ marginTop: 16 }}
+      >
         <summary>
           <span className="eyebrow">PLANNING ORCHESTRATION</span>
           <span>
@@ -1254,7 +1264,13 @@ export function StoryPage() {
                     <span>Status</span>
                     <strong><span className={`truth-pill ${statusClass(selectedRun.status)}`}>{selectedRun.status}</span></strong>
                   </li>
-                  <li><span>Progress</span><strong>{selectedRun.current_step} / {selectedRun.max_steps} steps</strong></li>
+                  <li>
+                    <span>Progress</span>
+                    <strong>
+                      {selectedRun.steps.filter((step) => step.status === 'completed').length} /{' '}
+                      {selectedRun.max_steps} steps
+                    </strong>
+                  </li>
                   <li><span>Repairs used</span><strong>{selectedRun.repair_used} / {selectedRun.repair_budget}</strong></li>
                   <li><span>Requested by</span><strong>{selectedRun.requested_by || 'Not recorded'}</strong></li>
                   <li><span>Created</span><strong>{formatDate(selectedRun.created_at)}</strong></li>

@@ -17,14 +17,12 @@ type ExportCard = {
   lastExport: string
 }
 
-/** Sites Gold export catalog (mock readiness) + live JSON/CSV links when ready. */
+/** Sites Gold export catalog with live JSON/CSV links only when hierarchy prerequisites exist. */
 export function ExportsPage() {
   const { data, readiness } = useStudio()
   const [scope, setScope] = useState('Full project')
   const [running, setRunning] = useState('')
   const [history, setHistory] = useState<{ name: string; time: string; status: string }[]>([
-    { name: 'Storyboard JSON', time: 'Live API download', status: 'Ready' },
-    { name: 'Shot List CSV', time: 'Live API download', status: 'Ready' },
     { name: 'Model Gap Report', time: 'Planning package', status: 'Ready' },
   ])
   const [showBlockers, setShowBlockers] = useState(false)
@@ -35,6 +33,13 @@ export function ExportsPage() {
   const links = api.exportLinks(data.story.id)
   const jsonUrl = links.json_url || exportJsonUrl(data.story.id)
   const csvUrl = links.shot_list_csv_url || exportShotListCsvUrl(data.story.id)
+  const sceneCount = data.chapters.reduce((total, chapter) => total + chapter.scenes.length, 0)
+  const shotCount = data.chapters.reduce(
+    (total, chapter) =>
+      total + chapter.scenes.reduce((sceneTotal, scene) => sceneTotal + scene.shots.length, 0),
+    0,
+  )
+  const hasValidHierarchy = data.chapters.length > 0 && sceneCount > 0 && shotCount > 0
 
   const blocking = readiness?.reasons.filter((reason) => reason.blocking) ?? []
   const totalReasons = readiness?.reasons.length ?? 0
@@ -66,14 +71,14 @@ export function ExportsPage() {
       name: 'Shot List CSV',
       description: 'All generation units for spreadsheets and tracking',
       format: 'CSV',
-      requirement: 'Shot list present',
-      version: 'v1 live',
-      ready: true,
-      href: csvUrl,
-      statusLabel: 'Ready',
+      requirement: hasValidHierarchy ? 'Shot list present' : 'Create at least one chapter, scene, and shot',
+      version: hasValidHierarchy ? 'Live draft' : '—',
+      ready: hasValidHierarchy,
+      href: hasValidHierarchy ? csvUrl : undefined,
+      statusLabel: hasValidHierarchy ? 'Ready' : 'Blocked',
       iconClass: 'export-1',
       iconText: 'CSV',
-      lastExport: 'On demand',
+      lastExport: hasValidHierarchy ? 'On demand' : 'Never',
     },
     {
       id: 'narration',
@@ -89,8 +94,8 @@ export function ExportsPage() {
       lastExport: 'Never',
     },
     {
-      id: 'bible',
-      name: 'Character Bible',
+      id: 'characters',
+      name: 'Characters',
       description: 'Identity and wardrobe package',
       format: 'PDF',
       requirement: 'Human approvals and production evidence are required',
@@ -132,14 +137,14 @@ export function ExportsPage() {
       name: 'Storyboard JSON',
       description: 'Canonical structured Phase A package',
       format: 'JSON',
-      requirement: 'Valid hierarchy',
-      version: 'v1 live',
-      ready: true,
-      href: jsonUrl,
-      statusLabel: 'Ready',
+      requirement: hasValidHierarchy ? 'Valid hierarchy' : 'Create at least one chapter, scene, and shot',
+      version: hasValidHierarchy ? 'Live draft' : '—',
+      ready: hasValidHierarchy,
+      href: hasValidHierarchy ? jsonUrl : undefined,
+      statusLabel: hasValidHierarchy ? 'Ready' : 'Blocked',
       iconClass: 'export-1',
       iconText: 'JSON',
-      lastExport: 'On demand',
+      lastExport: hasValidHierarchy ? 'On demand' : 'Never',
     },
     {
       id: 'outline',

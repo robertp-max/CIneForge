@@ -109,6 +109,8 @@ export function ProductionPhases({
   const [iterationLabel, setIterationLabel] = useState('')
   const [iterationNotes, setIterationNotes] = useState('')
   const [savingIteration, setSavingIteration] = useState(false)
+  const [approvingPhase, setApprovingPhase] = useState(false)
+  const [approvalNotice, setApprovalNotice] = useState<string | null>(null)
   /** When the pipeline head is a non-package snapshot, hold the last script package from history. */
   const [packageFallback, setPackageFallback] = useState<PhaseOnePackage | null>(null)
   const phaseTabs = useRef<Array<HTMLButtonElement | null>>([])
@@ -333,6 +335,7 @@ export function ProductionPhases({
 
   const selectPhase = (phaseNumber: number, focus = false) => {
     setSelectedPhaseNumber(phaseNumber)
+    setApprovalNotice(null)
     setCompare(false)
     setEditing(false)
     if (focus) window.requestAnimationFrame(() => phaseTabs.current[phaseNumber - 1]?.focus())
@@ -458,6 +461,26 @@ export function ProductionPhases({
     }
   }
 
+  const approveSelectedPhase = async () => {
+    if (!selectedPhase || historical || selectedPhase.lifecycle_state === 'approved') return
+    setApprovingPhase(true)
+    setApprovalNotice(null)
+    setError(null)
+    try {
+      const result = await api.approveProductionPhase(storyId, selectedPhaseNumber, {
+        approved_by: 'CineForge QA',
+        notes: `QA approved the Phase ${selectedPhaseNumber} planning snapshot. No media generation or execution was certified or started.`,
+      })
+      setPipeline(result.pipeline)
+      setApprovalNotice(result.message)
+      await loadPhaseHistory(selectedPhaseNumber)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `Unable to approve Phase ${selectedPhaseNumber}.`)
+    } finally {
+      setApprovingPhase(false)
+    }
+  }
+
   const exportAll = async () => {
     try {
       const exported = await api.exportPhaseHistory(storyId)
@@ -500,6 +523,13 @@ export function ProductionPhases({
   const packageEmotional = stringList(packageData?.emotional_progression)
   const packageAssumptions = stringList(packageData?.creative_assumptions)
   const packageDirection = packageData?.creative_direction ?? {}
+  const phaseApprovalBlockedReason = historical
+    ? 'Return to the current draft before approving.'
+    : selectedPhase?.is_locked
+      ? selectedPhase.locked_reason || `Phase ${selectedPhaseNumber} is locked.`
+      : selectedPhaseNumber === 1 && !qa?.passed
+        ? 'Phase 1 planning QA must pass before approval.'
+        : null
 
   return (
     <section className="production-contract" aria-labelledby="production-contract-title">
@@ -535,10 +565,10 @@ export function ProductionPhases({
               onClick={() => selectPhase(phase.phase_number)}
               onKeyDown={(event) => handlePhaseKeyDown(event, index)}
             >
-              <span>{phase.lifecycle_state === 'ready_for_review' ? '✓' : phase.phase_number}</span>
+              <span>{phase.lifecycle_state === 'approved' ? '✓' : phase.phase_number}</span>
               <div>
                 <b>{phase.phase_number}. {phase.name}</b>
-                <small>{phase.phase_number === 1 ? stateLabel(phase.lifecycle_state) : 'Design available'}</small>
+                <small>{stateLabel(phase.lifecycle_state)}</small>
               </div>
               <em className="phase-iteration-badge" aria-hidden="true" title={`${count} retained iterations`}>{count}</em>
             </button>
@@ -602,6 +632,41 @@ export function ProductionPhases({
 
       {error ? <ErrorNotice message={error} /> : null}
       {historyError ? <div className="phase-history-error" role="alert"><b>History error</b><p>{historyError}</p></div> : null}
+
+      {selectedPhase ? (
+        <section className="phase-approval-bar" aria-label={`Phase ${selectedPhaseNumber} planning approval`}>
+          <div>
+            <span className="eyebrow">PLANNING QA GATE</span>
+            <b>
+              {selectedPhase.lifecycle_state === 'approved'
+                ? `Phase ${selectedPhaseNumber} planning snapshot approved`
+                : `Phase ${selectedPhaseNumber} awaits QA approval`}
+            </b>
+            <p>
+              Approval records review of this planning snapshot only. It never certifies or starts image,
+              voice, video, ComfyUI, queue, or FFmpeg execution.
+            </p>
+            {phaseApprovalBlockedReason ? <small>{phaseApprovalBlockedReason}</small> : null}
+            {approvalNotice ? <small role="status">{approvalNotice}</small> : null}
+          </div>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={
+              approvingPhase
+              || selectedPhase.lifecycle_state === 'approved'
+              || Boolean(phaseApprovalBlockedReason)
+            }
+            onClick={() => void approveSelectedPhase()}
+          >
+            {approvingPhase
+              ? `Approving Phase ${selectedPhaseNumber}…`
+              : selectedPhase.lifecycle_state === 'approved'
+                ? `Phase ${selectedPhaseNumber} planning approved`
+                : `Approve Phase ${selectedPhaseNumber} planning snapshot`}
+          </button>
+        </section>
+      ) : null}
 
       {historical && selectedIteration ? (
         <div className="phase-history-banner" role="status">

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '../../api/client'
 import { ImagesPage } from './ImagesPage'
@@ -9,6 +9,9 @@ vi.mock('../../api/client', () => ({
   api: {
     listStartingImageAssets: vi.fn(),
     listArtDirectionReferenceAssets: vi.fn(),
+    getPhaseSixImageStatus: vi.fn(),
+    preparePhaseSixImages: vi.fn(),
+    generateStartingImage: vi.fn(),
     updateStartingImageApproval: vi.fn(),
   },
   planningAssetContentUrl: (assetId: string) => `http://assets.test/${assetId}`,
@@ -57,6 +60,7 @@ const artAsset = {
 const assignedShot = {
   id: 'shot-assigned',
   order_index: 0,
+  display_label: 'A',
   title: 'S01A — Assigned',
   duration_sec: 7.5,
   duration_override_reason: null,
@@ -113,6 +117,21 @@ function studioValue(saveShot = vi.fn()) {
   }
 }
 
+beforeEach(() => {
+  vi.mocked(api.getPhaseSixImageStatus).mockResolvedValue({
+    story_id: 'story-1',
+    shot_count: 2,
+    required_count: 2,
+    assigned_count: 1,
+    approved_count: 0,
+    in_review_count: 0,
+    missing_count: 1,
+    complete: false,
+    phase_7_locked: true,
+    runtime_reachable: true,
+  } as never)
+})
+
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -164,5 +183,22 @@ describe('ImagesPage managed starting-image truth', () => {
 
     await waitFor(() => expect(saveShot).toHaveBeenCalledTimes(1))
     expect(saveShot.mock.calls[0][1].starting_image_asset_id).toBeNull()
+  })
+
+  it('derives canonical shot codes when generated shot titles do not contain them', async () => {
+    const value = studioValue()
+    value.data.chapters[0].scenes[0].shots = [
+      { ...assignedShot, title: 'Estate before the departure' },
+      { ...unassignedShot, title: 'Younger son asks for his inheritance', display_label: 'B' },
+    ]
+    vi.mocked(useStudio).mockReturnValue(value as never)
+    vi.mocked(api.listStartingImageAssets).mockResolvedValue({ items: [startingAsset], total: 1 } as never)
+    vi.mocked(api.listArtDirectionReferenceAssets).mockResolvedValue({ items: [], total: 0 } as never)
+
+    render(<ImagesPage />)
+
+    await screen.findByRole('heading', { level: 3, name: 'Estate before the departure' })
+    expect(screen.getAllByText('S01A').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('S01B')).toBeTruthy()
   })
 })

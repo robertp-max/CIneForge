@@ -51,10 +51,14 @@ class ComfyUIClient:
         return class_info if isinstance(class_info, dict) else None
 
     async def get_history(self, prompt_id: str) -> dict[str, Any]:
-        raise ComfyRuntimeRouteBlocked(f"History collection for prompt {prompt_id} is not enabled in this slice")
+        response = await self._client.get(f"/history/{prompt_id}")
+        response.raise_for_status()
+        return response.json()
 
     async def get_prompt_history(self) -> dict[str, Any]:
-        raise ComfyRuntimeRouteBlocked("Prompt history collection is not enabled in this slice")
+        response = await self._client.get("/history")
+        response.raise_for_status()
+        return response.json()
 
     async def get_queue(self) -> dict[str, Any]:
         response = await self._client.get("/queue")
@@ -65,10 +69,16 @@ class ComfyUIClient:
         raise ComfyRuntimeRouteBlocked(f"WebSocket progress for client {client_id} is not enabled in this slice")
 
     async def view_output(self, filename: str, subfolder: str = "", output_type: str = "output") -> bytes:
-        raise ComfyRuntimeRouteBlocked(f"Output collection for {filename} is not enabled in this slice")
+        response = await self._client.get(
+            "/view",
+            params={"filename": filename, "subfolder": subfolder, "type": output_type},
+        )
+        response.raise_for_status()
+        return response.content
 
     def _require_mutation_context(self) -> None:
-        raise ComfyMutationBlocked("ComfyUI mutation routes are disabled in the Phase 1 preflight boundary")
+        if not self.allow_mutation:
+            raise ComfyMutationBlocked("ComfyUI mutation routes require allow_mutation=True")
 
     async def submit_prompt(self, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
         self._require_mutation_context()
@@ -76,9 +86,23 @@ class ComfyUIClient:
         response.raise_for_status()
         return response.json()
 
-    async def upload_image(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    async def upload_image(
+        self,
+        image: bytes,
+        filename: str,
+        *,
+        subfolder: str = "",
+        overwrite: bool = False,
+        content_type: str = "application/octet-stream",
+    ) -> dict[str, Any]:
         self._require_mutation_context()
-        raise NotImplementedError("Image upload is a future queue-worker controlled operation")
+        response = await self._client.post(
+            "/upload/image",
+            data={"subfolder": subfolder, "overwrite": str(overwrite).lower()},
+            files={"image": (filename, image, content_type)},
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def interrupt(self) -> dict[str, Any]:
         self._require_mutation_context()

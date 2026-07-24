@@ -7,6 +7,7 @@ import { ProductionPhases } from './ProductionPhases'
 vi.mock('../../api/client', () => ({
   api: {
     getProductionPipeline: vi.fn(),
+    approveProductionPhase: vi.fn(),
     revisePhaseOne: vi.fn(),
     listPhaseVersions: vi.fn(),
     getPhaseVersion: vi.fn(),
@@ -279,6 +280,41 @@ function mockHistoryApis() {
 }
 
 describe('ProductionPhases', () => {
+  it('records QA approval for the planning snapshot without claiming media execution', async () => {
+    const approvedPipeline: ProductionPipeline = {
+      ...pipeline,
+      phases: pipeline.phases.map((phase) => phase.phase_number === 1
+        ? { ...phase, lifecycle_state: 'approved', approved_at: '2026-07-22T00:00:00Z' }
+        : phase.phase_number === 2
+          ? { ...phase, lifecycle_state: 'drafting', is_locked: false, locked_reason: null }
+          : phase),
+    }
+    vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
+    vi.mocked(api.approveProductionPhase).mockResolvedValue({
+      pipeline: approvedPipeline,
+      phase: approvedPipeline.phases[0],
+      message: 'Phase 1 approved. Phase 2 is unlocked for planning.',
+    })
+    mockHistoryApis()
+
+    render(<ProductionPhases storyId="story-1" projectId="project-1" data={aggregate} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve Phase 1 planning snapshot' }))
+
+    await waitFor(() => expect(api.approveProductionPhase).toHaveBeenCalledWith(
+      'story-1',
+      1,
+      expect.objectContaining({
+        approved_by: 'CineForge QA',
+        notes: expect.stringContaining('No media generation or execution'),
+      }),
+    ))
+    expect((await screen.findByRole('button', { name: 'Phase 1 planning approved' })).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Phase 1 approved. Phase 2 is unlocked for planning.')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /Script and Narrative Development/ }).textContent).toContain('approved')
+    expect(screen.getByRole('tab', { name: /Scene and Shot Segmentation/ }).textContent).toContain('drafting')
+  })
+
   it('shows exactly seven enabled phase tabs and opens every UI workspace', async () => {
     vi.mocked(api.getProductionPipeline).mockResolvedValue(pipeline)
     mockHistoryApis()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -95,6 +96,112 @@ class MockPlanningProvider(PlanningProvider):
             finish_category="stop",
         )
 
+    @staticmethod
+    def _pacing_beats(story: Any) -> list[dict[str, Any]]:
+        """Extract explicit ``M:SS-M:SS — beat`` ranges from the source brief.
+
+        The deterministic fallback should honor pacing the user actually wrote
+        instead of inventing generic numbered chapters.  This is deliberately
+        a transparent parser, not a claim that an AI provider ran.
+        """
+
+        pattern = re.compile(
+            r"(?:^|\s+-\s+)(\d+):(\d{2})\s*[\u2013\u2014-]\s*(\d+):(\d{2})"
+            r"\s*[\u2013\u2014-]\s*(.+?)"
+            r"(?=\s+-\s+\d+:\d{2}\s*[\u2013\u2014-]\s*\d+:\d{2}\s*[\u2013\u2014-]"
+            r"|\s+Do not\s+|\Z)",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        beats: list[dict[str, Any]] = []
+        for match in pattern.finditer(story.base_story or ""):
+            start = int(match.group(1)) * 60 + int(match.group(2))
+            end = int(match.group(3)) * 60 + int(match.group(4))
+            if end <= start:
+                continue
+            description = " ".join(match.group(5).strip(" -\r\n\t").split())
+            title_source = re.split(r"[,;]", description, maxsplit=1)[0].strip()
+            title = title_source[:1].upper() + title_source[1:] if title_source else "Story beat"
+            beats.append(
+                {
+                    "start_sec": start,
+                    "end_sec": end,
+                    "duration_sec": end - start,
+                    "title": title[:300],
+                    "summary": description[:2000],
+                }
+            )
+        target = round(float(story.target_duration_sec), 3)
+        if beats and round(sum(float(row["duration_sec"]) for row in beats), 3) == target:
+            return beats
+        return []
+
+    @staticmethod
+    def _infer_location(summary: str, visual_style: str | None) -> str:
+        text = summary.casefold()
+        if any(token in text for token in ("pig", "famine", "collapse")):
+            return "Famine-stricken fields and a worked pig enclosure"
+        if any(token in text for token in ("distant country", "departure", "travel")):
+            return "Roads and an inhabited distant-country settlement"
+        if any(token in text for token in ("journey home", "father running", "embrace")):
+            return "Road approaching the family estate"
+        if any(token in text for token in ("feast", "older brother", "older son")):
+            return "Estate courtyard, feast hall, and open threshold"
+        if any(token in text for token in ("estate", "inheritance", "family")):
+            return "Worked family estate and limestone courtyard"
+        return visual_style or "Location to be confirmed during human review"
+
+    @staticmethod
+    def _shot_stage(index: int) -> str:
+        stages = (
+            "establishing geography",
+            "principal action",
+            "restrained reaction",
+            "tactile detail",
+            "relationship beat",
+            "consequence and transition",
+        )
+        return stages[index % len(stages)]
+
+    @staticmethod
+    def _characters_for_beat(
+        summary: str,
+        characters: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return explicit character links for a source-grounded pacing beat."""
+
+        text = summary.casefold()
+        if any(token in text for token in ("distant country", "collapse", "famine", "pig")):
+            wanted = ("younger",)
+        elif any(token in text for token in ("journey home", "father running", "embrace")):
+            wanted = ("father", "younger")
+        else:
+            # Estate/inheritance and feast/older-brother beats need the full
+            # family relationship represented in the planning coverage.
+            wanted = ("father", "younger", "older")
+
+        links: list[dict[str, Any]] = []
+        for character in characters:
+            name = str(character.get("name") or "").strip()
+            role = str(character.get("role") or "").strip()
+            haystack = f"{name} {role}".casefold()
+            matched = next((token for token in wanted if token in haystack), None)
+            if matched is None:
+                continue
+            links.append(
+                {
+                    # The character-profile task intentionally emits stable
+                    # names rather than database IDs.  Names are also mapped
+                    # by the strict proposal adapter, so they remain resolvable
+                    # after all task outputs are merged.
+                    "character_id": name,
+                    "role_in_shot": "lead" if matched in {"younger", "father"} else "supporting",
+                    "continuity_notes": (
+                        f"Preserve the approved {name} identity, wardrobe color language, age, and emotional state."
+                    ),
+                }
+            )
+        return links
+
     def _build_payload(self, request: ProviderRequestContract, seed: int) -> dict[str, Any]:
         story = request.context
         duration = float(story.target_duration_sec)
@@ -132,6 +239,22 @@ class MockPlanningProvider(PlanningProvider):
             }
 
         if task == PlanningTaskType.chapter_outline:
+            pacing_beats = self._pacing_beats(story)
+            if pacing_beats:
+                return {
+                    "summary": f"{len(pacing_beats)} source-grounded pacing chapters",
+                    "chapters": [
+                        {
+                            "order_index": i,
+                            "title": beat["title"],
+                            "summary": beat["summary"],
+                            "start_sec": beat["start_sec"],
+                            "end_sec": beat["end_sec"],
+                            "duration_sec": beat["duration_sec"],
+                        }
+                        for i, beat in enumerate(pacing_beats)
+                    ],
+                }
             chapter_count = max(1, min(4, int(duration // 60) or 1))
             return {
                 "summary": f"{chapter_count} chapter outline",
@@ -146,6 +269,27 @@ class MockPlanningProvider(PlanningProvider):
             }
 
         if task == PlanningTaskType.scene_breakdown:
+            pacing_beats = self._pacing_beats(story)
+            if pacing_beats:
+                return {
+                    "summary": f"{len(pacing_beats)} source-grounded scenes",
+                    "scenes": [
+                        {
+                            "order_index": 0,
+                            "chapter_order_index": i,
+                            "title": beat["title"],
+                            "summary": beat["summary"],
+                            "narrative_purpose": (
+                                f"Deliver the {beat['start_sec'] // 60}:{beat['start_sec'] % 60:02d}"
+                                f"-{beat['end_sec'] // 60}:{beat['end_sec'] % 60:02d} pacing beat"
+                            ),
+                            "conflict_or_beat": beat["summary"],
+                            "location": self._infer_location(beat["summary"], story.visual_style),
+                            "duration_sec": beat["duration_sec"],
+                        }
+                        for i, beat in enumerate(pacing_beats)
+                    ],
+                }
             scene_count = max(2, min(8, int(duration // 20) or 2))
             return {
                 "summary": f"{scene_count} scenes",
@@ -162,6 +306,54 @@ class MockPlanningProvider(PlanningProvider):
             }
 
         if task == PlanningTaskType.shot_list:
+            previous = request.previous_output or {}
+            scene_rows = [row for row in (previous.get("scenes") or []) if isinstance(row, dict)]
+            if scene_rows:
+                shots: list[dict[str, Any]] = []
+                default_scene_duration = duration / len(scene_rows)
+                for scene_index, scene in enumerate(scene_rows):
+                    try:
+                        scene_duration = float(scene.get("duration_sec") or default_scene_duration)
+                    except (TypeError, ValueError):
+                        scene_duration = default_scene_duration
+                    scene_duration = max(1.0, scene_duration)
+                    scene_shot_count = max(1, round(scene_duration / 7.5))
+                    per_shot = scene_duration / scene_shot_count
+                    scene_title = str(scene.get("title") or f"Scene {scene_index + 1}")
+                    summary = str(scene.get("summary") or scene.get("conflict_or_beat") or scene_title)
+                    location = str(
+                        scene.get("location") or self._infer_location(summary, story.visual_style)
+                    )
+                    character_links = self._characters_for_beat(summary, story.characters)
+                    for beat_index in range(scene_shot_count):
+                        stage = self._shot_stage(beat_index)
+                        rounded_per_shot = round(per_shot, 3)
+                        shot_duration = (
+                            round(scene_duration - rounded_per_shot * (scene_shot_count - 1), 3)
+                            if beat_index == scene_shot_count - 1
+                            else rounded_per_shot
+                        )
+                        shots.append(
+                            {
+                                "order_index": len(shots),
+                                "scene_order_index": scene_index,
+                                "title": f"{scene_title} — {stage.title()} {beat_index + 1}",
+                                "duration_sec": shot_duration,
+                                "story_purpose": summary,
+                                "visual_description": (
+                                    f"{stage.capitalize()} for: {summary}. Location: {location}. "
+                                    f"Maintain {story.visual_style or 'grounded cinematic realism'} "
+                                    "with readable human action and natural material detail."
+                                ),
+                                "location": location,
+                                "characters": character_links,
+                                "starting_image_required": True,
+                                "continuity_source_type": (
+                                    "none" if not shots else "previous_shot"
+                                ),
+                            }
+                        )
+                return {"summary": f"{len(shots)} source-grounded shots", "shots": shots}
             # Prefer 6–12s shots within target duration.
             shot_dur = 8.0
             count = max(1, int(round(duration / shot_dur)))
@@ -186,6 +378,30 @@ class MockPlanningProvider(PlanningProvider):
             return {"summary": f"{len(shots)} shots", "shots": shots}
 
         if task == PlanningTaskType.narration_plan:
+            previous = request.previous_output or {}
+            shot_rows = [row for row in (previous.get("shots") or []) if isinstance(row, dict)]
+            if shot_rows:
+                first_by_scene: dict[int, tuple[int, dict[str, Any]]] = {}
+                for shot_index, shot in enumerate(shot_rows):
+                    try:
+                        scene_index = int(shot.get("scene_order_index") or 0)
+                    except (TypeError, ValueError):
+                        scene_index = 0
+                    first_by_scene.setdefault(scene_index, (shot_index, shot))
+                return {
+                    "summary": "Sparse narration plan anchored to scene openings",
+                    "narrations": [
+                        {
+                            "shot_order_index": shot_index,
+                            "narration_text": str(shot.get("story_purpose") or story.logline or "")[:500],
+                            "start_offset_sec": 0,
+                            "expected_duration_sec": min(
+                                8.0, float(shot.get("duration_sec") or 8.0)
+                            ),
+                        }
+                        for shot_index, shot in first_by_scene.values()
+                    ],
+                }
             return {
                 "summary": "Narration plan",
                 "narrations": [
@@ -199,6 +415,36 @@ class MockPlanningProvider(PlanningProvider):
             }
 
         if task == PlanningTaskType.prompt_package:
+            previous = request.previous_output or {}
+            shot_rows = [row for row in (previous.get("shots") or []) if isinstance(row, dict)]
+            if shot_rows:
+                return {
+                    "summary": f"{len(shot_rows)} reviewable prompt packages",
+                    "prompt_packages": [
+                        {
+                            "shot_order_index": i,
+                            "image_prompt": (
+                                f"{shot.get('visual_description') or shot.get('title')}. "
+                                f"{story.visual_style or 'Grounded cinematic realism'}; natural light; "
+                                "tactile skin, fabric, architecture, and practical environment detail."
+                            ),
+                            "video_prompt": (
+                                f"Planning-only motion direction for {shot.get('title')}: restrained, "
+                                "physically plausible performance and camera movement."
+                            ),
+                            "negative_prompt": (
+                                "text overlay, watermark, plastic skin, illustration, fantasy costume, "
+                                "modern props, artificial glamour"
+                            ),
+                            "continuity_instructions": (
+                                "Preserve identity, wardrobe, screen direction, light, weather, and location "
+                                "from the preceding approved shot."
+                            ),
+                            "style_lock_prompt": story.visual_style or "consistent cinematic grade",
+                        }
+                        for i, shot in enumerate(shot_rows)
+                    ],
+                }
             return {
                 "summary": "Prompt packages",
                 "prompt_packages": [
@@ -214,6 +460,23 @@ class MockPlanningProvider(PlanningProvider):
             }
 
         if task == PlanningTaskType.continuity_plan:
+            previous = request.previous_output or {}
+            shot_rows = [row for row in (previous.get("shots") or []) if isinstance(row, dict)]
+            if len(shot_rows) > 1:
+                return {
+                    "summary": f"{len(shot_rows) - 1} adjacent-shot continuity links",
+                    "continuity": [
+                        {
+                            "from_shot_order_index": i - 1,
+                            "to_shot_order_index": i,
+                            "method": "last_frame",
+                            "notes": (
+                                "Carry forward identity, wardrobe, position, light, location, and emotional state."
+                            ),
+                        }
+                        for i in range(1, len(shot_rows))
+                    ],
+                }
             return {
                 "summary": "Continuity plan",
                 "continuity": [
@@ -227,6 +490,26 @@ class MockPlanningProvider(PlanningProvider):
             }
 
         if task == PlanningTaskType.model_recommendation:
+            previous = request.previous_output or {}
+            shot_rows = [row for row in (previous.get("shots") or []) if isinstance(row, dict)]
+            if shot_rows:
+                return {
+                    "summary": "Planning-only model review placeholders",
+                    "recommendations": [
+                        {
+                            "shot_order_index": i,
+                            "recommendation_type": "manual_review",
+                            "rationale": (
+                                "No factual generation runtime is available; select a validated workflow "
+                                "and model during human review."
+                            ),
+                            "availability_status": "unknown",
+                            "benchmark_status": "unknown",
+                            "native_voice_capability": "unknown",
+                        }
+                        for i, _shot in enumerate(shot_rows)
+                    ],
+                }
             return {
                 "summary": "Model recommendations (planning only)",
                 "recommendations": [
@@ -243,11 +526,14 @@ class MockPlanningProvider(PlanningProvider):
         if task == PlanningTaskType.production_proposal:
             # Compose from previous_output when present.
             prev = request.previous_output or {}
+            existing = story.existing_structure or {}
             return {
                 "summary": f"Production proposal for {story.title}",
                 "chapters": prev.get("chapters") or [{"order_index": 0, "title": "Chapter 1", "summary": story.logline or story.title}],
                 "characters": prev.get("characters") or [{"name": "Protagonist", "role": "lead"}],
-                "voices": prev.get("voices") or [{"name": "Narrator", "source_type": "placeholder"}],
+                "voices": prev.get("voices")
+                or existing.get("voices")
+                or [{"name": "Narrator", "source_type": "placeholder"}],
                 "shots": prev.get("shots")
                 or [
                     {

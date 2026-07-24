@@ -66,12 +66,24 @@ def _derived_title(prompt: str) -> str:
         (line.strip() for line in re.split(r"[\r\n]+", prompt) if line.strip()),
         "Untitled CineForge Production",
     )
+    named_project_match = re.search(
+        r"\b(?:project|film|story|production)\s+(?:named|called|titled)\s+"
+        r"[\"'“”]?([^:;.\r\n\"'“”]+)",
+        first,
+        flags=re.IGNORECASE,
+    )
     subject_match = re.search(
         r"\b(?:story|film|narrative|sequence|documentary)\s+(?:about|of)\s+(.+?)(?:\s+using\b|\s+with\b|[.;]|$)",
         first,
         flags=re.IGNORECASE,
     )
-    candidate = subject_match.group(1) if subject_match else first
+    candidate = (
+        named_project_match.group(1)
+        if named_project_match
+        else subject_match.group(1)
+        if subject_match
+        else first
+    )
     candidate = re.sub(
         r"^(?:create|develop|write|make)\s+(?:an?\s+)?(?:\d+[\s-]*(?:minute|min)\s+)?",
         "",
@@ -102,9 +114,11 @@ def _new_settings(project_id, payload: ProjectWorkspaceCreate) -> ProjectStorybo
             "speaking_rate": payload.speaking_rate,
             "prefer_hosted_providers": payload.prefer_hosted_providers,
             "prefer_local_providers": payload.prefer_local_providers,
-            "allow_model_download": False,
-            "allow_rendering": False,
-            "require_production_plan_approval": True,
+            "allow_model_download": bool(payload.allow_model_download),
+            "allow_rendering": bool(payload.allow_rendering),
+            "require_production_plan_approval": bool(
+                payload.require_production_plan_approval
+            ),
         }
     )
     values["prompting_policy_json"] = {

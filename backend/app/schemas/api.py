@@ -32,7 +32,7 @@ class ProjectRead(BaseModel):
 
 
 class ProjectWorkspaceCreate(BaseModel):
-    """One complete, planning-only project-creation request."""
+    """One complete project-creation request before final video rendering."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -68,9 +68,10 @@ class ProjectWorkspaceCreate(BaseModel):
     speaking_rate: float = Field(default=DEFAULT_SPEAKING_RATE, gt=0)
     prefer_hosted_providers: bool = False
     prefer_local_providers: bool = True
-    allow_model_download: Literal[False] = False
-    allow_rendering: Literal[False] = False
-    require_production_plan_approval: Literal[True] = True
+    # Operators may enable local model/LoRA download and rendering for video quality work.
+    allow_model_download: bool = True
+    allow_rendering: bool = True
+    require_production_plan_approval: bool = True
     orchestration_mode: str = Field(min_length=1, max_length=64)
     privacy_preference: str = Field(min_length=1, max_length=100)
     quality_preference: str = Field(min_length=1, max_length=100)

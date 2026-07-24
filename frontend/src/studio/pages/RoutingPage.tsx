@@ -14,19 +14,20 @@ import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../compo
 
 const TASK_PROFILE_MAP: ReadonlyArray<{
   task: PlanningTaskType
+  label: string
   logicalProfile: 'Sol' | 'Terra' | 'Luna'
   description: string
 }> = [
-  { task: 'story_structure', logicalProfile: 'Sol', description: 'Long-form story structure' },
-  { task: 'character_bible', logicalProfile: 'Terra', description: 'Structured identity detail' },
-  { task: 'chapter_outline', logicalProfile: 'Terra', description: 'Chapter-level narrative plan' },
-  { task: 'scene_breakdown', logicalProfile: 'Terra', description: 'Narrative continuity and beats' },
-  { task: 'shot_list', logicalProfile: 'Luna', description: 'Fast bulk shot planning' },
-  { task: 'narration_plan', logicalProfile: 'Terra', description: 'Narration fit and voice planning' },
-  { task: 'prompt_package', logicalProfile: 'Luna', description: 'Workflow-specific prompt drafting' },
-  { task: 'continuity_plan', logicalProfile: 'Terra', description: 'Cross-shot continuity review' },
-  { task: 'model_recommendation', logicalProfile: 'Terra', description: 'Evidence-based model matching' },
-  { task: 'production_proposal', logicalProfile: 'Sol', description: 'Final reviewed proposal synthesis' },
+  { task: 'story_structure', label: 'Story structure', logicalProfile: 'Sol', description: 'Long-form story structure' },
+  { task: 'character_bible', label: 'Character profile', logicalProfile: 'Terra', description: 'Structured identity detail' },
+  { task: 'chapter_outline', label: 'Chapter outline', logicalProfile: 'Terra', description: 'Chapter-level narrative plan' },
+  { task: 'scene_breakdown', label: 'Scene breakdown', logicalProfile: 'Terra', description: 'Narrative continuity and beats' },
+  { task: 'shot_list', label: 'Shot list', logicalProfile: 'Luna', description: 'Fast bulk shot planning' },
+  { task: 'narration_plan', label: 'Narration plan', logicalProfile: 'Terra', description: 'Narration fit and voice planning' },
+  { task: 'prompt_package', label: 'Prompt package', logicalProfile: 'Luna', description: 'Workflow-specific prompt drafting' },
+  { task: 'continuity_plan', label: 'Continuity plan', logicalProfile: 'Terra', description: 'Cross-shot continuity review' },
+  { task: 'model_recommendation', label: 'Model recommendation', logicalProfile: 'Terra', description: 'Evidence-based model matching' },
+  { task: 'production_proposal', label: 'Production proposal', logicalProfile: 'Sol', description: 'Final reviewed proposal synthesis' },
 ]
 
 type RouteDraft = {
@@ -244,7 +245,7 @@ export function RoutingPage() {
       }
       await Promise.all([load(), reload()])
       setMessage(
-        `Saved the ${task} provider assignment. Its logical profile remains the displayed default unless a run explicitly overrides it.`,
+        `Saved the ${TASK_PROFILE_MAP.find((row) => row.task === task)?.label ?? task} provider assignment. Its logical profile remains the displayed default unless a run explicitly overrides it.`,
       )
     } catch (err) {
       const text = errorText(err, 'Could not save the task-provider assignment.')
@@ -534,12 +535,12 @@ export function RoutingPage() {
                   }}
                 >
                   <span>
-                    <b>{row.task}</b>
+                    <b>{row.label}</b>
                     <small>{row.description}</small>
                   </span>
                   <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                     <select
-                      aria-label={`Provider for ${row.task}`}
+                      aria-label={`Provider for ${row.label}`}
                       value={draft.providerProfileId}
                       onChange={(event) =>
                         updateRouteDraft(row.task, { providerProfileId: event.target.value })
@@ -554,7 +555,7 @@ export function RoutingPage() {
                       ))}
                     </select>
                     <input
-                      aria-label={`Rationale for ${row.task}`}
+                      aria-label={`Rationale for ${row.label}`}
                       value={draft.rationale}
                       onChange={(event) => updateRouteDraft(row.task, { rationale: event.target.value })}
                       disabled={saving}
@@ -573,7 +574,7 @@ export function RoutingPage() {
                       checked={draft.enabled}
                       onChange={(event) => updateRouteDraft(row.task, { enabled: event.target.checked })}
                       disabled={saving}
-                      aria-label={`Enable ${row.task} provider assignment`}
+                      aria-label={`Enable ${row.label} provider assignment`}
                     />
                   </span>
                   <span>
@@ -606,7 +607,7 @@ export function RoutingPage() {
             </span>
             <div>
               <span className="eyebrow">ROUTE DETAIL</span>
-              <h2>{selectedRow.task}</h2>
+              <h2>{selectedRow.label}</h2>
             </div>
           </header>
           <dl>

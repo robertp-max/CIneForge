@@ -75,6 +75,19 @@ class PhaseVersionCreateRequest(BaseModel):
     requested_by: str | None = Field(default=None, max_length=200)
 
 
+class PhaseApproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved_by: str = Field(min_length=1, max_length=200)
+    notes: str = Field(default="", max_length=4000)
+
+
+class PhaseApproveResponse(BaseModel):
+    pipeline: "ProductionPipelineRead"
+    phase: "ProductionPhaseRead"
+    message: str
+
+
 class PhaseVersionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

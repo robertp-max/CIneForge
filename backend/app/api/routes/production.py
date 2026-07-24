@@ -1,4 +1,4 @@
-"""Seven-phase production contract routes; Phase 1 is the only executable phase here."""
+"""Seven-phase production contract routes for local/private CineForge execution."""
 
 from uuid import UUID
 
@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
 from backend.app.schemas.production import (
+    PhaseApproveRequest,
+    PhaseApproveResponse,
     PhaseHistoryExport,
     PhaseOneGenerationInput,
     PhaseOneMutationResponse,
@@ -17,7 +19,14 @@ from backend.app.schemas.production import (
     PhaseVersionSummary,
     ProductionPipelineRead,
 )
+from backend.app.schemas.image_generation import (
+    PhaseSixImagePrepareResponse,
+    PhaseSixImageStatus,
+    StartingImageGenerateRequest,
+    StartingImageGenerateResponse,
+)
 from backend.app.services import production_phases
+from backend.app.services import phase_six_images
 
 
 router = APIRouter(prefix="/production", tags=["production"])
@@ -149,3 +158,83 @@ def revise_phase_one(
     except production_phases.ProductionPhaseError as exc:
         db.rollback()
         raise _error(exc) from exc
+
+
+@router.post(
+    "/stories/{story_id}/phases/{phase_number}/approve",
+    response_model=PhaseApproveResponse,
+)
+def approve_phase(
+    story_id: UUID,
+    phase_number: int,
+    payload: PhaseApproveRequest,
+    db: Session = Depends(get_db),
+) -> PhaseApproveResponse:
+    try:
+        return production_phases.approve_phase(db, story_id, phase_number, payload)
+    except (production_phases.ProductionPhaseError, phase_six_images.PhaseSixImageError) as exc:
+        db.rollback()
+        raise _error(exc) from exc
+
+
+@router.get(
+    "/stories/{story_id}/phase6/images/status",
+    response_model=PhaseSixImageStatus,
+)
+def phase_six_image_status(
+    story_id: UUID,
+    db: Session = Depends(get_db),
+) -> PhaseSixImageStatus:
+    try:
+        return PhaseSixImageStatus(**phase_six_images.status(db, story_id))
+    except phase_six_images.PhaseSixImageError as exc:
+        raise _error(exc) from exc
+
+
+@router.post(
+    "/stories/{story_id}/phase6/images/prepare",
+    response_model=PhaseSixImagePrepareResponse,
+)
+def prepare_phase_six_images(
+    story_id: UUID,
+    payload: PhaseApproveRequest,
+    db: Session = Depends(get_db),
+) -> PhaseSixImagePrepareResponse:
+    try:
+        state = phase_six_images.prepare(db, story_id, requested_by=payload.approved_by)
+        return PhaseSixImagePrepareResponse(
+            status=PhaseSixImageStatus(**state),
+            message="Phase 6 images are ready for local ComfyUI generation; Phase 7 is not artificially locked.",
+        )
+    except phase_six_images.PhaseSixImageError as exc:
+        db.rollback()
+        raise _error(exc) from exc
+
+
+@router.post(
+    "/stories/{story_id}/phase6/images/shots/{shot_id}/generate",
+    response_model=StartingImageGenerateResponse,
+)
+def generate_phase_six_starting_image(
+    story_id: UUID,
+    shot_id: UUID,
+    payload: StartingImageGenerateRequest | None = None,
+    db: Session = Depends(get_db),
+) -> StartingImageGenerateResponse:
+    request_payload = payload or StartingImageGenerateRequest()
+    try:
+        result = phase_six_images.generate_shot(
+            db,
+            story_id,
+            shot_id,
+            requested_by=request_payload.requested_by,
+            seed=request_payload.seed,
+            model_name=request_payload.model_name or phase_six_images.DEFAULT_FLUX_IMAGE_MODEL,
+        )
+        return StartingImageGenerateResponse(**result)
+    except phase_six_images.PhaseSixImageError as exc:
+        db.rollback()
+        raise _error(phase_six_images.PhaseSixImageError(str(exc))) from exc
+    except Exception as exc:
+        db.rollback()
+        raise _error(phase_six_images.PhaseSixImageError(str(exc))) from exc

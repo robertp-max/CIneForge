@@ -352,6 +352,31 @@ def upsert_hierarchy(
     shots_by_client: dict[str, Shot] = {}
     keep_chapter_ids: set[UUID] = set()
 
+    # A proposal is a complete replacement of the active hierarchy. Archived
+    # rows still participate in the database's non-partial sibling uniqueness
+    # constraints, so vacate every current chapter order before inserting or
+    # reordering the proposed set. This preserves prior rows for provenance
+    # while making the live (story_id, order_index) slots available.
+    retained_existing_chapter_ids = {
+        UUID(str(item["existing_id"]))
+        for item in proposed_chapters
+        if item.get("existing_id") and str(item["existing_id"]) in existing_chapters
+    }
+    existing_chapter_rows = list(existing_chapters.values())
+    temporary_chapter_order = min(
+        [int(row.order_index) for row in existing_chapter_rows] + [0]
+    ) - len(existing_chapter_rows) - 1
+    now = _now()
+    for existing_chapter in existing_chapter_rows:
+        existing_chapter.order_index = temporary_chapter_order
+        temporary_chapter_order -= 1
+        if existing_chapter.id in retained_existing_chapter_ids:
+            existing_chapter.archived_at = None
+        else:
+            existing_chapter.archived_at = now
+        existing_chapter.updated_at = now
+    db.flush()
+
     # First pass: create/update chapters, scenes, shots (continuity resolved in second pass).
     for chapter_item in proposed_chapters:
         chapter_existing = chapter_item.get("existing_id")
@@ -377,6 +402,26 @@ def upsert_hierarchy(
             str(row.id): row for row in db.scalars(select(Scene).where(Scene.chapter_id == chapter.id))
         }
         keep_scene_ids: set[UUID] = set()
+        retained_existing_scene_ids = {
+            UUID(str(item["existing_id"]))
+            for item in (chapter_item.get("scenes") or [])
+            if item.get("existing_id") and str(item["existing_id"]) in existing_scenes
+        }
+        existing_scene_rows = list(existing_scenes.values())
+        temporary_scene_order = min(
+            [int(row.order_index) for row in existing_scene_rows] + [0]
+        ) - len(existing_scene_rows) - 1
+        now = _now()
+        for existing_scene in existing_scene_rows:
+            existing_scene.order_index = temporary_scene_order
+            temporary_scene_order -= 1
+            if existing_scene.id in retained_existing_scene_ids:
+                existing_scene.archived_at = None
+            else:
+                existing_scene.archived_at = now
+            existing_scene.updated_at = now
+        db.flush()
+
         for scene_item in chapter_item.get("scenes") or []:
             scene_existing = scene_item.get("existing_id")
             scene = existing_scenes.get(str(scene_existing)) if scene_existing else None
@@ -464,12 +509,6 @@ def upsert_hierarchy(
                 _upsert_narration(db, shot, shot_item.get("narration"), voices_by_client)
                 _upsert_prompt_package(db, shot, shot_item.get("prompt_package"))
                 _upsert_model_recommendations(db, shot, shot_item.get("model_recommendations") or [])
-
-            # Archive scenes removed from proposal (soft via archived_at).
-            for scene_id, scene_row in existing_scenes.items():
-                if scene_row.id not in keep_scene_ids and scene_row.archived_at is None:
-                    scene_row.archived_at = _now()
-                    scene_row.updated_at = _now()
 
     _archive_missing_chapters(db, story_id, keep_chapter_ids)
     db.flush()

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, type PlanningMediaAsset } from '../../api/client'
+import { api, type PhaseSixImageStatus, type PlanningMediaAsset } from '../../api/client'
 import { useStudio } from '../StudioState'
 import { artDirectionBoardUrl, shotCodeFromLabel, startingFrameUrl } from '../mediaUrls'
 import { EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/StateBlocks'
@@ -50,9 +50,6 @@ function MediaThumb({
   )
 }
 
-const GENERATION_DISABLED_REASON =
-  'Image generation is disabled in Phase 1 planning; no render or ComfyUI submission endpoint is exposed.'
-
 type RequirementFilter = 'all' | 'required' | 'missing' | 'assigned'
 
 /** Map backend approval / readiness → Gold status-pill data-status token. */
@@ -76,10 +73,23 @@ function errorText(error: unknown): string {
     : 'Failed to load managed starting-image assets.'
 }
 
-/** Compact card code line — Gold uses shot id; titles often use "S01A — …". */
-function shotCodeLabel(title: string): string {
-  const code = shotCodeFromLabel(title)
+function shotLetter(index: number): string {
+  if (index < 26) return String.fromCharCode(65 + index)
+  return String(index + 1)
+}
+
+/** Compact card code line — prefer an explicit code, then derive it from live hierarchy order. */
+function shotCodeLabel(
+  title: string,
+  sceneNumber?: number,
+  shotIndex?: number,
+  displayLabel?: string,
+): string {
+  const code = shotCodeFromLabel(title) || shotCodeFromLabel(displayLabel)
   if (code) return code
+  if (sceneNumber != null && shotIndex != null) {
+    return `S${String(sceneNumber).padStart(2, '0')}${shotLetter(shotIndex)}`
+  }
   const head = title.split(/\s*[—–-]\s*/)[0]?.trim()
   return head || title
 }
@@ -100,6 +110,9 @@ export function ImagesPage() {
   const [requirementFilter, setRequirementFilter] = useState<RequirementFilter>('all')
   const [approvalFilter, setApprovalFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [generationStatus, setGenerationStatus] = useState<PhaseSixImageStatus | null>(null)
+  const [generatingShotId, setGeneratingShotId] = useState<string | null>(null)
+  const [batchGenerating, setBatchGenerating] = useState(false)
 
   const shotRows = useMemo(
     () =>
@@ -118,10 +131,12 @@ export function ImagesPage() {
     setLoading(true)
     setError(null)
     try {
-      const [startingImageResult, artDirectionResult] = await Promise.all([
+      const [startingImageResult, artDirectionResult, phaseSixStatus] = await Promise.all([
         api.listStartingImageAssets(data.story.project_id),
         api.listArtDirectionReferenceAssets(data.story.project_id),
+        api.getPhaseSixImageStatus(data.story.id),
       ])
+      setGenerationStatus(phaseSixStatus)
       if (startingImageResult == null || artDirectionResult == null) {
         setAvailable(false)
         setItems(null)
@@ -152,6 +167,7 @@ export function ImagesPage() {
     chapter.scenes.map((scene) => ({ chapter, scene })),
   )
   const sceneById = new Map(sceneRows.map((row) => [row.scene.id, row]))
+  const sceneNumberById = new Map(sceneRows.map((row, index) => [row.scene.id, index + 1]))
   const artDirectionRows = artDirectionItems
     .map((asset) => {
       const client = asset.metadata_json.client as Record<string, unknown> | undefined
@@ -193,6 +209,83 @@ export function ImagesPage() {
   const selectedAssignedAsset = selectedShot?.starting_image_asset_id
     ? assetsById.get(selectedShot.starting_image_asset_id) ?? null
     : null
+
+  const syncShotAssignment = async (row: (typeof shotRows)[number], assetId: string) => {
+    const { shot } = row
+    await saveShot(shot.id, {
+      order_index: shot.order_index,
+      title: shot.title,
+      duration_sec: shot.duration_sec,
+      duration_override_reason: shot.duration_override_reason,
+      story_purpose: shot.story_purpose,
+      visual_description: shot.visual_description,
+      location: shot.location,
+      continuity_source_type: shot.continuity_source_type,
+      continuity_source_shot_id: shot.continuity_source_shot_id,
+      starting_image_required: true,
+      starting_image_asset_id: assetId,
+    })
+  }
+
+  const generateShot = async (row: (typeof shotRows)[number] | null) => {
+    if (!row) return
+    setGeneratingShotId(row.shot.id)
+    setError(null)
+    try {
+      const result = await api.generateStartingImage(data.story.id, row.shot.id, {
+        requested_by: 'CineForge local operator',
+        model_name: 'flux2_dev_fp8mixed.safetensors',
+      })
+      await syncShotAssignment(row, result.asset.id)
+      setAssetDraft({ shotId: row.shot.id, assetId: result.asset.id })
+      setGenerationStatus(result.status)
+      setMessage(
+        `Generated ${result.asset.original_filename ?? result.asset.id} with ${result.model_name}; candidate is ready for QA review.`,
+      )
+      await load()
+    } catch (err) {
+      const text = errorText(err)
+      setError(text)
+      setMessage(text)
+    } finally {
+      setGeneratingShotId(null)
+    }
+  }
+
+  const generateAllUnapproved = async () => {
+    if (!shotRows.length) return
+    setBatchGenerating(true)
+    setError(null)
+    try {
+      if (generationStatus?.required_count !== generationStatus?.shot_count) {
+        const prepared = await api.preparePhaseSixImages(data.story.id, 'CineForge local operator')
+        setGenerationStatus(prepared.status)
+      }
+      const targets = shotRows.filter(({ shot }) => {
+        const asset = shot.starting_image_asset_id ? assetsById.get(shot.starting_image_asset_id) : null
+        return !asset || asset.approval_state !== 'approved'
+      })
+      for (const row of targets) {
+        setGeneratingShotId(row.shot.id)
+        const result = await api.generateStartingImage(data.story.id, row.shot.id, {
+          requested_by: 'CineForge local operator',
+          model_name: 'flux2_dev_fp8mixed.safetensors',
+        })
+        await syncShotAssignment(row, result.asset.id)
+        setGenerationStatus(result.status)
+      }
+      setMessage(`Generated ${targets.length} local ComfyUI starting-image candidate${targets.length === 1 ? '' : 's'}.`)
+      await load()
+    } catch (err) {
+      const text = errorText(err)
+      setError(text)
+      setMessage(text)
+    } finally {
+      setGeneratingShotId(null)
+      setBatchGenerating(false)
+    }
+  }
+
   const onUpload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!file) return
@@ -280,6 +373,23 @@ export function ImagesPage() {
     }
   }
 
+  const prepareGeneration = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await api.preparePhaseSixImages(data.story.id)
+      setGenerationStatus(result.status)
+      setMessage(result.message)
+      window.location.reload()
+    } catch (err) {
+      const text = errorText(err)
+      setError(text)
+      setMessage(text)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const mediaScope = {
     projectId: data.story.project_id,
     storyTitle: data.story.title,
@@ -308,6 +418,19 @@ export function ImagesPage() {
           <p>Plan and approve the visual anchor for every generation-ready shot.</p>
         </div>
         <div className="page-actions">
+          {generationStatus?.required_count !== generationStatus?.shot_count ? (
+            <button type="button" className="btn secondary" onClick={() => void prepareGeneration()} disabled={saving || busy}>
+              Prepare Phase 6 images
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => void generateAllUnapproved()}
+            disabled={loading || saving || busy || batchGenerating || Boolean(generatingShotId)}
+          >
+            {batchGenerating ? 'Generating…' : 'Generate all unapproved'}
+          </button>
           <button type="button" className="btn secondary" onClick={() => void load()} disabled={loading || busy}>
             Refresh assets
           </button>
@@ -456,7 +579,14 @@ export function ImagesPage() {
                     />
                     <div>
                       <span>
-                        <code>{shotCodeLabel(shot.title)}</code>
+                        <code>
+                          {shotCodeLabel(
+                            shot.title,
+                            sceneNumberById.get(scene.id),
+                            shot.order_index,
+                            shot.display_label,
+                          )}
+                        </code>
                         <b>{shot.duration_sec}s</b>
                       </span>
                       <h3>{shot.title}</h3>
@@ -483,7 +613,14 @@ export function ImagesPage() {
               <header>
                 <div>
                   <span className="eyebrow">IMAGE REVIEW</span>
-                  <h2>{shotCodeLabel(selectedShot.title)}</h2>
+                  <h2>
+                    {shotCodeLabel(
+                      selectedShot.title,
+                      selectedRow ? sceneNumberById.get(selectedRow.scene.id) : undefined,
+                      selectedShot.order_index,
+                      selectedShot.display_label,
+                    )}
+                  </h2>
                 </div>
                 <span
                   className="status-pill"
@@ -514,7 +651,7 @@ export function ImagesPage() {
                 </div>
                 <div>
                   <span>Source state</span>
-                  <b>{selectedThumbUrl ? 'Attached · draft' : 'Not generated'}</b>
+                  <b>{selectedThumbUrl ? 'Attached · review required' : 'Not assigned'}</b>
                 </div>
               </div>
               <div className="form-stack compact">
@@ -537,6 +674,14 @@ export function ImagesPage() {
                   <button
                     type="button"
                     className="btn primary"
+                    onClick={() => void generateShot(selectedRow)}
+                    disabled={approvalSaving || saving || busy || batchGenerating || generatingShotId === selectedShot.id}
+                  >
+                    {generatingShotId === selectedShot.id ? 'Generating…' : 'Generate with local ComfyUI'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn secondary"
                     onClick={() => void onAssign()}
                     disabled={
                       approvalSaving ||
@@ -568,10 +713,9 @@ export function ImagesPage() {
                     <textarea className="prompt" readOnly value={selectedShot.prompt_negative} />
                   </label>
                 ) : null}
-                <p className="form-hint">{GENERATION_DISABLED_REASON}</p>
-                <button type="button" className="btn primary" disabled title={GENERATION_DISABLED_REASON}>
-                  Generate candidate — disabled
-                </button>
+                <p className="form-hint">
+                  Phase 6 can submit this shot to local ComfyUI with the supplied FLUX2 workflow, store the output as a managed starting-image asset, and attach it for QA review. Existing assets are preserved.
+                </p>
               </div>
             </>
           ) : (

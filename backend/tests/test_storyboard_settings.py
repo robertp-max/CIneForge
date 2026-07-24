@@ -48,7 +48,8 @@ def test_get_settings_returns_defaults_without_persisting(db_session):
     assert float(row.shot_duration_max_sec) == 12.0
     assert int(row.settings_version) == 1
     assert row.prefer_local_providers is True
-    assert row.allow_rendering is False
+    assert row.allow_rendering is True
+    assert row.allow_model_download is True
     assert row.voice_policy_json["allow_placeholder_for_approval"] is True
     assert row.approval_policy_json["require_prompt_package_or_exception"] is True
     assert row.approval_policy_json["require_model_recommendation_or_exception"] is True

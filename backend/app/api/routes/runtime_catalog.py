@@ -18,9 +18,11 @@ from backend.app.schemas.runtime_catalog import (
     QuantizationCatalogItem,
     RuntimeCatalogResponse,
     RuntimeCatalogSummary,
+    WorkflowCandidateRegistryResponse,
     WorkflowTemplateCatalogItem,
 )
 from backend.app.services import runtime_catalog as service
+from backend.app.services.workflows import candidate_catalog as workflow_candidates
 
 
 router = APIRouter(prefix="/runtime-catalog", tags=["runtime-catalog"])
@@ -86,6 +88,18 @@ def list_workflow_templates(
         WorkflowTemplateCatalogItem.model_validate(item)
         for item in service.list_workflow_templates(db)
     ]
+
+
+@router.get(
+    "/workflow-candidates",
+    response_model=WorkflowCandidateRegistryResponse,
+)
+def get_workflow_candidate_registry() -> WorkflowCandidateRegistryResponse:
+    """Return the non-executing archetype/candidate/preset planning registry."""
+
+    return WorkflowCandidateRegistryResponse.model_validate(
+        workflow_candidates.catalog_document()
+    )
 
 
 @router.get(

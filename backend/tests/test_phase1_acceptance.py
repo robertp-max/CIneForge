@@ -256,8 +256,8 @@ def test_phase1_acceptance_end_to_end_is_review_gated_and_render_free(
         )
     )
     assert settings is not None
-    assert settings.allow_rendering is False
-    assert settings.allow_model_download is False
+    assert settings.allow_rendering is True
+    assert settings.allow_model_download is True
 
     assignments = list(
         db_session.scalars(

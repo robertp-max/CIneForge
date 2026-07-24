@@ -44,9 +44,9 @@ export type ProjectWorkspaceCreatePayload = {
   speaking_rate: number
   prefer_hosted_providers: boolean
   prefer_local_providers: boolean
-  allow_model_download: false
-  allow_rendering: false
-  require_production_plan_approval: true
+  allow_model_download: boolean
+  allow_rendering: boolean
+  require_production_plan_approval: boolean
   orchestration_mode: string
   privacy_preference: string
   quality_preference: string
@@ -973,6 +973,47 @@ export type PhaseOneMutationResponse = {
   completion_message: string
 }
 
+export type PhaseApproveResponse = {
+  pipeline: ProductionPipeline
+  phase: ProductionPhase
+  message: string
+}
+
+export type PhaseSixImageStatus = {
+  shot_count: number
+  required_count: number
+  assigned_count: number
+  approved_count: number
+  in_review_count: number
+  missing_count: number
+  complete: boolean
+  phase_7_locked: boolean | null
+  runtime_reachable: boolean | null
+}
+
+export type PhaseSixImagePrepareResponse = {
+  status: PhaseSixImageStatus
+  message: string
+}
+
+export type StartingImageGenerateRequest = {
+  requested_by?: string
+  seed?: number | null
+  model_name?: string | null
+}
+
+export type StartingImageGenerateResponse = {
+  asset: PlanningMediaAsset
+  created: boolean
+  duplicate_of_existing: boolean
+  shot_id: string
+  previous_asset_id: string | null
+  status: PhaseSixImageStatus
+  prompt_id: string | null
+  model_name: string
+  seed: number
+}
+
 export type VoiceProfileCreatePayload = {
   name: string
   setup_mode: VoiceSetupMode
@@ -1434,6 +1475,34 @@ export const api = {
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
   getProductionPipeline: (storyId: string) =>
     request<ProductionPipeline>(`/production/stories/${storyId}`),
+  approveProductionPhase: (
+    storyId: string,
+    phaseNumber: number,
+    payload: { approved_by: string; notes?: string | null },
+  ) =>
+    request<PhaseApproveResponse>(
+      `/production/stories/${storyId}/phases/${phaseNumber}/approve`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  getPhaseSixImageStatus: (storyId: string) =>
+    request<PhaseSixImageStatus>(`/production/stories/${storyId}/phase6/images/status`),
+  preparePhaseSixImages: (storyId: string, requestedBy = 'CineForge QA') =>
+    request<PhaseSixImagePrepareResponse>(`/production/stories/${storyId}/phase6/images/prepare`, {
+      method: 'POST',
+      body: JSON.stringify({ approved_by: requestedBy, notes: 'Phase 6 planning-image completion required.' }),
+    }),
+  generateStartingImage: (
+    storyId: string,
+    shotId: string,
+    payload: StartingImageGenerateRequest = {},
+  ) =>
+    request<StartingImageGenerateResponse>(
+      `/production/stories/${storyId}/phase6/images/shots/${shotId}/generate`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    ),
   listPhaseVersions: (storyId: string, phaseNumber: number) =>
     request<PhaseVersionSummary[]>(
       `/production/stories/${storyId}/phases/${phaseNumber}/versions`,
