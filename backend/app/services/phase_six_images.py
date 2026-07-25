@@ -57,27 +57,35 @@ DEFAULT_HEIGHT = 576
 DEFAULT_SAMPLER = "euler"
 
 DEFAULT_NEGATIVE_PROMPT = (
-    "cartoon, illustration, painting, plastic skin, waxy skin, anime, fantasy armor, "
+    "cartoon, illustration, painting, plastic skin, waxy skin, anime, fantasy armor, blood, gore, red face marks, wounds, bruises, injuries, violence, children, snow, ash, floating white particles, "
     "modern clothing, modern buildings, bad hands, extra fingers, missing fingers, "
     "deformed fingers, fused fingers, duplicate limbs, distorted face, low detail, "
     "blurry, text, watermark"
 )
 
 STYLE_LOCK = (
-    "high-end photorealistic historical cinema, 1st-century Judean setting, "
-    "ancient rural domestic estate only, low flat-roofed weathered limestone rooms, "
-    "olive groves, terraced vineyards, warm natural sunlight, dust, tactile woven linen "
-    "and wool, realistic skin pores, restrained powerful performance, cinematic depth of field"
+    "documentary photoreal historical cinema in ancient 1st-century Judea, "
+    "working family farmstead, rough low limestone courtyard, mud plaster, timber beams, "
+    "woven shade cloth, clay jars, baskets, sheep or goats, olive trees, vineyard rows, "
+    "worn earth-toned imperfect lived-in agricultural household"
+)
+QUALITY_LOCK = (
+    "natural warm sunlight, realistic skin pores, sweat, weathered hands, dusty ground, "
+    "coarse woven linen and wool, restrained emotional performance, cinematic depth of field, "
+    "asymmetric practical composition, not glamorous, not staged, no direct eye contact with camera"
 )
 FATHER_COLOR_LOCK = "Father in dignified cool blue, muted teal, cream, restrained gold"
 YOUNGER_BEFORE_COLOR_LOCK = "Younger Son in deep crimson, burgundy, or wine-colored outer garment"
 YOUNGER_RETURN_COLOR_LOCK = "Returned Younger Son in faded, torn, dirty neutral garments"
 OLDER_COLOR_LOCK = "Older Son in ochre, mustard, sun-baked gold, or muted brown"
 POSITIVE_AVOIDANCE_LOCK = (
-    "no religious skyline, no church, no chapel, no monastery, no bell tower, no tower, "
-    "no dome, no crosses, no wall lanterns, no street lamps, no glass windows, no chimneys, "
-    "no European manor, no modern suits, ties, jackets, dresses, buttons, zippers, cars, "
-    "modern furniture, or Renaissance religious staging"
+    "avoid every modern or European element: no palace, no luxury villa, no manor, no castle, "
+    "no religious skyline, no church, no chapel, no monastery, no bell tower, no watchtower, "
+    "no tower, no dome, no crosses, no wall lanterns, no street lamps, no glass windows, "
+    "no chimneys, no suits, no ties, no jackets, no dresses, no buttons, no zippers, no cars, "
+    "no modern furniture, no Renaissance religious staging, no snow, no ash, no floating white particles, no crowd, no duplicate Father; "
+    "avoid front-facing catalog portraits, avoid two men standing shoulder-to-shoulder staring at camera, "
+    "avoid posed costume lineup"
 )
 NO_UNREQUESTED_COLLAPSE_LOCK = (
     "do not depict anyone collapsed, prone, lying facedown, dead, injured, or unconscious "
@@ -386,24 +394,98 @@ def _action_boundary_lock(row: ShotRow) -> str:
     return NO_UNREQUESTED_COLLAPSE_LOCK
 
 
+VISUAL_PROMPT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("family estate", "working Judean family farmstead"),
+    ("estate", "working Judean household farmstead"),
+    ("limestone courtyard", "rough low limestone household courtyard"),
+    ("prosperous", "modestly prosperous worked and inhabited"),
+)
+
+
+def _visual_text(value: str | None) -> str:
+    text = (value or "").strip()
+    for old, new in VISUAL_PROMPT_REPLACEMENTS:
+        text = re.sub(rf"\b{re.escape(old)}\b", new, text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\bMaintain Photoreal cinematic realism with readable human action and natural material detail\.?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _package_style_text(value: str | None) -> str:
+    text = _visual_text(value)
+    if not text:
+        return ""
+    # Project packages often repeat generic style phrases. Keep only a compact reminder so
+    # the executable positive prompt stays inside the useful attention window.
+    return text[:180]
+
+
+def _narrative_action_overlay(row: ShotRow, archetype: Mapping[str, Any]) -> str:
+    context = _shot_context_text(row)
+    archetype_id = str(archetype.get("id") or "")
+    if "inheritance demand" in context or ("estate" in context and "family tension" in context):
+        if archetype_id.endswith("WIDE"):
+            return (
+                "candid wide blocking of all three principal family members separated by space: "
+                "Father in blue-teal near household doorway, Younger Son in burgundy at courtyard edge, "
+                "Older Son in ochre near work tools or sheep, exactly three adult men visible, no bystanders, visible emotional distance, no one posing"
+            )
+        if archetype_id.endswith("ACTION"):
+            return (
+                "exactly three adult men visible, no bystanders: Younger Son in burgundy actively demands his inheritance with tense hand extended, "
+                "Father in blue-teal answers with grave restrained sadness, Older Son in ochre watches from the working courtyard, no second Father, no crowd, "
+                "mid-action candid frame, clean uninjured faces, no blood, no red marks, no injuries, no children, not a posed portrait"
+            )
+        if archetype_id.endswith("REACTION"):
+            return (
+                "restrained reaction after the demand: Father in blue-teal shows grave sadness in silence, eyes lowered or turned aside, "
+                "Younger Son in burgundy remains tense out of focus, Older Son in ochre watches with contained resentment, clean uninjured faces"
+            )
+        if archetype_id.endswith("DETAIL"):
+            return (
+                "close tactile detail of inheritance tension: weathered hands, clay ledger or small coins, dusty woven sleeve, "
+                "Father hesitates before surrendering property, no full-body portrait"
+            )
+        return (
+            "relationship tension in the working courtyard: Father, Younger Son, and Older Son hold different positions, "
+            "grief, demand, and resentment visible through body language"
+        )
+    return "candid observed moment, characters focused on each other and the story action, not looking at the camera"
+
+
 def _prompt(db: Session, row: ShotRow, archetype: Mapping[str, Any]) -> tuple[str, str]:
     package = _latest_prompt_package(db, row.shot.id)
-    image_prompt = (package.image_prompt if package else None) or row.shot.visual_description or row.shot.title
+    image_prompt = _visual_text(
+        (package.image_prompt if package else None) or row.shot.visual_description or row.shot.title
+    )
     package_negative = (package.negative_prompt if package else None) or ""
     negative_prompt = f"{DEFAULT_NEGATIVE_PROMPT}, {NEGATIVE_HISTORICAL_GUARDRAIL}, {package_negative}"
-    package_style_lock = (package.style_lock_prompt if package else None) or ""
+    package_style_lock = _package_style_text(package.style_lock_prompt if package else None)
     action_boundary = _action_boundary_lock(row)
-    positive = (
-        f"{STYLE_LOCK}. {POSITIVE_AVOIDANCE_LOCK}. "
-        f"{_character_color_lock(row)}. "
-        f"{archetype['prompt']}. {image_prompt}. "
-        f"Location: {row.shot.location or row.scene.title}. "
-        f"Story purpose: {row.shot.story_purpose or row.scene.title}. "
-        f"{action_boundary}. {package_style_lock}."
-    )
+    location = _visual_text(row.shot.location or row.scene.title)
+    story_purpose = _visual_text(row.shot.story_purpose or row.scene.title)
+    positive_parts = [
+        f"CineForge shot must show this exact story moment: {_narrative_action_overlay(row, archetype)}",
+        _character_color_lock(row),
+        "exactly three adult men visible, no bystanders, no crowd, no floating white particles, clean uninjured faces, no blood, no red face marks, no wounds, no bruises, no injuries, no children",
+        f"Composition: {archetype['prompt']}",
+        STYLE_LOCK,
+        QUALITY_LOCK,
+        action_boundary,
+        f"Shot brief: {image_prompt}",
+        POSITIVE_AVOIDANCE_LOCK,
+        f"Location: {location}",
+        f"Purpose: {story_purpose}",
+        package_style_lock,
+    ]
+    positive = ". ".join(part for part in positive_parts if part)
     positive = re.sub(r"\s+", " ", positive).strip()
     negative_prompt = re.sub(r"\s+", " ", negative_prompt).strip()
-    return positive[:1200], negative_prompt[:900]
+    return positive[:950], negative_prompt[:900]
 
 
 def _load_source_api_workflow() -> dict[str, Any] | None:
