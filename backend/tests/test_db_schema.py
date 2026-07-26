@@ -25,6 +25,7 @@ REQUIRED_TABLES = {
     "lora_combinations",
     "lora_combination_items",
     "workflow_templates",
+    "local_runtime_assets",
     "clips",
     "clip_iterations",
     "workflow_runs",

@@ -26,6 +26,7 @@ from backend.app.db.base import (  # noqa: F401
     Lora,
     LoraCombination,
     LoraCombinationItem,
+    LocalRuntimeAsset,
     Model,
     ModelVariant,
     NegativePrompt,

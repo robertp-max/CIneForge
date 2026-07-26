@@ -1,17 +1,24 @@
-"""Read-only factual runtime model/workflow catalog API.
+"""Runtime model/workflow catalog API.
 
-Never probes ComfyUI, GPUs, FFmpeg, installers, downloads, or providers.
+Registered DB catalog endpoints never probe ComfyUI/GPU/installers.
+Local-asset endpoints read the filesystem catalog registry and can trigger sync.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.db.session import get_db
 from backend.app.schemas.runtime_catalog import (
+    LocalAssetSyncRequest,
+    LocalAssetSyncResponse,
+    LocalAssetsSummary,
+    LocalRuntimeAssetItem,
     LoraCatalogItem,
     ModelCatalogItem,
     ModelVariantCatalogItem,
@@ -22,6 +29,8 @@ from backend.app.schemas.runtime_catalog import (
     WorkflowTemplateCatalogItem,
 )
 from backend.app.services import runtime_catalog as service
+from backend.app.services.local_assets import catalog as local_catalog
+from backend.app.services.local_assets.sync import sync_local_comfy_assets
 from backend.app.services.workflows import candidate_catalog as workflow_candidates
 
 
@@ -128,3 +137,133 @@ def list_quantizations(db: Session = Depends(get_db)) -> list[QuantizationCatalo
 @router.get("/loras", response_model=list[LoraCatalogItem])
 def list_loras(db: Session = Depends(get_db)) -> list[LoraCatalogItem]:
     return [LoraCatalogItem.model_validate(item) for item in service.list_loras(db)]
+
+
+# ---------------------------------------------------------------------------
+# Local filesystem assets (presence-driven catalog)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/local-assets", response_model=list[LocalRuntimeAssetItem])
+def list_local_assets(
+    asset_type: str | None = None,
+    family: str | None = None,
+    base: str | None = None,
+    present: bool | None = Query(default=True),
+    q: str | None = None,
+    relative_prefix: str | None = None,
+    duplicate_sha256: str | None = None,
+    limit: int = Query(default=500, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> list[LocalRuntimeAssetItem]:
+    items = local_catalog.list_local_assets(
+        db,
+        asset_type=asset_type,
+        family=family,
+        base=base,
+        present=present,
+        q=q,
+        relative_prefix=relative_prefix,
+        duplicate_sha256=duplicate_sha256,
+        limit=limit,
+        offset=offset,
+    )
+    return [LocalRuntimeAssetItem.model_validate(item) for item in items]
+
+
+@router.get("/local-assets/summary", response_model=LocalAssetsSummary)
+def get_local_assets_summary(db: Session = Depends(get_db)) -> LocalAssetsSummary:
+    return LocalAssetsSummary.model_validate(local_catalog.local_assets_summary(db))
+
+
+@router.get("/local-assets/{asset_id}", response_model=LocalRuntimeAssetItem)
+def get_local_asset(
+    asset_id: UUID,
+    db: Session = Depends(get_db),
+) -> LocalRuntimeAssetItem:
+    item = local_catalog.get_local_asset(db, asset_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local asset not found.")
+    return LocalRuntimeAssetItem.model_validate(item)
+
+
+@router.get("/checkpoints", response_model=list[LocalRuntimeAssetItem])
+def list_local_checkpoints(
+    family: str | None = None,
+    q: str | None = None,
+    present: bool | None = Query(default=True),
+    limit: int = Query(default=500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> list[LocalRuntimeAssetItem]:
+    items = local_catalog.list_local_assets(
+        db,
+        asset_type="checkpoint",
+        family=family,
+        present=present,
+        q=q,
+        limit=limit,
+    )
+    return [LocalRuntimeAssetItem.model_validate(item) for item in items]
+
+
+@router.get("/local-loras", response_model=list[LocalRuntimeAssetItem])
+def list_local_loras(
+    family: str | None = None,
+    q: str | None = None,
+    present: bool | None = Query(default=True),
+    limit: int = Query(default=500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> list[LocalRuntimeAssetItem]:
+    items = local_catalog.list_local_assets(
+        db,
+        asset_type="lora",
+        family=family,
+        present=present,
+        q=q,
+        limit=limit,
+    )
+    return [LocalRuntimeAssetItem.model_validate(item) for item in items]
+
+
+@router.get("/local-workflows", response_model=list[LocalRuntimeAssetItem])
+def list_local_workflows(
+    family: str | None = None,
+    q: str | None = None,
+    present: bool | None = Query(default=True),
+    limit: int = Query(default=500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> list[LocalRuntimeAssetItem]:
+    items = local_catalog.list_local_assets(
+        db,
+        asset_type="workflow",
+        family=family,
+        present=present,
+        q=q,
+        limit=limit,
+    )
+    return [LocalRuntimeAssetItem.model_validate(item) for item in items]
+
+
+@router.post("/sync", response_model=LocalAssetSyncResponse)
+def sync_local_assets(
+    body: LocalAssetSyncRequest | None = None,
+    db: Session = Depends(get_db),
+) -> LocalAssetSyncResponse:
+    """Scan local ComfyUI directories and upsert the local asset registry.
+
+    Never deletes or relocates files. Never treats unreviewed assets as hidden.
+    """
+    settings = get_settings()
+    payload = body or LocalAssetSyncRequest()
+    root = Path(payload.comfyui_root) if payload.comfyui_root else settings.comfyui_root
+    try:
+        summary = sync_local_comfy_assets(
+            db,
+            comfyui_root=root,
+            compute_hash=not payload.skip_hash,
+            hash_max_bytes=payload.hash_max_bytes,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return LocalAssetSyncResponse.model_validate(summary)

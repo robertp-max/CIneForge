@@ -13,6 +13,7 @@ export type PageId =
   | 'voices'
   | 'images'
   | 'routing'
+  | 'assets'
   | 'workflows'
   | 'exports'
   | 'settings'
@@ -48,6 +49,7 @@ const navItems: { id: PageId; label: string; icon: ShellIconName }[] = [
   { id: 'voices', label: 'Voices', icon: 'mic' },
   { id: 'images', label: 'Starting images', icon: 'image' },
   { id: 'routing', label: 'Model routing', icon: 'cpu' },
+  { id: 'assets', label: 'Local assets', icon: 'folder' },
   { id: 'workflows', label: 'Workflows', icon: 'layers' },
   { id: 'exports', label: 'Exports', icon: 'download' },
 ]
@@ -62,6 +64,7 @@ const labels: Record<PageId | 'projects' | 'new-project', string> = {
   voices: 'Voices',
   images: 'Starting Images',
   routing: 'Model Routing',
+  assets: 'Local Assets',
   workflows: 'Workflows',
   exports: 'Exports',
   settings: 'Project Settings',

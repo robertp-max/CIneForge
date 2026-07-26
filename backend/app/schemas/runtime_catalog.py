@@ -205,3 +205,88 @@ class WorkflowCandidateRegistryResponse(BaseModel):
     candidates: list[WorkflowCandidateCatalogItem] = Field(default_factory=list)
     assessments: list[WorkflowCandidateAssessmentItem] = Field(default_factory=list)
     presets: list[WorkflowPresetCatalogItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Local filesystem asset catalog (presence-driven; no approval gates)
+# ---------------------------------------------------------------------------
+
+
+class LocalRuntimeAssetItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    asset_type: str
+    name: str
+    file_path: str
+    relative_path: str
+    model_category: str | None = None
+    file_extension: str | None = None
+    file_size_bytes: int | None = None
+    sha256: str | None = None
+    metadata_json: dict = Field(default_factory=dict)
+    inferred_family: str | None = None
+    inferred_base: str | None = None
+    selector_value: str
+    source_kind: str = "comfyui_filesystem"
+    is_present: bool = True
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    mtime_ns: int | None = None
+    linked_model_variant_id: UUID | None = None
+    linked_lora_id: UUID | None = None
+    linked_workflow_template_id: UUID | None = None
+    created_at: datetime | None = None
+
+
+class LocalAssetsSummary(BaseModel):
+    present: int = 0
+    total_size_bytes: int = 0
+    hashed: int = 0
+    by_type: dict[str, int] = Field(default_factory=dict)
+    by_family: dict[str, int] = Field(default_factory=dict)
+    duplicate_hash_groups: int = 0
+    note: str = (
+        "All present local ComfyUI files are visible. "
+        "Compatibility/benchmark fields are informational only — never approval gates."
+    )
+
+
+class LocalAssetSyncRequest(BaseModel):
+    comfyui_root: str | None = None
+    skip_hash: bool = False
+    hash_max_bytes: int | None = Field(
+        default=None,
+        description="Skip hashing files larger than this size in bytes",
+    )
+
+
+class LocalAssetSyncResponse(BaseModel):
+    comfyui_root: str
+    scanned: int = 0
+    added: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    marked_missing: int = 0
+    hashed: int = 0
+    present: int = 0
+    total_size_bytes: int = 0
+    by_type: dict[str, int] = Field(default_factory=dict)
+    duplicate_hash_groups: int = 0
+    duplicates_sample: dict[str, list[str]] = Field(default_factory=dict)
+    errors: list[dict] = Field(default_factory=list)
+    synced_at: str | None = None
+
+
+class LocalLoraStackItem(BaseModel):
+    asset_id: UUID
+    strength_model: float = 1.0
+    strength_clip: float | None = None
+
+
+class LocalGenerationAssetSelection(BaseModel):
+    """Optional local filesystem asset selection for generation requests."""
+
+    checkpoint_asset_id: UUID | None = None
+    workflow_asset_id: UUID | None = None
+    loras: list[LocalLoraStackItem] = Field(default_factory=list)

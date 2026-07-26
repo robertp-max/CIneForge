@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, PrimaryKeyConstraint, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, PrimaryKeyConstraint, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -183,6 +183,47 @@ class VAE(UUIDMixin, Base):
     precision: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+
+
+class LocalRuntimeAsset(UUIDMixin, TimestampMixin, Base):
+    """Filesystem-backed local ComfyUI asset catalog entry.
+
+    Visibility is presence-driven. Compatibility notes are informational only.
+    """
+
+    __tablename__ = "local_runtime_assets"
+
+    asset_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    model_category: Mapped[str | None] = mapped_column(String(64))
+    file_extension: Mapped[str | None] = mapped_column(String(32))
+    file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    metadata_json: Mapped[dict] = mapped_column(json_type(), default=dict)
+    inferred_family: Mapped[str | None] = mapped_column(String(64), index=True)
+    inferred_base: Mapped[str | None] = mapped_column(String(128))
+    selector_value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), default="comfyui_filesystem", nullable=False)
+    is_present: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    mtime_ns: Mapped[int | None] = mapped_column(BigInteger)
+    linked_model_variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("model_variants.id", ondelete="SET NULL")
+    )
+    linked_lora_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("loras.id", ondelete="SET NULL")
+    )
+    linked_workflow_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_templates.id", ondelete="SET NULL")
+    )
+
+    __table_args__ = (
+        Index("ix_local_runtime_assets_type_present", "asset_type", "is_present"),
+        Index("ix_local_runtime_assets_family_base", "inferred_family", "inferred_base"),
+    )
 
 
 class Lora(UUIDMixin, Base):

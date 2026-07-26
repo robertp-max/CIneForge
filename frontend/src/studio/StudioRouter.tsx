@@ -10,6 +10,7 @@ import { VoicesPage } from './pages/VoicesPage'
 import { ImagesPage } from './pages/ImagesPage'
 import { RoutingPage } from './pages/RoutingPage'
 import { WorkflowsPage } from './pages/WorkflowsPage'
+import { LocalAssetsPage } from './pages/LocalAssetsPage'
 import { ExportsPage } from './pages/ExportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 
@@ -42,6 +43,10 @@ const PAGE_META: Record<PageId, { title: string; description: string }> = {
     title: 'Model Routing',
     description: 'Factual model catalog evidence — Unknown remains unknown until evidence is recorded.',
   },
+  assets: {
+    title: 'Local Assets',
+    description: 'Filesystem-backed checkpoints, LoRAs, and workflows from your ComfyUI install.',
+  },
   workflows: {
     title: 'Workflows',
     description: 'Factual workflow-template catalog, admission evidence, and production routing.',
@@ -72,6 +77,7 @@ export function StudioRouter({ page }: { page: PageId }) {
     voices: <VoicesPage />,
     images: <ImagesPage />,
     routing: <RoutingPage />,
+    assets: <LocalAssetsPage />,
     workflows: <WorkflowsPage />,
     exports: <ExportsPage />,
     settings: <SettingsPage />,

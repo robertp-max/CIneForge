@@ -591,6 +591,58 @@ export type RuntimeCatalog = {
   loras: unknown[]
 }
 
+export type LocalRuntimeAsset = {
+  id: string
+  asset_type: string
+  name: string
+  file_path: string
+  relative_path: string
+  model_category: string | null
+  file_extension: string | null
+  file_size_bytes: number | null
+  sha256: string | null
+  metadata_json: Record<string, unknown>
+  inferred_family: string | null
+  inferred_base: string | null
+  selector_value: string
+  source_kind: string
+  is_present: boolean
+  first_seen_at: string | null
+  last_seen_at: string | null
+  mtime_ns: number | null
+  linked_model_variant_id: string | null
+  linked_lora_id: string | null
+  linked_workflow_template_id: string | null
+  created_at: string | null
+}
+
+export type LocalAssetsSummary = {
+  present: number
+  total_size_bytes: number
+  hashed: number
+  by_type: Record<string, number>
+  by_family: Record<string, number>
+  duplicate_hash_groups: number
+  note?: string
+}
+
+export type LocalAssetSyncResponse = {
+  comfyui_root: string
+  scanned: number
+  added: number
+  updated: number
+  unchanged: number
+  marked_missing: number
+  hashed: number
+  present: number
+  total_size_bytes: number
+  by_type: Record<string, number>
+  duplicate_hash_groups: number
+  duplicates_sample: Record<string, string[]>
+  errors: Array<Record<string, string>>
+  synced_at: string | null
+}
+
 export type ProviderExecutionMode = 'disabled' | 'manual' | 'assisted' | 'automatic'
 
 export type ProviderProfile = {
@@ -1847,6 +1899,60 @@ export const api = {
   runtimeCatalog: () => optionalRequest<RuntimeCatalog>('/runtime-catalog'),
   listRuntimeWorkflowTemplates: () =>
     optionalRequest<RuntimeCatalogWorkflowTemplate[]>('/runtime-catalog/workflow-templates'),
+
+  localAssets: (params?: {
+    asset_type?: string
+    family?: string
+    base?: string
+    present?: boolean
+    q?: string
+    relative_prefix?: string
+    limit?: number
+    offset?: number
+  }) => {
+    const sp = new URLSearchParams()
+    if (params?.asset_type) sp.set('asset_type', params.asset_type)
+    if (params?.family) sp.set('family', params.family)
+    if (params?.base) sp.set('base', params.base)
+    if (params?.present !== undefined) sp.set('present', String(params.present))
+    if (params?.q) sp.set('q', params.q)
+    if (params?.relative_prefix) sp.set('relative_prefix', params.relative_prefix)
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    if (params?.offset != null) sp.set('offset', String(params.offset))
+    const qs = sp.toString()
+    return request<LocalRuntimeAsset[]>(`/runtime-catalog/local-assets${qs ? `?${qs}` : ''}`)
+  },
+  localAssetsSummary: () => request<LocalAssetsSummary>('/runtime-catalog/local-assets/summary'),
+  localAsset: (assetId: string) => request<LocalRuntimeAsset>(`/runtime-catalog/local-assets/${assetId}`),
+  localCheckpoints: (params?: { family?: string; q?: string; limit?: number }) => {
+    const sp = new URLSearchParams()
+    if (params?.family) sp.set('family', params.family)
+    if (params?.q) sp.set('q', params.q)
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    const qs = sp.toString()
+    return request<LocalRuntimeAsset[]>(`/runtime-catalog/checkpoints${qs ? `?${qs}` : ''}`)
+  },
+  localLoras: (params?: { family?: string; q?: string; limit?: number }) => {
+    const sp = new URLSearchParams()
+    if (params?.family) sp.set('family', params.family)
+    if (params?.q) sp.set('q', params.q)
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    const qs = sp.toString()
+    return request<LocalRuntimeAsset[]>(`/runtime-catalog/local-loras${qs ? `?${qs}` : ''}`)
+  },
+  localWorkflows: (params?: { family?: string; q?: string; limit?: number }) => {
+    const sp = new URLSearchParams()
+    if (params?.family) sp.set('family', params.family)
+    if (params?.q) sp.set('q', params.q)
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    const qs = sp.toString()
+    return request<LocalRuntimeAsset[]>(`/runtime-catalog/local-workflows${qs ? `?${qs}` : ''}`)
+  },
+  syncLocalAssets: (payload?: { comfyui_root?: string; skip_hash?: boolean; hash_max_bytes?: number }) =>
+    request<LocalAssetSyncResponse>('/runtime-catalog/sync', {
+      method: 'POST',
+      body: JSON.stringify(payload ?? { skip_hash: true }),
+    }),
 
   listProviderProfiles: () => request<ProviderProfile[]>('/storyboard-crud/provider-profiles'),
   listPlanningProviders: () => request<ProviderCatalogResponse>('/providers'),

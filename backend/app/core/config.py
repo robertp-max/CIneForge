@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = DEFAULT_DATABASE_URL
     comfyui_base_url: AnyHttpUrl = "http://127.0.0.1:8188"
+    comfyui_root: Path = Field(
+        default=Path(r"C:\AI\ComfyUI_windows_portable\ComfyUI"),
+        description="Local ComfyUI install root for filesystem asset sync",
+    )
     storage_root: Path = Field(default=DEFAULT_STORAGE_ROOT)
     allow_absolute_input_paths: bool = False
     queue_worker_enabled: bool = False
@@ -57,7 +61,7 @@ class Settings(BaseSettings):
     openai_logical_model_terra: str = "gpt-4o"
     openai_logical_model_sol: str = "gpt-4.1"
 
-    @field_validator("storage_root", mode="before")
+    @field_validator("storage_root", "comfyui_root", mode="before")
     @classmethod
     def resolve_storage_root(cls, value: str | Path) -> Path:
         path = Path(value).expanduser()
